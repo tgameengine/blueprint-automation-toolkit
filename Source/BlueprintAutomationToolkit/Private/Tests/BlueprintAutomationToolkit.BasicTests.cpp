@@ -61,6 +61,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsActorOverlapEventTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsActorOverlapEvent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsComponentBoundEventTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsComponentBoundEvent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsUpdateOnlyNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeExistingNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeExistingNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeConnectedNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeConnectedNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -771,6 +773,80 @@ bool FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest::RunTest(const F
 	}
 
 	return TestEqual(TEXT("Graph apply request should canonicalize alias axes"), Request.Nodes[0].ForwardAxis, FString(TEXT("-Y")));
+}
+
+bool FBATBlueprintGraphApplyRequestAcceptsActorOverlapEventTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), TEXT("/Game/Test/BP_Test"));
+	Body->SetStringField(TEXT("graph"), TEXT("EventGraph"));
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("id"), TEXT("overlap_event"));
+	Node->SetStringField(TEXT("type"), TEXT("K2Node_Event"));
+	Node->SetStringField(TEXT("event"), TEXT("ActorBeginOverlap"));
+
+	TArray<TSharedPtr<FJsonValue>> Nodes;
+	Nodes.Add(MakeShared<FJsonValueObject>(Node));
+	Body->SetArrayField(TEXT("nodes"), Nodes);
+	Body->SetArrayField(TEXT("links"), TArray<TSharedPtr<FJsonValue>>());
+
+	FBlueprintGraphApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::BlueprintGraphApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("Graph apply request should accept actor overlap events"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	if (!TestEqual(TEXT("Graph apply request should preserve one actor event node"), Request.Nodes.Num(), 1))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Graph apply request should preserve actor event name"), Request.Nodes[0].Event, FString(TEXT("ActorBeginOverlap")));
+}
+
+bool FBATBlueprintGraphApplyRequestAcceptsComponentBoundEventTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), TEXT("/Game/Test/BP_Test"));
+	Body->SetStringField(TEXT("graph"), TEXT("EventGraph"));
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("id"), TEXT("mesh_overlap"));
+	Node->SetStringField(TEXT("type"), TEXT("K2Node_ComponentBoundEvent"));
+	Node->SetStringField(TEXT("component"), TEXT("PickupMesh"));
+	Node->SetStringField(TEXT("event"), TEXT("OnComponentBeginOverlap"));
+
+	TArray<TSharedPtr<FJsonValue>> Nodes;
+	Nodes.Add(MakeShared<FJsonValueObject>(Node));
+	Body->SetArrayField(TEXT("nodes"), Nodes);
+	Body->SetArrayField(TEXT("links"), TArray<TSharedPtr<FJsonValue>>());
+
+	FBlueprintGraphApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::BlueprintGraphApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("Graph apply request should accept component bound events"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	if (!TestEqual(TEXT("Graph apply request should preserve one component event node"), Request.Nodes.Num(), 1))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Graph apply request should preserve component name"), Request.Nodes[0].Component, FString(TEXT("PickupMesh")));
+	return TestEqual(TEXT("Graph apply request should preserve component event name"), Request.Nodes[0].Event, FString(TEXT("OnComponentBeginOverlap")));
 }
 
 bool FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest::RunTest(const FString& Parameters)

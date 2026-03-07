@@ -23,6 +23,7 @@ struct FBlueprintGraphApplyNodeSpec
 	bool bUpdateOnly = false;
 	bool bHasExplicitX = false;
 	bool bHasExplicitY = false;
+	FString Component;
 	FString ForwardAxis;
 	FString Event;
 	FString ClassPath;

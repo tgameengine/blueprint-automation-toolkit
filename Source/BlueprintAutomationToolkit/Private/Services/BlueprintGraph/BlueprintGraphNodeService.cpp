@@ -4,6 +4,7 @@
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Components/ActorComponent.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
@@ -12,6 +13,7 @@
 #include "GameFramework/Actor.h"
 #include "K2Node_AddComponent.h"
 #include "K2Node_CallFunction.h"
+#include "K2Node_ComponentBoundEvent.h"
 #include "K2Node_ExecutionSequence.h"
 #include "K2Node_Event.h"
 #include "K2Node_FunctionEntry.h"
@@ -680,6 +682,185 @@ namespace
 		return OutMacroGraph != nullptr;
 	}
 
+	static FString NormalizeEventLookupToken(const FString& InValue)
+	{
+		FString Trimmed = InValue;
+		Trimmed.TrimStartAndEndInline();
+
+		FString Normalized;
+		Normalized.Reserve(Trimmed.Len());
+		for (const TCHAR Character : Trimmed)
+		{
+			if (FChar::IsAlnum(Character))
+			{
+				Normalized.AppendChar(FChar::ToLower(Character));
+			}
+		}
+
+		return Normalized;
+	}
+
+	static void AddUniqueEventLookupCandidate(TArray<FString>& Candidates, const FString& Candidate)
+	{
+		if (!Candidate.IsEmpty())
+		{
+			Candidates.AddUnique(Candidate);
+		}
+	}
+
+	static bool DoesEventLookupCandidateMatch(const FString& LookupToken, const FString& Candidate)
+	{
+		return !LookupToken.IsEmpty() && NormalizeEventLookupToken(Candidate) == LookupToken;
+	}
+
+	static bool DoesBlueprintEventMatch(UFunction* Function, const FString& EventSpec)
+	{
+		if (!Function)
+		{
+			return false;
+		}
+
+		const FString LookupToken = NormalizeEventLookupToken(EventSpec);
+		if (LookupToken.IsEmpty())
+		{
+			return false;
+		}
+
+		TArray<FString> Candidates;
+		AddUniqueEventLookupCandidate(Candidates, Function->GetName());
+		AddUniqueEventLookupCandidate(Candidates, Function->GetMetaData(TEXT("DisplayName")));
+		AddUniqueEventLookupCandidate(Candidates, Function->GetMetaData(TEXT("ScriptName")));
+
+		const FString FunctionName = Function->GetName();
+		if (FunctionName.StartsWith(TEXT("Receive"), ESearchCase::CaseSensitive))
+		{
+			AddUniqueEventLookupCandidate(Candidates, FunctionName.RightChop(7));
+		}
+
+		for (const FString& Candidate : Candidates)
+		{
+			if (DoesEventLookupCandidateMatch(LookupToken, Candidate))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	static bool TryResolveBlueprintEvent(UBlueprint* Blueprint, const FString& EventSpec, UFunction*& OutFunction)
+	{
+		OutFunction = nullptr;
+		if (!Blueprint)
+		{
+			return false;
+		}
+
+		if (TryResolveFunctionByPath(EventSpec, OutFunction) && OutFunction && OutFunction->HasAnyFunctionFlags(FUNC_BlueprintEvent))
+		{
+			return true;
+		}
+
+		for (UClass* SearchClass = Blueprint->ParentClass; SearchClass; SearchClass = SearchClass->GetSuperClass())
+		{
+			for (TFieldIterator<UFunction> It(SearchClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
+			{
+				UFunction* Candidate = *It;
+				if (!Candidate || !Candidate->HasAnyFunctionFlags(FUNC_BlueprintEvent))
+				{
+					continue;
+				}
+
+				if (DoesBlueprintEventMatch(Candidate, EventSpec))
+				{
+					OutFunction = Candidate;
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	static bool TryResolveBlueprintComponentProperty(UBlueprint* Blueprint, const FString& ComponentName, const FObjectProperty*& OutComponentProperty)
+	{
+		OutComponentProperty = nullptr;
+		if (!Blueprint)
+		{
+			return false;
+		}
+
+		auto TryFindComponentPropertyOnClass = [&ComponentName](UClass* SearchClass, const FObjectProperty*& FoundProperty) -> bool
+		{
+			if (!SearchClass)
+			{
+				return false;
+			}
+
+			for (TFieldIterator<FObjectProperty> It(SearchClass, EFieldIteratorFlags::IncludeSuper); It; ++It)
+			{
+				const FObjectProperty* Candidate = *It;
+				if (!Candidate || !Candidate->PropertyClass || !Candidate->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+				{
+					continue;
+				}
+
+				if (Candidate->GetName().Equals(ComponentName, ESearchCase::IgnoreCase))
+				{
+					FoundProperty = Candidate;
+					return true;
+				}
+			}
+
+			return false;
+		};
+
+		return TryFindComponentPropertyOnClass(Blueprint->SkeletonGeneratedClass, OutComponentProperty)
+			|| TryFindComponentPropertyOnClass(Blueprint->GeneratedClass, OutComponentProperty);
+	}
+
+	static bool TryResolveComponentDelegateProperty(UClass* ComponentClass, const FString& EventSpec, const FMulticastDelegateProperty*& OutDelegateProperty)
+	{
+		OutDelegateProperty = nullptr;
+		if (!ComponentClass)
+		{
+			return false;
+		}
+
+		const FString LookupToken = NormalizeEventLookupToken(EventSpec);
+		if (LookupToken.IsEmpty())
+		{
+			return false;
+		}
+
+		for (TFieldIterator<FMulticastDelegateProperty> It(ComponentClass, EFieldIteratorFlags::IncludeSuper); It; ++It)
+		{
+			const FMulticastDelegateProperty* Candidate = *It;
+			if (!Candidate)
+			{
+				continue;
+			}
+
+			TArray<FString> Candidates;
+			AddUniqueEventLookupCandidate(Candidates, Candidate->GetName());
+			if (Candidate->GetName().StartsWith(TEXT("On"), ESearchCase::CaseSensitive))
+			{
+				AddUniqueEventLookupCandidate(Candidates, Candidate->GetName().RightChop(2));
+			}
+
+			for (const FString& CandidateName : Candidates)
+			{
+				if (DoesEventLookupCandidateMatch(LookupToken, CandidateName))
+				{
+					OutDelegateProperty = Candidate;
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	static void SetPinDefault(UEdGraphPin* Pin, const FString& Value, FBlueprintGraphApplyResult& InOutResult, const FString& NodeId, const FString& PinName)
 	{
 		if (!Pin)
@@ -755,10 +936,43 @@ namespace
 
 		if (NodeSpec.Type.Equals(TEXT("K2Node_Event"), ESearchCase::CaseSensitive))
 		{
+			UFunction* EventFunction = nullptr;
+			if (!TryResolveBlueprintEvent(Blueprint, NodeSpec.Event, EventFunction) || !EventFunction)
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_event_not_found:%s:%s"), *NodeSpec.Id, *NodeSpec.Event));
+				return nullptr;
+			}
+
 			UK2Node_Event* EventNode = NewObject<UK2Node_Event>(Graph);
-			EventNode->EventReference.SetExternalMember(FName(TEXT("ReceiveBeginPlay")), AActor::StaticClass());
+			EventNode->EventReference.SetExternalMember(EventFunction->GetFName(), EventFunction->GetOwnerClass()->GetAuthoritativeClass());
 			EventNode->bOverrideFunction = true;
 			Graph->AddNode(EventNode, true, false);
+			EventNode->CreateNewGuid();
+			EventNode->PostPlacedNewNode();
+			EventNode->AllocateDefaultPins();
+			EventNode->ReconstructNode();
+			return EventNode;
+		}
+
+		if (NodeSpec.Type.Equals(TEXT("K2Node_ComponentBoundEvent"), ESearchCase::CaseSensitive))
+		{
+			const FObjectProperty* ComponentProperty = nullptr;
+			if (!TryResolveBlueprintComponentProperty(Blueprint, NodeSpec.Component, ComponentProperty) || !ComponentProperty)
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_component_not_found:%s:%s"), *NodeSpec.Id, *NodeSpec.Component));
+				return nullptr;
+			}
+
+			const FMulticastDelegateProperty* DelegateProperty = nullptr;
+			if (!TryResolveComponentDelegateProperty(ComponentProperty->PropertyClass, NodeSpec.Event, DelegateProperty) || !DelegateProperty)
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_component_event_not_found:%s:%s:%s"), *NodeSpec.Id, *NodeSpec.Component, *NodeSpec.Event));
+				return nullptr;
+			}
+
+			UK2Node_ComponentBoundEvent* EventNode = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+			Graph->AddNode(EventNode, true, false);
+			EventNode->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
 			EventNode->CreateNewGuid();
 			EventNode->PostPlacedNewNode();
 			EventNode->AllocateDefaultPins();

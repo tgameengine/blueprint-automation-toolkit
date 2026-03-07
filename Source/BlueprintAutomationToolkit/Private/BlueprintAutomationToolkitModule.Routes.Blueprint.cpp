@@ -1777,6 +1777,7 @@ namespace
 		};
 
 		AddType(TEXT("K2Node_Event"), { TEXT("id"), TEXT("type"), TEXT("event") }, { TEXT("x"), TEXT("y") });
+		AddType(TEXT("K2Node_ComponentBoundEvent"), { TEXT("id"), TEXT("type"), TEXT("component"), TEXT("event") }, { TEXT("x"), TEXT("y") });
 		AddType(TEXT("K2Node_SpawnActor"), { TEXT("id"), TEXT("type"), TEXT("class") }, { TEXT("x"), TEXT("y"), TEXT("pins") });
 		AddType(TEXT("K2Node_CallFunction"), { TEXT("id"), TEXT("type"), TEXT("function") }, { TEXT("x"), TEXT("y"), TEXT("pins") });
 		AddType(TEXT("K2Node_PrintString"), { TEXT("id"), TEXT("type"), TEXT("message") }, { TEXT("x"), TEXT("y") });

@@ -97,6 +97,7 @@ namespace BAT::BlueprintGraphApplyRequest
 				{
 					NodeObj->TryGetBoolField(TEXT("update_only"), NodeSpec.bUpdateOnly);
 				}
+				NodeObj->TryGetStringField(TEXT("component"), NodeSpec.Component);
 				NodeObj->TryGetStringField(TEXT("forward_axis"), NodeSpec.ForwardAxis);
 				NodeObj->TryGetStringField(TEXT("event"), NodeSpec.Event);
 				NodeObj->TryGetStringField(TEXT("class"), NodeSpec.ClassPath);
@@ -127,9 +128,20 @@ namespace BAT::BlueprintGraphApplyRequest
 				}
 				else if (NodeSpec.Type.Equals(TEXT("K2Node_Event"), ESearchCase::CaseSensitive))
 				{
-					if (!NodeSpec.Event.Equals(TEXT("BeginPlay"), ESearchCase::CaseSensitive))
+					if (NodeSpec.Event.TrimStartAndEnd().IsEmpty())
 					{
-						OutErrors.Add(FString::Printf(TEXT("nodes[%d]_unsupported_event"), NodeIndex));
+						OutErrors.Add(FString::Printf(TEXT("nodes[%d]_missing_event"), NodeIndex));
+					}
+				}
+				else if (NodeSpec.Type.Equals(TEXT("K2Node_ComponentBoundEvent"), ESearchCase::CaseSensitive))
+				{
+					if (NodeSpec.Component.TrimStartAndEnd().IsEmpty())
+					{
+						OutErrors.Add(FString::Printf(TEXT("nodes[%d]_missing_component"), NodeIndex));
+					}
+					if (NodeSpec.Event.TrimStartAndEnd().IsEmpty())
+					{
+						OutErrors.Add(FString::Printf(TEXT("nodes[%d]_missing_event"), NodeIndex));
 					}
 				}
 				else if (NodeSpec.Type.Equals(TEXT("K2Node_SpawnActor"), ESearchCase::CaseSensitive))
