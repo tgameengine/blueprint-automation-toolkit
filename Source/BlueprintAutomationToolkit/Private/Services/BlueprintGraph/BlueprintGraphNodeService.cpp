@@ -34,6 +34,27 @@ namespace
 	static constexpr TCHAR UasNodeIdPrefix[] = TEXT("[BAT:id=");
 	static constexpr TCHAR UasNodeIdSuffix[] = TEXT("]");
 
+	static bool TryExtractNodeIdFromComment(const FString& Comment, FString& OutNodeId)
+	{
+		OutNodeId.Reset();
+		const FString Prefix(UasNodeIdPrefix);
+		const int32 PrefixPos = Comment.Find(Prefix, ESearchCase::CaseSensitive);
+		if (PrefixPos == INDEX_NONE)
+		{
+			return false;
+		}
+
+		const int32 IdStart = PrefixPos + Prefix.Len();
+		const int32 SuffixPos = Comment.Find(UasNodeIdSuffix, ESearchCase::CaseSensitive, ESearchDir::FromStart, IdStart);
+		if (SuffixPos == INDEX_NONE || SuffixPos <= IdStart)
+		{
+			return false;
+		}
+
+		OutNodeId = Comment.Mid(IdStart, SuffixPos - IdStart);
+		return !OutNodeId.IsEmpty();
+	}
+
 	struct FResolvedEditableProperty
 
 	{
@@ -990,7 +1011,6 @@ UEdGraphNode* FBlueprintGraphNodeService::FindNodeByUasId(UEdGraph* Graph, const
 		}
 	}
 
-	const FString Prefix(UasNodeIdPrefix);
 	for (UEdGraphNode* Node : Graph->Nodes)
 	{
 		if (!Node)
@@ -998,28 +1018,25 @@ UEdGraphNode* FBlueprintGraphNodeService::FindNodeByUasId(UEdGraph* Graph, const
 			continue;
 		}
 
-		const FString& Comment = Node->NodeComment;
-		const int32 PrefixPos = Comment.Find(Prefix, ESearchCase::CaseSensitive);
-		if (PrefixPos == INDEX_NONE)
-		{
-			continue;
-		}
-
-		const int32 IdStart = PrefixPos + Prefix.Len();
-		const int32 SuffixPos = Comment.Find(UasNodeIdSuffix, ESearchCase::CaseSensitive, ESearchDir::FromStart, IdStart);
-		if (SuffixPos == INDEX_NONE || SuffixPos <= IdStart)
-		{
-			continue;
-		}
-
-		const FString ParsedId = Comment.Mid(IdStart, SuffixPos - IdStart);
-		if (ParsedId.Equals(NodeId, ESearchCase::CaseSensitive))
+		FString ParsedId;
+		if (TryExtractNodeIdFromComment(Node->NodeComment, ParsedId) && ParsedId.Equals(NodeId, ESearchCase::CaseSensitive))
 		{
 			return Node;
 		}
 	}
 
 	return nullptr;
+}
+
+bool FBlueprintGraphNodeService::TryGetNodeUasId(UEdGraphNode* Node, FString& OutNodeId)
+{
+	if (!Node)
+	{
+		OutNodeId.Reset();
+		return false;
+	}
+
+	return TryExtractNodeIdFromComment(Node->NodeComment, OutNodeId);
 }
 
 void FBlueprintGraphNodeService::SetNodeUasId(UEdGraphNode* Node, const FString& NodeId)

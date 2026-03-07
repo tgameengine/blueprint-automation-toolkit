@@ -16,6 +16,7 @@ class FBlueprintGraphNodeService
 public:
 	static void ApplyNodes(UBlueprint* Blueprint, UEdGraph* Graph, const TArray<FBlueprintGraphApplyNodeSpec>& NodeSpecs, bool bWillMutate, bool bCreateMissingNodes, FBlueprintGraphApplyResult& InOutResult, TMap<FString, UEdGraphNode*>& OutNodeById, TSet<FString>& OutCreatedNodeIds);
 	static UEdGraphNode* FindNodeByUasId(UEdGraph* Graph, const FString& NodeId);
+	static bool TryGetNodeUasId(UEdGraphNode* Node, FString& OutNodeId);
 	static void SetNodeUasId(UEdGraphNode* Node, const FString& NodeId);
 	static UEdGraphNode* ResolveNodeReferenceInGraph(UEdGraph* Graph, const TMap<FString, UEdGraphNode*>& RequestNodeMap, const FString& NodeId);
 	static UEdGraphPin* FindPinSmart(UEdGraphNode* Node, const FString& PinName);

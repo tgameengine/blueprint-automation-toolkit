@@ -9,6 +9,53 @@
 #include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 #include "Services/BlueprintGraph/BlueprintGraphValidationService.h"
 
+namespace
+{
+	static void ExpandConnectedBatNodeIds(UEdGraph* Graph, TMap<FString, UEdGraphNode*>& InOutNodeById, TSet<FString>& InOutNodeIds)
+	{
+		if (!Graph || InOutNodeIds.Num() == 0)
+		{
+			return;
+		}
+
+		TArray<FString> Frontier = InOutNodeIds.Array();
+		for (int32 Index = 0; Index < Frontier.Num(); ++Index)
+		{
+			const FString CurrentNodeId = Frontier[Index];
+			UEdGraphNode* CurrentNode = FBlueprintGraphNodeService::ResolveNodeReferenceInGraph(Graph, InOutNodeById, CurrentNodeId);
+			if (!CurrentNode)
+			{
+				continue;
+			}
+
+			for (UEdGraphPin* Pin : CurrentNode->Pins)
+			{
+				if (!Pin)
+				{
+					continue;
+				}
+
+				for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+				{
+					UEdGraphNode* NeighborNode = LinkedPin ? LinkedPin->GetOwningNode() : nullptr;
+					FString NeighborNodeId;
+					if (!NeighborNode || !FBlueprintGraphNodeService::TryGetNodeUasId(NeighborNode, NeighborNodeId) || NeighborNodeId.IsEmpty())
+					{
+						continue;
+					}
+
+					if (!InOutNodeIds.Contains(NeighborNodeId))
+					{
+						InOutNodeIds.Add(NeighborNodeId);
+						InOutNodeById.Add(NeighborNodeId, NeighborNode);
+						Frontier.Add(NeighborNodeId);
+					}
+				}
+			}
+		}
+	}
+}
+
 FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphApplyRequest& Request)
 {
 	FBlueprintGraphApplyResult ApplyResult;
@@ -47,6 +94,10 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 					NodeIdsToArrange.Add(NodeSpec.Id);
 				}
 			}
+		}
+		if (Request.Options.bAutoArrangeConnectedNodes)
+		{
+			ExpandConnectedBatNodeIds(Target.Graph, NodeById, NodeIdsToArrange);
 		}
 		FBlueprintGraphLayoutService::AutoArrangeNodes(Target.Graph, NodeById, NodeIdsToArrange);
 	}

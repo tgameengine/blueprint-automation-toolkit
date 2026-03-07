@@ -12,6 +12,7 @@ struct FBlueprintGraphApplyOptions
 	bool bDryRun = false;
 	bool bCreateMissingNodes = true;
 	bool bAutoArrangeExistingNodes = false;
+	bool bAutoArrangeConnectedNodes = false;
 };
 
 struct FBlueprintGraphApplyNodeSpec

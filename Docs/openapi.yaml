@@ -784,6 +784,9 @@ paths:
                     autoArrangeExistingNodes:
                       type: boolean
                       description: When true, BAT re-aligns the referenced existing BAT-owned nodes using their current graph links after applying changes.
+                    autoArrangeConnectedNodes:
+                      type: boolean
+                      description: When true, BAT expands auto-arrangement from the referenced nodes to connected BAT-owned neighbors and lays out the whole connected subgraph by flow.
                 nodes:
                   type: array
                   items:
