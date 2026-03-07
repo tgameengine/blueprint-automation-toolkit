@@ -5,6 +5,7 @@
 #include "Commands/CommandDispatcher.h"
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Core/ForwardAxis.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Editor.h"
@@ -1395,15 +1396,14 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 				return false;
 			}
 
-			ForwardAxis.TrimStartAndEndInline();
-			ForwardAxis.ToUpperInline();
-			if (!(ForwardAxis.IsEmpty()
-				|| ForwardAxis.Equals(TEXT("X"), ESearchCase::CaseSensitive)
-				|| ForwardAxis.Equals(TEXT("Y"), ESearchCase::CaseSensitive)
-				|| ForwardAxis.Equals(TEXT("Z"), ESearchCase::CaseSensitive)))
+			const FString TrimmedAxis = ForwardAxis.TrimStartAndEnd();
+			if (!TrimmedAxis.IsEmpty())
 			{
-				OutError = TEXT("'forward_axis' must be one of 'X', 'Y', or 'Z'");
-				return false;
+				FString CanonicalForwardAxis;
+				if (!BAT::ForwardAxis::TryNormalizeAxis(TrimmedAxis, CanonicalForwardAxis, OutError))
+				{
+					return false;
+				}
 			}
 		}
 	}

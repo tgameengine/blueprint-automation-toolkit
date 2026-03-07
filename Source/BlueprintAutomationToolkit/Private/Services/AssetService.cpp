@@ -1,6 +1,7 @@
 #include "Services/AssetService.h"
 
 #include "BlueprintAutomationToolkitModule.h"
+#include "Core/ForwardAxis.h"
 #include "Domain/Requests/AssetSaveRequest.h"
 
 #include "Animation/AnimData/IAnimationDataController.h"
@@ -73,52 +74,6 @@ namespace
 		SaveArgs.SaveFlags = SAVE_NoError;
 		Package->MarkPackageDirty();
 		return UPackage::SavePackage(Package, ObjectToSave, *Filename, SaveArgs);
-	}
-
-	static bool TryParseForwardAxisVector(const FString& InAxis, FVector& OutForwardVector, FString& OutError)
-	{
-		FString Axis = InAxis;
-		Axis.TrimStartAndEndInline();
-		Axis.ToUpperInline();
-
-		if (Axis.IsEmpty() || Axis.Equals(TEXT("X"), ESearchCase::CaseSensitive))
-		{
-			OutForwardVector = FVector::ForwardVector;
-			return true;
-		}
-		if (Axis.Equals(TEXT("Y"), ESearchCase::CaseSensitive))
-		{
-			OutForwardVector = FVector::RightVector;
-			return true;
-		}
-		if (Axis.Equals(TEXT("Z"), ESearchCase::CaseSensitive))
-		{
-			OutForwardVector = FVector::UpVector;
-			return true;
-		}
-
-		OutError = TEXT("'forward_axis' must be one of 'X', 'Y', or 'Z'");
-		return false;
-	}
-
-	static bool TryBuildForwardAxisToUnrealQuat(const FString& InAxis, FQuat& OutQuat, FString& OutError)
-	{
-		OutQuat = FQuat::Identity;
-		OutError.Reset();
-
-		FVector SourceForwardVector = FVector::ForwardVector;
-		if (!TryParseForwardAxisVector(InAxis, SourceForwardVector, OutError))
-		{
-			return false;
-		}
-
-		if (SourceForwardVector.Equals(FVector::ForwardVector))
-		{
-			return true;
-		}
-
-		OutQuat = FQuat::FindBetweenNormals(SourceForwardVector, FVector::ForwardVector);
-		return true;
 	}
 
 	static void ApplyForwardAxisToVectorKeys(TArray<FVector>& Keys, const FQuat& AxisToUnrealQuat)
@@ -499,8 +454,9 @@ FAutomationResult FAssetService::CreateAsset(FBlueprintAutomationToolkitModule& 
 		FString ForwardAxis;
 		BodyObj->TryGetStringField(TEXT("forward_axis"), ForwardAxis);
 		FQuat AxisToUnrealQuat = FQuat::Identity;
+		FString CanonicalForwardAxis;
 		FString AxisError;
-		if (!TryBuildForwardAxisToUnrealQuat(ForwardAxis, AxisToUnrealQuat, AxisError))
+		if (!BAT::ForwardAxis::TryBuildAxisToUnrealQuat(ForwardAxis, AxisToUnrealQuat, CanonicalForwardAxis, AxisError))
 		{
 			return FAutomationResult::Error(TEXT("bad_args"), AxisError, 400);
 		}
@@ -623,9 +579,7 @@ FAutomationResult FAssetService::CreateAsset(FBlueprintAutomationToolkitModule& 
 		Data->SetNumberField(TEXT("tracks"), ParsedTracks.Num());
 		if (!ForwardAxis.TrimStartAndEnd().IsEmpty())
 		{
-			ForwardAxis.TrimStartAndEndInline();
-			ForwardAxis.ToUpperInline();
-			Data->SetStringField(TEXT("forward_axis"), ForwardAxis);
+			Data->SetStringField(TEXT("forward_axis"), CanonicalForwardAxis);
 		}
 		Data->SetBoolField(TEXT("saved"), Request.bSave);
 		return FAutomationResult::Ok(MakeShared<FJsonValueObject>(Data));

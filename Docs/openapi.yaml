@@ -353,6 +353,7 @@ paths:
         Each track entry uses `bone_name` plus optional `position_keys`, `rotation_keys`, and `scale_keys`.
         `rotation_keys` entries accept either `[pitch, yaw, roll]` or quaternion `[x, y, z, w]` arrays.
         When `forward_axis` is provided, incoming track vectors and rotations are remapped into Unreal's `+X` forward frame before the asset is written.
+        Canonical values are `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases such as `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are accepted.
       requestBody:
         required: true
         content:
@@ -377,7 +378,7 @@ paths:
                   type: integer
                 forward_axis:
                   type: string
-                  enum: [X, Y, Z]
+                  description: Canonical values `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases like `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are also accepted.
                 save:
                   type: boolean
                 tracks:
@@ -753,7 +754,7 @@ paths:
   /blueprint/graph/apply:
     post:
       summary: Canonically apply Blueprint graph edits
-      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts, compile/save status, and structured compiler diagnostics under compileDiagnostics when compile is requested. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
+      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts, compile/save status, and structured compiler diagnostics under compileDiagnostics when compile is requested. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import. Canonical values are `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases such as `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are accepted.
       requestBody:
         required: true
         content:
@@ -773,7 +774,7 @@ paths:
                     properties:
                       forward_axis:
                         type: string
-                        enum: [X, Y, Z]
+                        description: Canonical values `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases like `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are also accepted.
                 links:
                   type: array
                   items:

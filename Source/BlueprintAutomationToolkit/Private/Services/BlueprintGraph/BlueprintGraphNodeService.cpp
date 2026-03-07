@@ -1,5 +1,7 @@
 #include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 
+#include "Core/ForwardAxis.h"
+
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "EdGraph/EdGraph.h"
@@ -57,52 +59,6 @@ namespace
 		}
 
 		return Path;
-	}
-
-	static bool TryParseForwardAxisVector(const FString& InAxis, FVector& OutForwardVector, FString& OutError)
-	{
-		FString Axis = InAxis;
-		Axis.TrimStartAndEndInline();
-		Axis.ToUpperInline();
-
-		if (Axis.IsEmpty() || Axis.Equals(TEXT("X"), ESearchCase::CaseSensitive))
-		{
-			OutForwardVector = FVector::ForwardVector;
-			return true;
-		}
-		if (Axis.Equals(TEXT("Y"), ESearchCase::CaseSensitive))
-		{
-			OutForwardVector = FVector::RightVector;
-			return true;
-		}
-		if (Axis.Equals(TEXT("Z"), ESearchCase::CaseSensitive))
-		{
-			OutForwardVector = FVector::UpVector;
-			return true;
-		}
-
-		OutError = TEXT("forward_axis must be one of 'X', 'Y', or 'Z'");
-		return false;
-	}
-
-	static bool TryBuildForwardAxisToUnrealQuat(const FString& InAxis, FQuat& OutQuat, FString& OutError)
-	{
-		OutQuat = FQuat::Identity;
-		OutError.Reset();
-
-		FVector SourceForwardVector = FVector::ForwardVector;
-		if (!TryParseForwardAxisVector(InAxis, SourceForwardVector, OutError))
-		{
-			return false;
-		}
-
-		if (SourceForwardVector.Equals(FVector::ForwardVector))
-		{
-			return true;
-		}
-
-		OutQuat = FQuat::FindBetweenNormals(SourceForwardVector, FVector::ForwardVector);
-		return true;
 	}
 
 	static void ApplyForwardAxisToVector(FVector& InOutVector, const FQuat& AxisToUnrealQuat)
@@ -240,7 +196,7 @@ namespace
 
 		FQuat AxisToUnrealQuat = FQuat::Identity;
 		FString AxisError;
-		if (!TryBuildForwardAxisToUnrealQuat(ForwardAxis, AxisToUnrealQuat, AxisError))
+		if (!BAT::ForwardAxis::TryBuildAxisToUnrealQuat(ForwardAxis, AxisToUnrealQuat, AxisError))
 		{
 			InOutResult.Errors.Add(FString::Printf(TEXT("node_property_axis_failed:%s:%s:%s"), *NodeId, *PropertyPath, *AxisError));
 			return true;

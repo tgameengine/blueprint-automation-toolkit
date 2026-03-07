@@ -5,12 +5,14 @@
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/SetPropertyCommand.h"
 #include "Commands/AutomationCommand.h"
+#include "Core/ForwardAxis.h"
 #include "Domain/Requests/AssetSaveRequest.h"
 #include "Dom/JsonObject.h"
 #include "Misc/AutomationTest.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "Http/HttpRequestUtils.h"
 #include "Services/AssetService.h"
 #include "Transport/RequestParsing.h"
@@ -48,6 +50,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingBuildsBodyTest, "Bluep
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetDuplicateServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.DuplicateServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, "BlueprintAutomationToolkit.Assets.CreateServiceRejectsInvalidClass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListPropertiesTest, "BlueprintAutomationToolkit.Reflection.ListProperties", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -634,6 +638,60 @@ bool FBATAssetSaveServiceRejectsEmptyRequestTest::RunTest(const FString& Paramet
 	TestEqual(TEXT("Asset save service should report bad_args for an empty request"), Result.ErrorCode, FString(TEXT("bad_args")));
 	TestEqual(TEXT("Asset save service should use HTTP 400 for an empty request"), Result.StatusCode, 400);
 	return true;
+}
+
+bool FBATForwardAxisAliasesNormalizeTest::RunTest(const FString& Parameters)
+{
+	FString CanonicalAxis;
+	FString Error;
+
+	TestTrue(TEXT("Forward-axis helper should accept 'left'"), BAT::ForwardAxis::TryNormalizeAxis(TEXT("left"), CanonicalAxis, Error));
+	TestEqual(TEXT("'left' should normalize to -Y"), CanonicalAxis, FString(TEXT("-Y")));
+
+	TestTrue(TEXT("Forward-axis helper should accept '+Z'"), BAT::ForwardAxis::TryNormalizeAxis(TEXT(" +Z "), CanonicalAxis, Error));
+	TestEqual(TEXT("'+Z' should normalize to Z"), CanonicalAxis, FString(TEXT("Z")));
+
+	FQuat AxisToUnrealQuat = FQuat::Identity;
+	TestTrue(TEXT("Forward-axis helper should build a quaternion for -Y"), BAT::ForwardAxis::TryBuildAxisToUnrealQuat(TEXT("-Y"), AxisToUnrealQuat, Error));
+	TestTrue(TEXT("-Y should rotate to Unreal forward"), AxisToUnrealQuat.RotateVector(-FVector::RightVector).Equals(FVector::ForwardVector, KINDA_SMALL_NUMBER));
+	return true;
+}
+
+bool FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), TEXT("/Game/Test/BP_Test"));
+	Body->SetStringField(TEXT("graph"), TEXT("AnimGraph"));
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("id"), TEXT("pose_node"));
+	Node->SetStringField(TEXT("type"), TEXT("AnimGraphNode_ModifyBone"));
+	Node->SetStringField(TEXT("forward_axis"), TEXT("left"));
+
+	TArray<TSharedPtr<FJsonValue>> Nodes;
+	Nodes.Add(MakeShared<FJsonValueObject>(Node));
+	Body->SetArrayField(TEXT("nodes"), Nodes);
+
+	Body->SetArrayField(TEXT("links"), TArray<TSharedPtr<FJsonValue>>());
+
+	FBlueprintGraphApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::BlueprintGraphApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("Graph apply request should accept signed and alias forward axes"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	if (!TestEqual(TEXT("Graph apply request should preserve one node"), Request.Nodes.Num(), 1))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Graph apply request should canonicalize alias axes"), Request.Nodes[0].ForwardAxis, FString(TEXT("-Y")));
 }
 
 bool FBATCanceledJobRemainsCanceledTest::RunTest(const FString& Parameters)

@@ -1,5 +1,7 @@
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 
+#include "Core/ForwardAxis.h"
+
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
@@ -179,12 +181,15 @@ namespace BAT::BlueprintGraphApplyRequest
 				{
 					if (!NodeSpec.ForwardAxis.TrimStartAndEnd().IsEmpty())
 					{
-						const FString Axis = NodeSpec.ForwardAxis.TrimStartAndEnd().ToUpper();
-						if (!(Axis.Equals(TEXT("X"), ESearchCase::CaseSensitive)
-							|| Axis.Equals(TEXT("Y"), ESearchCase::CaseSensitive)
-							|| Axis.Equals(TEXT("Z"), ESearchCase::CaseSensitive)))
+						FString CanonicalForwardAxis;
+						FString AxisError;
+						if (!BAT::ForwardAxis::TryNormalizeAxis(NodeSpec.ForwardAxis, CanonicalForwardAxis, AxisError))
 						{
 							OutErrors.Add(FString::Printf(TEXT("nodes[%d]_invalid_forward_axis"), NodeIndex));
+						}
+						else
+						{
+							NodeSpec.ForwardAxis = CanonicalForwardAxis;
 						}
 					}
 				}
