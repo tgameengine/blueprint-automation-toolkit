@@ -10,12 +10,14 @@ struct FBlueprintGraphApplyOptions
 	bool bSave = false;
 	bool bUseTransaction = true;
 	bool bDryRun = false;
+	bool bCreateMissingNodes = true;
 };
 
 struct FBlueprintGraphApplyNodeSpec
 {
 	FString Id;
 	FString Type;
+	bool bUpdateOnly = false;
 	FString ForwardAxis;
 	FString Event;
 	FString ClassPath;

@@ -9,6 +9,8 @@
 #include "Engine/Blueprint.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Misc/PackageName.h"
+#include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
+#include "Services/BlueprintGraphService.h"
 #include "Services/Reflection/ReflectionTypes.h"
 
 namespace
@@ -173,7 +175,75 @@ namespace
 		return NodeObj;
 	}
 
-	static void BuildGraphSnapshot(UBlueprint* Blueprint, UEdGraph* Graph, TSharedRef<FJsonObject>& OutGraphObj)
+	static TSharedRef<FJsonObject> MakeNodeValidationIssueObject(const FBlueprintGraphNodeValidationIssue& Issue)
+	{
+		TSharedRef<FJsonObject> IssueObj = MakeShared<FJsonObject>();
+		IssueObj->SetStringField(TEXT("nodeId"), Issue.NodeId);
+		IssueObj->SetStringField(TEXT("code"), Issue.Code);
+		IssueObj->SetStringField(TEXT("message"), Issue.Message);
+		IssueObj->SetStringField(TEXT("severity"), Issue.Severity);
+		if (!Issue.PropertyPath.IsEmpty())
+		{
+			IssueObj->SetStringField(TEXT("propertyPath"), Issue.PropertyPath);
+		}
+		return IssueObj;
+	}
+
+	static void AddNodeInspectionData(UEdGraphNode* Node, TSharedRef<FJsonObject>& NodeObj, const bool bIncludeNodeProperties, const bool bIncludeNodeValidation, const TArray<FString>& RequestedPropertyPaths)
+	{
+		if (!Node)
+		{
+			return;
+		}
+
+		if (bIncludeNodeProperties)
+		{
+			TArray<FString> PropertyPaths = RequestedPropertyPaths;
+			if (PropertyPaths.Num() == 0)
+			{
+				FBlueprintGraphNodeService::GetDefaultInspectionPropertyPaths(Node, PropertyPaths);
+			}
+
+			TSharedRef<FJsonObject> PropertiesObj = MakeShared<FJsonObject>();
+			TArray<TSharedPtr<FJsonValue>> PropertyWarnings;
+			for (const FString& PropertyPath : PropertyPaths)
+			{
+				FString ExportedValue;
+				FString ExportError;
+				if (FBlueprintGraphNodeService::TryExportNodePropertyText(Node, PropertyPath, ExportedValue, ExportError))
+				{
+					PropertiesObj->SetStringField(PropertyPath, ExportedValue);
+				}
+				else
+				{
+					TSharedRef<FJsonObject> WarningObj = MakeShared<FJsonObject>();
+					WarningObj->SetStringField(TEXT("propertyPath"), PropertyPath);
+					WarningObj->SetStringField(TEXT("message"), ExportError);
+					PropertyWarnings.Add(MakeShared<FJsonValueObject>(WarningObj));
+				}
+			}
+
+			NodeObj->SetObjectField(TEXT("properties"), PropertiesObj);
+			if (PropertyWarnings.Num() > 0)
+			{
+				NodeObj->SetArrayField(TEXT("propertyWarnings"), PropertyWarnings);
+			}
+		}
+
+		if (bIncludeNodeValidation)
+		{
+			TArray<FBlueprintGraphNodeValidationIssue> Issues;
+			FBlueprintGraphNodeService::CollectNodeValidationIssues(Node, GetStableNodeId(Node), Issues);
+			TArray<TSharedPtr<FJsonValue>> IssueValues;
+			for (const FBlueprintGraphNodeValidationIssue& Issue : Issues)
+			{
+				IssueValues.Add(MakeShared<FJsonValueObject>(MakeNodeValidationIssueObject(Issue)));
+			}
+			NodeObj->SetArrayField(TEXT("validation"), IssueValues);
+		}
+	}
+
+	static void BuildGraphSnapshot(UBlueprint* Blueprint, UEdGraph* Graph, const bool bIncludeNodeProperties, const bool bIncludeNodeValidation, const TArray<FString>& RequestedPropertyPaths, TSharedRef<FJsonObject>& OutGraphObj)
 	{
 		OutGraphObj->SetStringField(TEXT("name"), Graph->GetName());
 		OutGraphObj->SetStringField(TEXT("kind"), GetGraphKind(Blueprint, Graph));
@@ -190,7 +260,9 @@ namespace
 
 			const FString NodeId = GetStableNodeId(Node);
 			NodeIds.Add(Node, NodeId);
-			NodeValues.Add(MakeShared<FJsonValueObject>(DescribeNode(Node)));
+			TSharedRef<FJsonObject> NodeObj = DescribeNode(Node);
+			AddNodeInspectionData(Node, NodeObj, bIncludeNodeProperties, bIncludeNodeValidation, RequestedPropertyPaths);
+			NodeValues.Add(MakeShared<FJsonValueObject>(NodeObj));
 		}
 		OutGraphObj->SetArrayField(TEXT("nodes"), NodeValues);
 
@@ -263,9 +335,29 @@ FAutomationResult FReadGraphCommand::Execute(FAutomationContext& Context)
 
 	FString GraphName;
 	Context.Body->TryGetStringField(TEXT("graph"), GraphName);
+	bool bIncludeNodeProperties = false;
+	bool bIncludeNodeValidation = false;
+	Context.Body->TryGetBoolField(TEXT("includeNodeProperties"), bIncludeNodeProperties);
+	Context.Body->TryGetBoolField(TEXT("includeNodeValidation"), bIncludeNodeValidation);
+
+	TArray<FString> RequestedPropertyPaths;
+	if (const TArray<TSharedPtr<FJsonValue>>* PropertyPaths = nullptr; Context.Body->TryGetArrayField(TEXT("propertyPaths"), PropertyPaths) && PropertyPaths)
+	{
+		for (const TSharedPtr<FJsonValue>& PropertyPathValue : *PropertyPaths)
+		{
+			if (PropertyPathValue.IsValid() && PropertyPathValue->Type == EJson::String)
+			{
+				const FString PropertyPath = PropertyPathValue->AsString().TrimStartAndEnd();
+				if (!PropertyPath.IsEmpty())
+				{
+					RequestedPropertyPaths.AddUnique(PropertyPath);
+				}
+			}
+		}
+	}
 
 	TOptional<FAutomationResult> Result;
-	const bool bCompleted = BAT::EditorExecution::RunOnGameThreadAndWaitVoid([&Context, BlueprintPath, GraphName, &Result]()
+	const bool bCompleted = BAT::EditorExecution::RunOnGameThreadAndWaitVoid([&Context, BlueprintPath, GraphName, bIncludeNodeProperties, bIncludeNodeValidation, RequestedPropertyPaths, &Result]()
 	{
 		const FString ObjectPath = NormalizeBlueprintObjectPath(BlueprintPath);
 		UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *ObjectPath);
@@ -311,7 +403,7 @@ FAutomationResult FReadGraphCommand::Execute(FAutomationContext& Context)
 		}
 
 		TSharedRef<FJsonObject> GraphObj = MakeShared<FJsonObject>();
-		BuildGraphSnapshot(Blueprint, Graph, GraphObj);
+		BuildGraphSnapshot(Blueprint, Graph, bIncludeNodeProperties, bIncludeNodeValidation, RequestedPropertyPaths, GraphObj);
 		Data->SetObjectField(TEXT("graph"), GraphObj);
 		Result = BAT::Reflection::MakeStructuredSuccess(Context.RequestId, Data);
 	}, 10.0f);

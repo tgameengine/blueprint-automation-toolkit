@@ -31,7 +31,7 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 	}
 
 	TMap<FString, UEdGraphNode*> NodeById;
-	FBlueprintGraphNodeService::ApplyNodes(Target.Blueprint, Target.Graph, Request.Nodes, bWillMutate, ApplyResult, NodeById);
+	FBlueprintGraphNodeService::ApplyNodes(Target.Blueprint, Target.Graph, Request.Nodes, bWillMutate, Request.Options.bCreateMissingNodes, ApplyResult, NodeById);
 	FBlueprintGraphLinkService::ApplyLinks(Target.Graph, Request.Links, NodeById, Request.Options.bDryRun, ApplyResult);
 	if (bWillMutate)
 	{

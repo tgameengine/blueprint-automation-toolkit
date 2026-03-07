@@ -82,6 +82,16 @@ namespace BAT::Transport
 	TSharedPtr<FJsonObject> BuildBlueprintGraphReadQueryBody(const FHttpServerRequest& Request)
 	{
 		TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
+
+		auto CopyBool = [&Request, &Body](const TCHAR* QueryName, const TCHAR* FieldName)
+		{
+			if (const FString* Value = Request.QueryParams.Find(QueryName))
+			{
+				const bool bValue = Value->Equals(TEXT("true"), ESearchCase::IgnoreCase) || Value->Equals(TEXT("1"), ESearchCase::CaseSensitive);
+				Body->SetBoolField(FieldName, bValue);
+			}
+		};
+
 		if (const FString* Blueprint = Request.QueryParams.Find(TEXT("blueprint")); Blueprint && !Blueprint->TrimStartAndEnd().IsEmpty())
 		{
 			Body->SetStringField(TEXT("blueprint"), *Blueprint);
@@ -89,6 +99,27 @@ namespace BAT::Transport
 		if (const FString* Graph = Request.QueryParams.Find(TEXT("graph")); Graph && !Graph->TrimStartAndEnd().IsEmpty())
 		{
 			Body->SetStringField(TEXT("graph"), *Graph);
+		}
+		CopyBool(TEXT("includeNodeProperties"), TEXT("includeNodeProperties"));
+		CopyBool(TEXT("includeNodeValidation"), TEXT("includeNodeValidation"));
+
+		if (const FString* PropertyPaths = Request.QueryParams.Find(TEXT("propertyPaths")); PropertyPaths && !PropertyPaths->TrimStartAndEnd().IsEmpty())
+		{
+			TArray<FString> SplitValues;
+			PropertyPaths->ParseIntoArray(SplitValues, TEXT(","), true);
+			TArray<TSharedPtr<FJsonValue>> PropertyPathValues;
+			for (const FString& PropertyPath : SplitValues)
+			{
+				const FString Trimmed = PropertyPath.TrimStartAndEnd();
+				if (!Trimmed.IsEmpty())
+				{
+					PropertyPathValues.Add(MakeShared<FJsonValueString>(Trimmed));
+				}
+			}
+			if (PropertyPathValues.Num() > 0)
+			{
+				Body->SetArrayField(TEXT("propertyPaths"), PropertyPathValues);
+			}
 		}
 		return Body;
 	}

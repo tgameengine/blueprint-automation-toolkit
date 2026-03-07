@@ -57,6 +57,7 @@ namespace BAT::BlueprintGraphApplyRequest
 			OptionsObj->TryGetBoolField(TEXT("save"), OutRequest.Options.bSave);
 			OptionsObj->TryGetBoolField(TEXT("transaction"), OutRequest.Options.bUseTransaction);
 			OptionsObj->TryGetBoolField(TEXT("dryRun"), OutRequest.Options.bDryRun);
+			OptionsObj->TryGetBoolField(TEXT("createMissingNodes"), OutRequest.Options.bCreateMissingNodes);
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>* NodesArray = nullptr;
@@ -87,7 +88,12 @@ namespace BAT::BlueprintGraphApplyRequest
 				const TSharedPtr<FJsonObject> NodeObj = NodeValue->AsObject();
 				FBlueprintGraphApplyNodeSpec NodeSpec;
 				TryGetRequiredString(NodeObj, TEXT("id"), NodeSpec.Id, OutErrors);
-				TryGetRequiredString(NodeObj, TEXT("type"), NodeSpec.Type, OutErrors);
+				NodeObj->TryGetStringField(TEXT("type"), NodeSpec.Type);
+				NodeObj->TryGetBoolField(TEXT("updateOnly"), NodeSpec.bUpdateOnly);
+				if (!NodeSpec.bUpdateOnly)
+				{
+					NodeObj->TryGetBoolField(TEXT("update_only"), NodeSpec.bUpdateOnly);
+				}
 				NodeObj->TryGetStringField(TEXT("forward_axis"), NodeSpec.ForwardAxis);
 				NodeObj->TryGetStringField(TEXT("event"), NodeSpec.Event);
 				NodeObj->TryGetStringField(TEXT("class"), NodeSpec.ClassPath);
@@ -99,6 +105,11 @@ namespace BAT::BlueprintGraphApplyRequest
 				NodeObj->TryGetNumberField(TEXT("y"), NodeSpec.Y);
 				NodeObj->TryGetNumberField(TEXT("outputs"), NodeSpec.Outputs);
 
+				if (NodeSpec.Type.TrimStartAndEnd().IsEmpty() && !NodeSpec.bUpdateOnly)
+				{
+					OutErrors.Add(FString::Printf(TEXT("nodes[%d]_missing_type"), NodeIndex));
+				}
+
 				if (!NodeSpec.Id.IsEmpty())
 				{
 					if (SeenIds.Contains(NodeSpec.Id))
@@ -108,7 +119,10 @@ namespace BAT::BlueprintGraphApplyRequest
 					SeenIds.Add(NodeSpec.Id);
 				}
 
-				if (NodeSpec.Type.Equals(TEXT("K2Node_Event"), ESearchCase::CaseSensitive))
+				if (NodeSpec.Type.TrimStartAndEnd().IsEmpty())
+				{
+				}
+				else if (NodeSpec.Type.Equals(TEXT("K2Node_Event"), ESearchCase::CaseSensitive))
 				{
 					if (!NodeSpec.Event.Equals(TEXT("BeginPlay"), ESearchCase::CaseSensitive))
 					{

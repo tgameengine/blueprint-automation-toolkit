@@ -754,7 +754,7 @@ paths:
   /blueprint/graph/apply:
     post:
       summary: Canonically apply Blueprint graph edits
-      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts, compile/save status, and structured compiler diagnostics under compileDiagnostics when compile is requested. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import. Canonical values are `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases such as `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are accepted.
+      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts, per-node validation issues, compile/save status, and structured compiler diagnostics under compileDiagnostics when compile is requested. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import. Canonical values are `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases such as `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are accepted.
       requestBody:
         required: true
         content:
@@ -767,14 +767,44 @@ paths:
                   type: string
                 graph:
                   type: string
+                options:
+                  type: object
+                  properties:
+                    compile:
+                      type: boolean
+                    save:
+                      type: boolean
+                    transaction:
+                      type: boolean
+                    dryRun:
+                      type: boolean
+                    createMissingNodes:
+                      type: boolean
+                      description: When false, node updates must target existing BAT-owned nodes instead of creating missing ones.
                 nodes:
                   type: array
                   items:
                     type: object
                     properties:
+                      id:
+                        type: string
+                      type:
+                        type: string
+                        description: Optional for `updateOnly` node patches that target an existing BAT-owned node.
+                      updateOnly:
+                        type: boolean
+                        description: When true, the request updates an existing node in place and fails if the node is missing.
                       forward_axis:
                         type: string
                         description: Canonical values `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases like `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are also accepted.
+                      properties:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      pins:
+                        type: object
+                        additionalProperties:
+                          type: string
                 links:
                   type: array
                   items:
@@ -843,7 +873,7 @@ paths:
   /blueprint/graph/read:
     get:
       summary: Preferred Blueprint graph introspection endpoint
-      description: Returns graph summaries when only `blueprint` is provided, or a full node/link snapshot when both `blueprint` and `graph` are provided.
+      description: Returns graph summaries when only `blueprint` is provided, or a full node/link snapshot when both `blueprint` and `graph` are provided. Optional flags can include selected resolved node properties and machine-readable node validation issues for AI inspection.
       parameters:
         - in: query
           name: blueprint
@@ -854,6 +884,19 @@ paths:
           name: graph
           schema:
             type: string
+        - in: query
+          name: includeNodeProperties
+          schema:
+            type: boolean
+        - in: query
+          name: includeNodeValidation
+          schema:
+            type: boolean
+        - in: query
+          name: propertyPaths
+          schema:
+            type: string
+          description: Comma-separated property paths to export from each node. When omitted and `includeNodeProperties=true`, node-type defaults are used for supported AnimGraph nodes.
       responses:
         '200':
           description: Blueprint graph read result

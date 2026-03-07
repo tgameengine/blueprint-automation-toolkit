@@ -234,6 +234,23 @@ TSharedPtr<FJsonValue> FBlueprintGraphValidationService::MakeApplyResultData(con
 	}
 	Data->SetArrayField(TEXT("updatedNodes"), UpdatedNodeValues);
 	Data->SetNumberField(TEXT("createdLinks"), Result.CreatedLinks);
+
+	TArray<TSharedPtr<FJsonValue>> NodeValidationValues;
+	for (const FBlueprintGraphNodeValidationIssue& Issue : Result.NodeValidationIssues)
+	{
+		TSharedRef<FJsonObject> IssueObj = MakeShared<FJsonObject>();
+		IssueObj->SetStringField(TEXT("nodeId"), Issue.NodeId);
+		IssueObj->SetStringField(TEXT("code"), Issue.Code);
+		IssueObj->SetStringField(TEXT("message"), Issue.Message);
+		IssueObj->SetStringField(TEXT("severity"), Issue.Severity);
+		if (!Issue.PropertyPath.IsEmpty())
+		{
+			IssueObj->SetStringField(TEXT("propertyPath"), Issue.PropertyPath);
+		}
+		NodeValidationValues.Add(MakeShared<FJsonValueObject>(IssueObj));
+	}
+	Data->SetArrayField(TEXT("nodeValidation"), NodeValidationValues);
+
 	Data->SetStringField(TEXT("compileStatus"), Result.CompileStatus);
 	Data->SetStringField(TEXT("saveStatus"), Result.SaveStatus);
 

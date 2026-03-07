@@ -9,6 +9,15 @@ class UBlueprint;
 class UEdGraph;
 class UEdGraphNode;
 
+struct FBlueprintGraphNodeValidationIssue
+{
+	FString NodeId;
+	FString Code;
+	FString Message;
+	FString Severity = TEXT("warning");
+	FString PropertyPath;
+};
+
 struct FBlueprintGraphApplyResult
 {
 	bool bOk = false;
@@ -17,6 +26,7 @@ struct FBlueprintGraphApplyResult
 	int32 CreatedLinks = 0;
 	TArray<FString> Warnings;
 	TArray<FString> Errors;
+	TArray<FBlueprintGraphNodeValidationIssue> NodeValidationIssues;
 	FString CompileStatus = TEXT("not_requested");
 	FString SaveStatus = TEXT("not_requested");
 	int32 CompileErrorCount = 0;

@@ -13,6 +13,8 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
+#include "Services/BlueprintGraphService.h"
+#include "Services/BlueprintGraph/BlueprintGraphValidationService.h"
 #include "Http/HttpRequestUtils.h"
 #include "Services/AssetService.h"
 #include "Transport/RequestParsing.h"
@@ -47,11 +49,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATJsonOkEnvelopeIncludesCanonicalFieldsTest, 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthFailureUsesCanonicalErrorArrayTest, "BlueprintAutomationToolkit.Transport.AuthFailureUsesCanonicalErrorArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATObjectQueryParsingBuildsPropertiesArrayTest, "BlueprintAutomationToolkit.Transport.ObjectQueryParsingBuildsPropertiesArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingBuildsBodyTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingBuildsBody", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingSupportsInspectionOptionsTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingSupportsInspectionOptions", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetDuplicateServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.DuplicateServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, "BlueprintAutomationToolkit.Assets.CreateServiceRejectsInvalidClass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsUpdateOnlyNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyResultIncludesNodeValidationTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyResultIncludesNodeValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListPropertiesTest, "BlueprintAutomationToolkit.Reflection.ListProperties", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -222,6 +227,9 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/read"), Spec.Contains(TEXT("/blueprint/graph/read:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/compile_save"), Spec.Contains(TEXT("/blueprint/compile_save:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents compileDiagnostics"), Spec.Contains(TEXT("compileDiagnostics"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents nodeValidation"), Spec.Contains(TEXT("nodeValidation"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents includeNodeProperties"), Spec.Contains(TEXT("includeNodeProperties"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents updateOnly"), Spec.Contains(TEXT("updateOnly"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /actor/destroy"), Spec.Contains(TEXT("/actor/destroy:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/select"), Spec.Contains(TEXT("/editor/select:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/focus"), Spec.Contains(TEXT("/editor/focus:"), ESearchCase::CaseSensitive));
@@ -598,6 +606,38 @@ bool FBATGraphReadQueryParsingBuildsBodyTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+bool FBATGraphReadQueryParsingSupportsInspectionOptionsTest::RunTest(const FString& Parameters)
+{
+	FHttpServerRequest Request;
+	Request.QueryParams.Add(TEXT("blueprint"), TEXT("/Game/BP_Spawner"));
+	Request.QueryParams.Add(TEXT("graph"), TEXT("AnimGraph"));
+	Request.QueryParams.Add(TEXT("includeNodeProperties"), TEXT("true"));
+	Request.QueryParams.Add(TEXT("includeNodeValidation"), TEXT("1"));
+	Request.QueryParams.Add(TEXT("propertyPaths"), TEXT("Node.Sequence, Node.LayerSetup , Node.RotationMode"));
+
+	const TSharedPtr<FJsonObject> Body = BAT::Transport::BuildBlueprintGraphReadQueryBody(Request);
+	if (!TestNotNull(TEXT("Graph read inspection query parsing should build a body object"), Body.Get()))
+	{
+		return false;
+	}
+
+	bool bIncludeNodeProperties = false;
+	bool bIncludeNodeValidation = false;
+	const TArray<TSharedPtr<FJsonValue>>* PropertyPaths = nullptr;
+	TestTrue(TEXT("Graph read inspection query parsing copies includeNodeProperties"), Body->TryGetBoolField(TEXT("includeNodeProperties"), bIncludeNodeProperties));
+	TestTrue(TEXT("Graph read inspection query parsing copies includeNodeValidation"), Body->TryGetBoolField(TEXT("includeNodeValidation"), bIncludeNodeValidation));
+	TestTrue(TEXT("Graph read inspection query parsing sets includeNodeProperties=true"), bIncludeNodeProperties);
+	TestTrue(TEXT("Graph read inspection query parsing sets includeNodeValidation=true"), bIncludeNodeValidation);
+	if (!TestTrue(TEXT("Graph read inspection query parsing builds propertyPaths array"), Body->TryGetArrayField(TEXT("propertyPaths"), PropertyPaths) && PropertyPaths))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Graph read inspection query parsing splits propertyPaths into three entries"), PropertyPaths->Num(), 3);
+	TestEqual(TEXT("Graph read inspection query parsing trims property path whitespace"), (*PropertyPaths)[1]->AsString(), FString(TEXT("Node.LayerSetup")));
+	return true;
+}
+
 bool FBATAssetDuplicateServiceRejectsEmptyRequestTest::RunTest(const FString& Parameters)
 {
 	FBlueprintAutomationToolkitModule Module;
@@ -692,6 +732,104 @@ bool FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest::RunTest(const F
 	}
 
 	return TestEqual(TEXT("Graph apply request should canonicalize alias axes"), Request.Nodes[0].ForwardAxis, FString(TEXT("-Y")));
+}
+
+bool FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), TEXT("/Game/Test/BP_Test"));
+	Body->SetStringField(TEXT("graph"), TEXT("AnimGraph"));
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("createMissingNodes"), false);
+	Body->SetObjectField(TEXT("options"), Options);
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("id"), TEXT("bat_pose_node"));
+	Node->SetBoolField(TEXT("updateOnly"), true);
+	TSharedRef<FJsonObject> Pins = MakeShared<FJsonObject>();
+	Pins->SetStringField(TEXT("Rotation"), TEXT("0,0,0"));
+	Node->SetObjectField(TEXT("pins"), Pins);
+
+	TArray<TSharedPtr<FJsonValue>> Nodes;
+	Nodes.Add(MakeShared<FJsonValueObject>(Node));
+	Body->SetArrayField(TEXT("nodes"), Nodes);
+	Body->SetArrayField(TEXT("links"), TArray<TSharedPtr<FJsonValue>>());
+
+	FBlueprintGraphApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::BlueprintGraphApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("Graph apply request should allow update-only nodes without type"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	if (!TestFalse(TEXT("Graph apply request should preserve createMissingNodes=false"), Request.Options.bCreateMissingNodes))
+	{
+		return false;
+	}
+
+	if (!TestEqual(TEXT("Graph apply request should preserve one update-only node"), Request.Nodes.Num(), 1))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("Graph apply request should preserve updateOnly=true"), Request.Nodes[0].bUpdateOnly);
+	return TestTrue(TEXT("Graph apply request should preserve Rotation pin override"), Request.Nodes[0].Pins.Contains(TEXT("Rotation")));
+}
+
+bool FBATBlueprintGraphApplyResultIncludesNodeValidationTest::RunTest(const FString& Parameters)
+{
+	FBlueprintGraphApplyResult Result;
+	Result.bOk = true;
+	Result.CompileStatus = TEXT("compiled");
+	Result.SaveStatus = TEXT("saved");
+	FBlueprintGraphNodeValidationIssue& Issue = Result.NodeValidationIssues.AddDefaulted_GetRef();
+	Issue.NodeId = TEXT("bat_pose_node");
+	Issue.Code = TEXT("modify_bone_missing_bone");
+	Issue.Message = TEXT("Transform Modify Bone requires BoneToModify.BoneName.");
+	Issue.PropertyPath = TEXT("Node.BoneToModify.BoneName");
+
+	const TSharedPtr<FJsonValue> RootValue = FBlueprintGraphValidationService::MakeApplyResultData(TEXT("/Game/Test/BP_Test.BP_Test"), TEXT("AnimGraph"), Result);
+	const TSharedPtr<FJsonObject> Root = RootValue.IsValid() ? RootValue->AsObject() : nullptr;
+	if (!TestNotNull(TEXT("Apply result data should be an object"), Root.Get()))
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject>* Data = nullptr;
+	if (!TestTrue(TEXT("Apply result data should include data object"), Root->TryGetObjectField(TEXT("data"), Data) && Data && Data->IsValid()))
+	{
+		return false;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* NodeValidation = nullptr;
+	if (!TestTrue(TEXT("Apply result data should include nodeValidation array"), (*Data)->TryGetArrayField(TEXT("nodeValidation"), NodeValidation) && NodeValidation))
+	{
+		return false;
+	}
+
+	if (!TestEqual(TEXT("Apply result data should include one node validation issue"), NodeValidation->Num(), 1))
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject> IssueObj = (*NodeValidation)[0].IsValid() ? (*NodeValidation)[0]->AsObject() : nullptr;
+	if (!TestNotNull(TEXT("Node validation issue should be structured"), IssueObj.Get()))
+	{
+		return false;
+	}
+
+	FString NodeId;
+	FString Code;
+	TestTrue(TEXT("Node validation issue includes nodeId"), IssueObj->TryGetStringField(TEXT("nodeId"), NodeId));
+	TestTrue(TEXT("Node validation issue includes code"), IssueObj->TryGetStringField(TEXT("code"), Code));
+	TestEqual(TEXT("Node validation issue preserves nodeId"), NodeId, FString(TEXT("bat_pose_node")));
+	return TestEqual(TEXT("Node validation issue preserves code"), Code, FString(TEXT("modify_bone_missing_bone")));
 }
 
 bool FBATCanceledJobRemainsCanceledTest::RunTest(const FString& Parameters)

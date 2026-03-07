@@ -35,6 +35,7 @@ namespace
 	static constexpr TCHAR UasNodeIdSuffix[] = TEXT("]");
 
 	struct FResolvedEditableProperty
+
 	{
 		FProperty* Property = nullptr;
 		void* ValuePtr = nullptr;
@@ -289,6 +290,123 @@ namespace
 			{
 				InOutResult.Errors.Add(FString::Printf(TEXT("node_property_import_failed:%s:%s"), *NodeId, *PropertyPair.Key));
 			}
+		}
+	}
+
+	static bool ExportResolvedPropertyText(UEdGraphNode* Node, const FResolvedEditableProperty& Resolved, FString& OutValue)
+	{
+		OutValue.Reset();
+		if (!Node || !Resolved.Property || !Resolved.ValuePtr)
+		{
+			return false;
+		}
+
+		Resolved.Property->ExportTextItem_Direct(OutValue, Resolved.ValuePtr, nullptr, Node, PPF_None);
+		return true;
+	}
+
+	static void AddValidationIssue(TArray<FBlueprintGraphNodeValidationIssue>& OutIssues, const FString& NodeId, const FString& Code, const FString& Message, const FString& PropertyPath = FString())
+	{
+		FBlueprintGraphNodeValidationIssue& Issue = OutIssues.AddDefaulted_GetRef();
+		Issue.NodeId = NodeId;
+		Issue.Code = Code;
+		Issue.Message = Message;
+		Issue.PropertyPath = PropertyPath;
+	}
+
+	static bool TryExportNodePropertyTextImpl(UEdGraphNode* Node, const FString& PropertyPath, FString& OutValue, FString& OutError)
+	{
+		FResolvedEditableProperty Resolved;
+		if (!ResolveEditablePropertyPath(Node ? Node->GetClass() : nullptr, Node, PropertyPath, Resolved, OutError))
+		{
+			OutValue.Reset();
+			return false;
+		}
+
+		if (!ExportResolvedPropertyText(Node, Resolved, OutValue))
+		{
+			OutError = TEXT("property_export_failed");
+			return false;
+		}
+
+		OutError.Reset();
+		return true;
+	}
+
+	static void GetDefaultInspectionPropertyPathsImpl(UEdGraphNode* Node, TArray<FString>& OutPropertyPaths)
+	{
+		OutPropertyPaths.Reset();
+		if (!Node || !Node->GetClass())
+		{
+			return;
+		}
+
+		const FString ClassName = Node->GetClass()->GetName();
+		if (ClassName.Equals(TEXT("AnimGraphNode_ModifyBone"), ESearchCase::CaseSensitive))
+		{
+			OutPropertyPaths = {
+				TEXT("Node.BoneToModify.BoneName"),
+				TEXT("Node.TranslationMode"),
+				TEXT("Node.RotationMode"),
+				TEXT("Node.ScaleMode"),
+				TEXT("Node.TranslationSpace"),
+				TEXT("Node.RotationSpace"),
+				TEXT("Node.ScaleSpace")
+			};
+			return;
+		}
+
+		if (ClassName.Equals(TEXT("AnimGraphNode_LayeredBoneBlend"), ESearchCase::CaseSensitive))
+		{
+			OutPropertyPaths = {
+				TEXT("Node.BlendWeights"),
+				TEXT("Node.LayerSetup")
+			};
+			return;
+		}
+
+		if (ClassName.Equals(TEXT("AnimGraphNode_SequencePlayer"), ESearchCase::CaseSensitive))
+		{
+			OutPropertyPaths = {
+				TEXT("Node.Sequence")
+			};
+		}
+	}
+
+	static void CollectNodeValidationIssuesImpl(UEdGraphNode* Node, const FString& NodeId, TArray<FBlueprintGraphNodeValidationIssue>& OutIssues)
+	{
+		if (!Node || !Node->GetClass())
+		{
+			return;
+		}
+
+		if (!Node->GetClass()->GetName().Equals(TEXT("AnimGraphNode_ModifyBone"), ESearchCase::CaseSensitive))
+		{
+			return;
+		}
+
+		FString BoneName;
+		FString RotationMode;
+		FString TranslationMode;
+		FString ScaleMode;
+		FString Error;
+		TryExportNodePropertyTextImpl(Node, TEXT("Node.BoneToModify.BoneName"), BoneName, Error);
+		TryExportNodePropertyTextImpl(Node, TEXT("Node.RotationMode"), RotationMode, Error);
+		TryExportNodePropertyTextImpl(Node, TEXT("Node.TranslationMode"), TranslationMode, Error);
+		TryExportNodePropertyTextImpl(Node, TEXT("Node.ScaleMode"), ScaleMode, Error);
+
+		const FString TrimmedBoneName = BoneName.TrimStartAndEnd();
+		if (TrimmedBoneName.IsEmpty() || TrimmedBoneName.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+		{
+			AddValidationIssue(OutIssues, NodeId, TEXT("modify_bone_missing_bone"), TEXT("Transform Modify Bone requires BoneToModify.BoneName."), TEXT("Node.BoneToModify.BoneName"));
+		}
+
+		const bool bTranslationIgnored = TranslationMode.Contains(TEXT("BMM_Ignore"), ESearchCase::CaseSensitive);
+		const bool bRotationIgnored = RotationMode.Contains(TEXT("BMM_Ignore"), ESearchCase::CaseSensitive);
+		const bool bScaleIgnored = ScaleMode.Contains(TEXT("BMM_Ignore"), ESearchCase::CaseSensitive);
+		if (bTranslationIgnored && bRotationIgnored && bScaleIgnored)
+		{
+			AddValidationIssue(OutIssues, NodeId, TEXT("modify_bone_no_active_component"), TEXT("Transform Modify Bone must modify translation, rotation, or scale."));
 		}
 	}
 
@@ -838,6 +956,21 @@ namespace
 	}
 }
 
+bool FBlueprintGraphNodeService::TryExportNodePropertyText(UEdGraphNode* Node, const FString& PropertyPath, FString& OutValue, FString& OutError)
+{
+	return TryExportNodePropertyTextImpl(Node, PropertyPath, OutValue, OutError);
+}
+
+void FBlueprintGraphNodeService::GetDefaultInspectionPropertyPaths(UEdGraphNode* Node, TArray<FString>& OutPropertyPaths)
+{
+	GetDefaultInspectionPropertyPathsImpl(Node, OutPropertyPaths);
+}
+
+void FBlueprintGraphNodeService::CollectNodeValidationIssues(UEdGraphNode* Node, const FString& NodeId, TArray<FBlueprintGraphNodeValidationIssue>& OutIssues)
+{
+	CollectNodeValidationIssuesImpl(Node, NodeId, OutIssues);
+}
+
 UEdGraphNode* FBlueprintGraphNodeService::FindNodeByUasId(UEdGraph* Graph, const FString& NodeId)
 {
 	if (!Graph || NodeId.IsEmpty())
@@ -988,7 +1121,7 @@ UEdGraphNode* FBlueprintGraphNodeService::ResolveNodeReferenceInGraph(UEdGraph* 
 	return FindNodeByUasId(Graph, NodeId);
 }
 
-void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Graph, const TArray<FBlueprintGraphApplyNodeSpec>& NodeSpecs, bool bWillMutate, FBlueprintGraphApplyResult& InOutResult, TMap<FString, UEdGraphNode*>& OutNodeById)
+void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Graph, const TArray<FBlueprintGraphApplyNodeSpec>& NodeSpecs, bool bWillMutate, bool bCreateMissingNodes, FBlueprintGraphApplyResult& InOutResult, TMap<FString, UEdGraphNode*>& OutNodeById)
 {
 	if (!Blueprint || !Graph)
 	{
@@ -1002,9 +1135,24 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 	{
 		UEdGraphNode* Node = FindNodeByUasId(Graph, NodeSpec.Id);
 		const bool bExisting = Node != nullptr;
+		if (bExisting && !NodeSpec.Type.TrimStartAndEnd().IsEmpty())
+		{
+			UClass* ExpectedClass = nullptr;
+			if (TryResolveGraphNodeClass(NodeSpec.Type, ExpectedClass) && ExpectedClass && !Node->IsA(ExpectedClass))
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_type_mismatch:%s"), *NodeSpec.Id));
+				continue;
+			}
+		}
 
 		if (!Node && bWillMutate)
 		{
+			if (NodeSpec.bUpdateOnly || !bCreateMissingNodes)
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_not_found:%s"), *NodeSpec.Id));
+				continue;
+			}
+
 			Node = CreateNodeFromSpec(Graph, Blueprint, NodeSpec, InOutResult);
 			if (!Node)
 			{
@@ -1022,7 +1170,14 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 		{
 			if (!bWillMutate)
 			{
-				InOutResult.CreatedNodes.Add(NodeSpec.Id);
+				if (!(NodeSpec.bUpdateOnly || !bCreateMissingNodes))
+				{
+					InOutResult.CreatedNodes.Add(NodeSpec.Id);
+				}
+				else
+				{
+					InOutResult.Errors.Add(FString::Printf(TEXT("node_not_found:%s"), *NodeSpec.Id));
+				}
 				OutNodeById.Add(NodeSpec.Id, nullptr);
 			}
 			continue;
@@ -1107,6 +1262,8 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 				}
 			}
 		}
+
+		CollectNodeValidationIssues(Node, NodeSpec.Id, InOutResult.NodeValidationIssues);
 
 		OutNodeById.Add(NodeSpec.Id, Node);
 	}
