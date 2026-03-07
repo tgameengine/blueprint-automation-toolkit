@@ -39,6 +39,11 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(CapabilitiesRoute);
 		CapabilitiesRoute.Reset();
 	}
+	if (EngineDiscoverRoute.IsValid())
+	{
+		Router->UnbindRoute(EngineDiscoverRoute);
+		EngineDiscoverRoute.Reset();
+	}
 	if (PlanValidateRoute.IsValid())
 	{
 		Router->UnbindRoute(PlanValidateRoute);

@@ -22,6 +22,13 @@ paths:
       responses:
         '200':
           description: Capabilities
+  /engine/discover:
+    get:
+      summary: Recommended engine handshake endpoint
+      description: Preferred first request for agents and automation clients. Returns handshake metadata, recommended discovery flow, and high-level capability hints before reflection or action requests.
+      responses:
+        '200':
+          description: Discovery and handshake metadata
   /openapi:
     get:
       summary: Returns this OpenAPI document

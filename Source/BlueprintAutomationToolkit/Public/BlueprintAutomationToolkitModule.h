@@ -338,6 +338,7 @@ private:
 	FHttpRouteHandle EditorQuitRoute;
 	FHttpRouteHandle EditorLayoutApplyRoute;
 	FHttpRouteHandle CapabilitiesRoute;
+	FHttpRouteHandle EngineDiscoverRoute;
 	FHttpRouteHandle PlanValidateRoute;
 	FHttpRouteHandle PlanApplyRoute;
 	FHttpRouteHandle OpenApiRoute;

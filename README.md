@@ -230,11 +230,40 @@ OpenAPI spec:
 
 - `GET /openapi` (source file: `Resources/Docs/openapi.yaml`)
 
+Recommended handshake:
+
+- `GET /engine/discover` is the recommended first request for agents and external automation clients.
+- It provides a short engine capability summary, points clients at `GET /openapi`, and advertises the recommended reflection-first flow.
+
 Base URL:
 
 `http://127.0.0.1:<Port>`
 
 All responses are JSON.
+
+## Agent Handshake Flow
+
+Recommended capability-first flow for agents:
+
+1. `GET /engine/discover`
+2. `POST /object/resolve`
+3. `POST /object/list-properties`
+4. Call the relevant action endpoint for the resolved target
+
+Short capability summary:
+
+- Discovery and handshake: `GET /engine/discover`
+- Server capabilities and limits: `GET /ai/capabilities`
+- Full schema and endpoint contract: `GET /openapi`
+- Reflection inspection: `POST /object/resolve`, `POST /object/list-properties`, `POST /object/list-functions`
+- Follow-up action routes depend on the resolved target, such as `POST /object/set-property`, `POST /object/call-function`, or other editor/Blueprint endpoints
+
+Example agent flow:
+
+1. Call `GET /engine/discover` to confirm the editor is reachable, safe mode state, and the recommended route flow.
+2. Call `POST /object/resolve` with an object path, soft object path, or actor name to obtain a stable object reference.
+3. Call `POST /object/list-properties` on that resolved object to inspect writable/readable fields.
+4. Use the appropriate action endpoint, such as `POST /object/set-property`, `POST /object/call-function`, or a Blueprint/editor route, based on the discovered capabilities.
 
 Animation authoring and AnimGraph edits are Unreal forward-axis aware.
 

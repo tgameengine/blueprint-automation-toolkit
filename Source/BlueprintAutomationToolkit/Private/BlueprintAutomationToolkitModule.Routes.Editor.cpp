@@ -1051,6 +1051,48 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			return true;
 		}));
 
+	EngineDiscoverRoute = Router->BindRoute(
+		FHttpPath(TEXT("/engine/discover")),
+		EHttpServerRequestVerbs::VERB_GET,
+		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/engine/discover")))
+			{
+				return true;
+			}
+
+			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
+			Obj->SetBoolField(TEXT("ok"), true);
+			Obj->SetStringField(TEXT("handshake"), TEXT("recommended"));
+			Obj->SetStringField(TEXT("openapi"), TEXT("/openapi"));
+			Obj->SetStringField(TEXT("capabilities"), TEXT("/ai/capabilities"));
+			Obj->SetBoolField(TEXT("safe_mode"), bSafeModeEnabled);
+			Obj->SetBoolField(TEXT("jobs_enabled"), true);
+			Obj->SetBoolField(TEXT("openapi_enabled"), true);
+			Obj->SetNumberField(TEXT("rate_limit_per_second"), RateLimitPerSecond);
+			Obj->SetNumberField(TEXT("max_request_body_bytes"), MaxRequestBodyBytes);
+			Obj->SetNumberField(TEXT("max_ops_per_plan"), MaxOpsPerPlan);
+			Obj->SetNumberField(TEXT("max_actors_per_layout"), MaxActorsPerLayout);
+			Obj->SetNumberField(TEXT("max_instances_per_op"), MaxInstancesPerOp);
+			Obj->SetNumberField(TEXT("max_total_instances_per_plan"), MaxTotalInstancesPerPlan);
+
+			TArray<TSharedPtr<FJsonValue>> RecommendedFlow;
+			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("/engine/discover")));
+			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("/object/resolve")));
+			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("/object/list-properties")));
+			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("<action-endpoint>")));
+			Obj->SetArrayField(TEXT("recommended_flow"), RecommendedFlow);
+
+			TArray<TSharedPtr<FJsonValue>> ReflectionEndpoints;
+			ReflectionEndpoints.Add(MakeShared<FJsonValueString>(TEXT("/object/resolve")));
+			ReflectionEndpoints.Add(MakeShared<FJsonValueString>(TEXT("/object/list-properties")));
+			ReflectionEndpoints.Add(MakeShared<FJsonValueString>(TEXT("/object/list-functions")));
+			Obj->SetArrayField(TEXT("reflection_endpoints"), ReflectionEndpoints);
+
+			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj)));
+			return true;
+		}));
+
 	OpenApiRoute = Router->BindRoute(
 		FHttpPath(TEXT("/openapi")),
 		EHttpServerRequestVerbs::VERB_GET,

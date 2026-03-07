@@ -26,6 +26,7 @@
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiSpecExistsTest, "BlueprintAutomationToolkit.OpenApi.SpecExists", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasJobsAndLogsTest, "BlueprintAutomationToolkit.OpenApi.HasJobsAndLogsPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasEngineDiscoverPathTest, "BlueprintAutomationToolkit.OpenApi.HasEngineDiscoverPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintPlanPathsTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintPlanPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintSchemaPathTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintSchemaPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExecPythonRequiresPythonPermissionTest, "BlueprintAutomationToolkit.Security.ExecPythonRequiresPythonPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -135,6 +136,31 @@ bool FBATOpenApiHasJobsAndLogsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /openapi"), Spec.Contains(TEXT("/openapi:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /ai/exec"), Spec.Contains(TEXT("/ai/exec:"), ESearchCase::CaseSensitive));
 	return true;
+}
+
+bool FBATOpenApiHasEngineDiscoverPathTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!Plugin.IsValid())
+	{
+		Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	}
+
+	if (!Plugin.IsValid())
+	{
+		AddError(TEXT("Plugin not found"));
+		return false;
+	}
+
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
+	FString Spec;
+	if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
+	{
+		AddError(TEXT("Failed to read openapi.yaml"));
+		return false;
+	}
+
+	return TestTrue(TEXT("OpenAPI contains /engine/discover"), Spec.Contains(TEXT("/engine/discover:"), ESearchCase::CaseSensitive));
 }
 
 bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)

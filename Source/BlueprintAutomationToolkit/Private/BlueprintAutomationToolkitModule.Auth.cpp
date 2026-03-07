@@ -547,7 +547,7 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	{
 		return PM(EBATPermission::Editor);
 	}
-	if (Endpoint.StartsWith(TEXT("/jobs")) || Endpoint.Equals(TEXT("/openapi"), ESearchCase::CaseSensitive) || Endpoint.StartsWith(TEXT("/logs/tail")))
+	if (Endpoint.StartsWith(TEXT("/jobs")) || Endpoint.Equals(TEXT("/openapi"), ESearchCase::CaseSensitive) || Endpoint.StartsWith(TEXT("/logs/tail")) || Endpoint.Equals(TEXT("/engine/discover"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Editor);
 	}
