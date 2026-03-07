@@ -496,6 +496,10 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	if (Endpoint.Equals(TEXT("/uobject/get"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/get"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/list-properties"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/list-functions"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
 	{
@@ -1312,6 +1316,33 @@ bool FBlueprintAutomationToolkitModule::Test_BuildAuthFailureResponse(const FStr
 	return true;
 }
 
+	static void NormalizeReflectionClassValues(const TArray<FString>& Source, TSet<FString>& Destination)
+	{
+		Destination.Reset();
+		for (FString Value : Source)
+		{
+			Value.TrimStartAndEndInline();
+			Value = Value.ToLower();
+			if (!Value.IsEmpty())
+			{
+				Destination.Add(Value);
+			}
+		}
+	}
+
+	static void NormalizeReflectionNameValues(const TArray<FString>& Source, TSet<FName>& Destination)
+	{
+		Destination.Reset();
+		for (FString Value : Source)
+		{
+			Value.TrimStartAndEndInline();
+			if (!Value.IsEmpty())
+			{
+				Destination.Add(FName(*Value));
+			}
+		}
+	}
+
 void FBlueprintAutomationToolkitModule::Test_AddOrUpdateJob(const FString& JobId, const FString& RequestId, const FString& Kind, EAutomationTestJobState State, bool bCancelRequested, const TSharedPtr<FJsonObject>& Payload)
 {
 	FJobRecord Job;
@@ -1340,6 +1371,41 @@ bool FBlueprintAutomationToolkitModule::Test_GetJobSnapshot(const FString& JobId
 	OutSnapshot.bCancelRequested = Job.bCancelRequested;
 	OutSnapshot.Logs = Job.Logs;
 	return true;
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionSafeMode(bool bEnabled)
+{
+	bSafeModeEnabled = bEnabled;
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionClassAllowList(const TArray<FString>& Values)
+{
+	NormalizeReflectionClassValues(Values, AllowedReflectionClasses);
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionClassDenyList(const TArray<FString>& Values)
+{
+	NormalizeReflectionClassValues(Values, DeniedReflectionClasses);
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionFunctionAllowList(const TArray<FString>& Values)
+{
+	NormalizeReflectionNameValues(Values, AllowedReflectionFunctions);
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionFunctionDenyList(const TArray<FString>& Values)
+{
+	NormalizeReflectionNameValues(Values, DeniedReflectionFunctions);
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionPropertyAllowList(const TArray<FString>& Values)
+{
+	NormalizeReflectionNameValues(Values, AllowedReflectionProperties);
+}
+
+void FBlueprintAutomationToolkitModule::Test_SetReflectionPropertyDenyList(const TArray<FString>& Values)
+{
+	NormalizeReflectionNameValues(Values, DeniedReflectionProperties);
 }
 
 void FBlueprintAutomationToolkitModule::Test_CompleteJobSuccess(const FString& JobId, const TSharedPtr<FJsonObject>& Result)

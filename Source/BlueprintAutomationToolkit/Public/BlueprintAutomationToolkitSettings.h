@@ -26,4 +26,22 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category="Security", meta=(DisplayName="Safe Mode"))
 	bool bSafeMode;
+
+	UPROPERTY(Config, EditAnywhere, Category="Security|Reflection", meta=(DisplayName="Reflection Allowed Classes"))
+	TArray<FString> ReflectionAllowedClasses;
+
+	UPROPERTY(Config, EditAnywhere, Category="Security|Reflection", meta=(DisplayName="Reflection Denied Classes"))
+	TArray<FString> ReflectionDeniedClasses;
+
+	UPROPERTY(Config, EditAnywhere, Category="Security|Reflection", meta=(DisplayName="Reflection Allowed Functions"))
+	TArray<FString> ReflectionAllowedFunctions;
+
+	UPROPERTY(Config, EditAnywhere, Category="Security|Reflection", meta=(DisplayName="Reflection Denied Functions"))
+	TArray<FString> ReflectionDeniedFunctions;
+
+	UPROPERTY(Config, EditAnywhere, Category="Security|Reflection", meta=(DisplayName="Reflection Allowed Properties"))
+	TArray<FString> ReflectionAllowedProperties;
+
+	UPROPERTY(Config, EditAnywhere, Category="Security|Reflection", meta=(DisplayName="Reflection Denied Properties"))
+	TArray<FString> ReflectionDeniedProperties;
 };

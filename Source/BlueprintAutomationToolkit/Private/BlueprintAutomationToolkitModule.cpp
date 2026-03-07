@@ -5,6 +5,11 @@
 #include "Commands/Actor/SpawnActorCommand.h"
 #include "Commands/Blueprint/ApplyGraphCommand.h"
 #include "Commands/CommandDispatcher.h"
+#include "Commands/Reflection/CallFunctionCommand.h"
+#include "Commands/Reflection/GetObjectCommand.h"
+#include "Commands/Reflection/ListFunctionsCommand.h"
+#include "Commands/Reflection/ListPropertiesCommand.h"
+#include "Commands/Reflection/SetPropertyCommand.h"
 #include "Commands/Object/CallObjectFunctionCommand.h"
 #include "Commands/Object/SetObjectPropertyCommand.h"
 #include "Http/HttpRequestUtils.h"
@@ -2389,10 +2394,21 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		static const FObjectAutomationService Service;
 		return MakeUnique<FSetObjectPropertyCommand>(Service);
 	});
+	CommandDispatcher->Register(TEXT("/object/resolve"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FGetObjectCommand>();
+	});
+	CommandDispatcher->Register(TEXT("/object/get"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FGetObjectCommand>();
+	});
+	CommandDispatcher->Register(TEXT("/object/list-properties"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FListPropertiesCommand>();
+	});
 	CommandDispatcher->Register(TEXT("/object/set-property"), []() -> TUniquePtr<FAutomationCommand>
 	{
-		static const FObjectAutomationService Service;
-		return MakeUnique<FSetObjectPropertyCommand>(Service);
+		return MakeUnique<FSetPropertyCommand>();
 	});
 
 	CommandDispatcher->Register(TEXT("/uobject/call"), []() -> TUniquePtr<FAutomationCommand>
@@ -2400,10 +2416,13 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		static const FObjectAutomationService Service;
 		return MakeUnique<FCallObjectFunctionCommand>(Service);
 	});
+	CommandDispatcher->Register(TEXT("/object/list-functions"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FListFunctionsCommand>();
+	});
 	CommandDispatcher->Register(TEXT("/object/call-function"), []() -> TUniquePtr<FAutomationCommand>
 	{
-		static const FObjectAutomationService Service;
-		return MakeUnique<FCallObjectFunctionCommand>(Service);
+		return MakeUnique<FCallFunctionCommand>();
 	});
 
 	CommandDispatcher->Register(TEXT("/actor/spawn"), []() -> TUniquePtr<FAutomationCommand>
@@ -2431,7 +2450,11 @@ bool FBlueprintAutomationToolkitModule::DispatchAutomationCommandRoute(const FSt
 	const FAutomationResult Result = CommandDispatcher->Dispatch(Endpoint, Context);
 	if (!Result.bSuccess)
 	{
-		if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
+		if (bReturnRawObject && Result.ErrorData.IsValid() && Result.ErrorData->Type == EJson::Object)
+		{
+			OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.ErrorData->AsObject().ToSharedRef(), Context.RequestId));
+		}
+		else if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
 		{
 			OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
 		}
@@ -2896,6 +2919,67 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 			{
 				AllowedUObjectProperties.Add(FName(*Name));
 			}
+		}
+
+		auto NormalizeClassList = [](const TArray<FString>& Source, TSet<FString>& Destination)
+		{
+			Destination.Reset();
+			for (FString Value : Source)
+			{
+				Value.TrimStartAndEndInline();
+				Value = Value.ToLower();
+				if (!Value.IsEmpty())
+				{
+					Destination.Add(Value);
+				}
+			}
+		};
+
+		auto NormalizeNameList = [](const TArray<FString>& Source, TSet<FName>& Destination)
+		{
+			Destination.Reset();
+			for (FString Value : Source)
+			{
+				Value.TrimStartAndEndInline();
+				if (!Value.IsEmpty())
+				{
+					Destination.Add(FName(*Value));
+				}
+			}
+		};
+
+		TArray<FString> ReflectionAllowedClassesList;
+		TArray<FString> ReflectionDeniedClassesList;
+		TArray<FString> ReflectionAllowedFunctionsList;
+		TArray<FString> ReflectionDeniedFunctionsList;
+		TArray<FString> ReflectionAllowedPropertiesList;
+		TArray<FString> ReflectionDeniedPropertiesList;
+		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("ReflectionAllowedClasses"), ReflectionAllowedClassesList, GEditorPerProjectIni);
+		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("ReflectionDeniedClasses"), ReflectionDeniedClassesList, GEditorPerProjectIni);
+		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("ReflectionAllowedFunctions"), ReflectionAllowedFunctionsList, GEditorPerProjectIni);
+		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("ReflectionDeniedFunctions"), ReflectionDeniedFunctionsList, GEditorPerProjectIni);
+		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("ReflectionAllowedProperties"), ReflectionAllowedPropertiesList, GEditorPerProjectIni);
+		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("ReflectionDeniedProperties"), ReflectionDeniedPropertiesList, GEditorPerProjectIni);
+
+		NormalizeClassList(ReflectionAllowedClassesList, AllowedReflectionClasses);
+		NormalizeClassList(ReflectionDeniedClassesList, DeniedReflectionClasses);
+		NormalizeNameList(ReflectionAllowedFunctionsList, AllowedReflectionFunctions);
+		NormalizeNameList(ReflectionDeniedFunctionsList, DeniedReflectionFunctions);
+		NormalizeNameList(ReflectionAllowedPropertiesList, AllowedReflectionProperties);
+		NormalizeNameList(ReflectionDeniedPropertiesList, DeniedReflectionProperties);
+
+		if (AllowedReflectionClasses.Num() == 0)
+		{
+			AllowedReflectionClasses.Add(TEXT("/script/engine.actor"));
+			AllowedReflectionClasses.Add(TEXT("/script/engine.actorcomponent"));
+			AllowedReflectionClasses.Add(TEXT("/script/engine.scenecomponent"));
+		}
+
+		if (DeniedReflectionFunctions.Num() == 0)
+		{
+			DeniedReflectionFunctions.Add(FName(TEXT("ExecuteConsoleCommand")));
+			DeniedReflectionFunctions.Add(FName(TEXT("ConsoleCommand")));
+			DeniedReflectionFunctions.Add(FName(TEXT("CallFunctionByNameWithArguments")));
 		}
 
 		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("AllowedActionAssetPrefixes"), AllowedActionAssetPrefixes, GEditorPerProjectIni);

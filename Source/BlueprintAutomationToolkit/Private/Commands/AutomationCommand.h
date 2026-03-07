@@ -21,6 +21,7 @@ struct FAutomationResult
 	bool bSuccess = false;
 	int32 StatusCode = 200;
 	TSharedPtr<FJsonValue> Data;
+	TSharedPtr<FJsonValue> ErrorData;
 	FString ErrorCode;
 	FString ErrorMessage;
 
@@ -40,6 +41,13 @@ struct FAutomationResult
 		Result.StatusCode = InStatusCode;
 		Result.ErrorCode = InCode;
 		Result.ErrorMessage = InMessage;
+		return Result;
+	}
+
+	static FAutomationResult ErrorWithData(const FString& InCode, const FString& InMessage, int32 InStatusCode, const TSharedPtr<FJsonValue>& InErrorData)
+	{
+		FAutomationResult Result = Error(InCode, InMessage, InStatusCode);
+		Result.ErrorData = InErrorData;
 		return Result;
 	}
 };

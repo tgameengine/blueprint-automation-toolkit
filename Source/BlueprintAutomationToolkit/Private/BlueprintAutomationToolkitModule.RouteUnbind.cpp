@@ -254,6 +254,16 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(UObjectSetRoute);
 		UObjectSetRoute.Reset();
 	}
+	if (ObjectResolveRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectResolveRoute);
+		ObjectResolveRoute.Reset();
+	}
+	if (ObjectGetRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectGetRoute);
+		ObjectGetRoute.Reset();
+	}
 	if (ObjectSetPropertyRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectSetPropertyRoute);
@@ -268,6 +278,16 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 	{
 		Router->UnbindRoute(ObjectCallFunctionRoute);
 		ObjectCallFunctionRoute.Reset();
+	}
+	if (ObjectListPropertiesRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectListPropertiesRoute);
+		ObjectListPropertiesRoute.Reset();
+	}
+	if (ObjectListFunctionsRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectListFunctionsRoute);
+		ObjectListFunctionsRoute.Reset();
 	}
 	if (ActorSpawnRoute.IsValid())
 	{

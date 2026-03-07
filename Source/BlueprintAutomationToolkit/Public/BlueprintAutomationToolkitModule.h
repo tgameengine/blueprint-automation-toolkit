@@ -40,6 +40,12 @@ public:
 
 	const TSet<FName>& GetAllowedUObjectFunctions() const { return AllowedUObjectFunctions; }
 	const TSet<FName>& GetAllowedUObjectProperties() const { return AllowedUObjectProperties; }
+	const TSet<FString>& GetAllowedReflectionClasses() const { return AllowedReflectionClasses; }
+	const TSet<FString>& GetDeniedReflectionClasses() const { return DeniedReflectionClasses; }
+	const TSet<FName>& GetAllowedReflectionFunctions() const { return AllowedReflectionFunctions; }
+	const TSet<FName>& GetDeniedReflectionFunctions() const { return DeniedReflectionFunctions; }
+	const TSet<FName>& GetAllowedReflectionProperties() const { return AllowedReflectionProperties; }
+	const TSet<FName>& GetDeniedReflectionProperties() const { return DeniedReflectionProperties; }
 	bool IsSafeModeEnabled() const { return bSafeModeEnabled; }
 	bool IsExecRouteEnabled() const { return bEnableExecRoute; }
 	bool IsPythonExecAllowed() const { return bAllowPythonExec; }
@@ -88,6 +94,13 @@ public:
 	void Test_CompleteJobSuccess(const FString& JobId, const TSharedPtr<FJsonObject>& Result);
 	void Test_CompleteJobFailure(const FString& JobId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details = nullptr);
 	void Test_ExecuteJob(const FString& JobId);
+	void Test_SetReflectionSafeMode(bool bEnabled);
+	void Test_SetReflectionClassAllowList(const TArray<FString>& Values);
+	void Test_SetReflectionClassDenyList(const TArray<FString>& Values);
+	void Test_SetReflectionFunctionAllowList(const TArray<FString>& Values);
+	void Test_SetReflectionFunctionDenyList(const TArray<FString>& Values);
+	void Test_SetReflectionPropertyAllowList(const TArray<FString>& Values);
+	void Test_SetReflectionPropertyDenyList(const TArray<FString>& Values);
 #endif
 
 private:
@@ -103,6 +116,7 @@ private:
 	void BindActorInfoRoutes();
 	void BindBlueprintRoutes();
 	void BindUObjectRoutes();
+	void BindReflectionRoutes();
 	void BindAssetRoutes();
 	void BindActionsRoutes();
 	void BindBlueprintAssetsRoutes();
@@ -368,8 +382,12 @@ private:
 	FHttpRouteHandle UObjectGetRoute;
 	FHttpRouteHandle UObjectSetRoute;
 	FHttpRouteHandle UObjectCallRoute;
+	FHttpRouteHandle ObjectResolveRoute;
+	FHttpRouteHandle ObjectGetRoute;
 	FHttpRouteHandle ObjectSetPropertyRoute;
 	FHttpRouteHandle ObjectCallFunctionRoute;
+	FHttpRouteHandle ObjectListPropertiesRoute;
+	FHttpRouteHandle ObjectListFunctionsRoute;
 	FHttpRouteHandle ActorSpawnRoute;
 	FHttpRouteHandle ActorFindRoute;
 	FHttpRouteHandle AssetDuplicateRoute;
@@ -407,6 +425,12 @@ private:
 	TArray<FTokenRecord> ScopedTokens;
 	TSet<FName> AllowedUObjectFunctions;
 	TSet<FName> AllowedUObjectProperties;
+	TSet<FString> AllowedReflectionClasses;
+	TSet<FString> DeniedReflectionClasses;
+	TSet<FName> AllowedReflectionFunctions;
+	TSet<FName> DeniedReflectionFunctions;
+	TSet<FName> AllowedReflectionProperties;
+	TSet<FName> DeniedReflectionProperties;
 	TArray<FString> AllowedActionAssetPrefixes;
 	mutable FCriticalSection JobMutex;
 	mutable FCriticalSection LogMutex;

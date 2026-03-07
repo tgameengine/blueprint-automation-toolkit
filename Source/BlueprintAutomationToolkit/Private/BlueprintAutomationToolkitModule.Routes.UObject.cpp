@@ -810,26 +810,6 @@ void FBlueprintAutomationToolkitModule::BindUObjectRoutes()
 			return DispatchAutomationCommandRoute(TEXT("/uobject/set"), Request, OnComplete, BodyObj);
 		}));
 
-	ObjectSetPropertyRoute = Router->BindRoute(
-		FHttpPath(TEXT("/object/set-property")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/set-property")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/object/set-property"), Request, OnComplete, BodyObj);
-		}));
-
 	UObjectCallRoute = Router->BindRoute(
 		FHttpPath(TEXT("/uobject/call")),
 		EHttpServerRequestVerbs::VERB_POST,
@@ -848,26 +828,6 @@ void FBlueprintAutomationToolkitModule::BindUObjectRoutes()
 			}
 
 			return DispatchAutomationCommandRoute(TEXT("/uobject/call"), Request, OnComplete, BodyObj);
-		}));
-
-	ObjectCallFunctionRoute = Router->BindRoute(
-		FHttpPath(TEXT("/object/call-function")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/call-function")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/object/call-function"), Request, OnComplete, BodyObj);
 		}));
 
 	ActorSpawnRoute = Router->BindRoute(
