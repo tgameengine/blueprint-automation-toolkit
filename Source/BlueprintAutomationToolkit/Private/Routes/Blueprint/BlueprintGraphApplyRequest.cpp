@@ -58,6 +58,7 @@ namespace BAT::BlueprintGraphApplyRequest
 			OptionsObj->TryGetBoolField(TEXT("transaction"), OutRequest.Options.bUseTransaction);
 			OptionsObj->TryGetBoolField(TEXT("dryRun"), OutRequest.Options.bDryRun);
 			OptionsObj->TryGetBoolField(TEXT("createMissingNodes"), OutRequest.Options.bCreateMissingNodes);
+			OptionsObj->TryGetBoolField(TEXT("autoArrangeExistingNodes"), OutRequest.Options.bAutoArrangeExistingNodes);
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>* NodesArray = nullptr;

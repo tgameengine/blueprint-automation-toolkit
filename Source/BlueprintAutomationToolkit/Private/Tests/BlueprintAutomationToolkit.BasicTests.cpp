@@ -31,6 +31,7 @@
 #include "Engine/EngineTypes.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
+#include "EdGraph/EdGraphPin.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "HAL/FileManager.h"
@@ -61,6 +62,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "B
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsUpdateOnlyNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeExistingNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeExistingNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyResultIncludesNodeValidationTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyResultIncludesNodeValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -242,6 +244,7 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI documents primaryOutputPoseSpace"), Spec.Contains(TEXT("primaryOutputPoseSpace"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents updateOnly"), Spec.Contains(TEXT("updateOnly"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents auto-aligned node placement"), Spec.Contains(TEXT("auto-aligns the node from linked neighbors"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents autoArrangeExistingNodes"), Spec.Contains(TEXT("autoArrangeExistingNodes"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /actor/destroy"), Spec.Contains(TEXT("/actor/destroy:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/select"), Spec.Contains(TEXT("/editor/select:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/focus"), Spec.Contains(TEXT("/editor/focus:"), ESearchCase::CaseSensitive));
@@ -812,6 +815,40 @@ bool FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest::RunTest(const FSt
 	return TestTrue(TEXT("Graph apply request should preserve Rotation pin override"), Request.Nodes[0].Pins.Contains(TEXT("Rotation")));
 }
 
+bool FBATBlueprintGraphApplyRequestSupportsAutoArrangeExistingNodesTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), TEXT("/Game/Test/BP_Test"));
+	Body->SetStringField(TEXT("graph"), TEXT("AnimGraph"));
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("autoArrangeExistingNodes"), true);
+	Body->SetObjectField(TEXT("options"), Options);
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("id"), TEXT("bat_pose_node"));
+	Node->SetBoolField(TEXT("updateOnly"), true);
+
+	TArray<TSharedPtr<FJsonValue>> Nodes;
+	Nodes.Add(MakeShared<FJsonValueObject>(Node));
+	Body->SetArrayField(TEXT("nodes"), Nodes);
+	Body->SetArrayField(TEXT("links"), TArray<TSharedPtr<FJsonValue>>());
+
+	FBlueprintGraphApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::BlueprintGraphApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("Graph apply request should accept autoArrangeExistingNodes option"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	return TestTrue(TEXT("Graph apply request should preserve autoArrangeExistingNodes=true"), Request.Options.bAutoArrangeExistingNodes);
+}
+
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)
 {
 	UEdGraphNode* Node = NewObject<UEdGraphNode>(GetTransientPackage(), NAME_None, RF_Transient);
@@ -843,19 +880,23 @@ bool FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest::RunTest(const FString&
 	TargetNode->NodePosX = 960;
 	TargetNode->NodePosY = 384;
 	FBlueprintGraphNodeService::SetNodeUasId(TargetNode, TEXT("target_node"));
+	UEdGraphPin* TargetInputPin = TargetNode->CreatePin(EGPD_Input, TEXT("struct"), FName(TEXT("ComponentPose")));
 
 	UEdGraphNode* CreatedNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
 	Graph->AddNode(CreatedNode, false, false);
 	CreatedNode->NodePosX = 0;
 	CreatedNode->NodePosY = 0;
 	FBlueprintGraphNodeService::SetNodeUasId(CreatedNode, TEXT("created_node"));
+	UEdGraphPin* CreatedOutputPin = CreatedNode->CreatePin(EGPD_Output, TEXT("struct"), FName(TEXT("Pose")));
+
+	if (!TestNotNull(TEXT("Created node output pin should exist"), CreatedOutputPin) || !TestNotNull(TEXT("Target node input pin should exist"), TargetInputPin))
+	{
+		return false;
+	}
+	CreatedOutputPin->MakeLinkTo(TargetInputPin);
 
 	FBlueprintGraphApplyNodeSpec CreatedNodeSpec;
 	CreatedNodeSpec.Id = TEXT("created_node");
-
-	FBlueprintGraphApplyLinkSpec LinkSpec;
-	LinkSpec.From = TEXT("created_node.Pose");
-	LinkSpec.To = TEXT("target_node.ComponentPose");
 
 	TMap<FString, UEdGraphNode*> NodeById;
 	NodeById.Add(TEXT("created_node"), CreatedNode);
@@ -864,7 +905,7 @@ bool FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest::RunTest(const FString&
 	TSet<FString> CreatedNodeIds;
 	CreatedNodeIds.Add(TEXT("created_node"));
 
-	FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(Graph, { CreatedNodeSpec }, { LinkSpec }, NodeById, CreatedNodeIds);
+	FBlueprintGraphLayoutService::AutoArrangeNodes(Graph, NodeById, CreatedNodeIds);
 
 	TestEqual(TEXT("Auto-arranged node should be placed one lane before its target"), CreatedNode->NodePosX, 640);
 	return TestEqual(TEXT("Auto-arranged node should align vertically with its target"), CreatedNode->NodePosY, 384);

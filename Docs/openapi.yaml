@@ -781,6 +781,9 @@ paths:
                     createMissingNodes:
                       type: boolean
                       description: When false, node updates must target existing BAT-owned nodes instead of creating missing ones.
+                    autoArrangeExistingNodes:
+                      type: boolean
+                      description: When true, BAT re-aligns the referenced existing BAT-owned nodes using their current graph links after applying changes.
                 nodes:
                   type: array
                   items:

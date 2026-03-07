@@ -22,6 +22,11 @@ namespace
 		SortedNodeIds.Sort();
 		return FString::Printf(TEXT("%s:%s"), Prefix, *FString::Join(SortedNodeIds, TEXT("|")));
 	}
+
+	static FString GetNodeLayoutId(UEdGraphNode* Node)
+	{
+		return Node ? Node->NodeGuid.ToString(EGuidFormats::DigitsWithHyphensLower) : FString();
+	}
 }
 
 void FBlueprintGraphLayoutService::ApplyNodeLayout(UEdGraphNode* Node, const FBlueprintGraphApplyNodeSpec& NodeSpec)
@@ -41,42 +46,61 @@ void FBlueprintGraphLayoutService::ApplyNodeLayout(UEdGraphNode* Node, const FBl
 	}
 }
 
-void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, const TArray<FBlueprintGraphApplyNodeSpec>& NodeSpecs, const TArray<FBlueprintGraphApplyLinkSpec>& LinkSpecs, const TMap<FString, UEdGraphNode*>& NodeById, const TSet<FString>& CreatedNodeIds)
+void FBlueprintGraphLayoutService::AutoArrangeNodes(UEdGraph* Graph, const TMap<FString, UEdGraphNode*>& NodeById, const TSet<FString>& NodeIdsToArrange)
 {
-	if (!Graph || CreatedNodeIds.Num() == 0)
+	if (!Graph || NodeIdsToArrange.Num() == 0)
 	{
 		return;
 	}
 
-	TMap<FString, const FBlueprintGraphApplyNodeSpec*> SpecById;
-	for (const FBlueprintGraphApplyNodeSpec& NodeSpec : NodeSpecs)
+	TMap<UEdGraphNode*, FString> IdByNode;
+	for (const TPair<FString, UEdGraphNode*>& Pair : NodeById)
 	{
-		SpecById.Add(NodeSpec.Id, &NodeSpec);
+		if (Pair.Value)
+		{
+			IdByNode.Add(Pair.Value, Pair.Key);
+		}
 	}
 
 	TMap<FString, TArray<FString>> IncomingByNode;
 	TMap<FString, TArray<FString>> OutgoingByNode;
-	for (const FBlueprintGraphApplyLinkSpec& LinkSpec : LinkSpecs)
+	for (UEdGraphNode* GraphNode : Graph->Nodes)
 	{
-		FString FromNodeId;
-		FString FromPinName;
-		FString ToNodeId;
-		FString ToPinName;
-		if (!LinkSpec.From.Split(TEXT("."), &FromNodeId, &FromPinName, ESearchCase::CaseSensitive, ESearchDir::FromEnd)
-			|| !LinkSpec.To.Split(TEXT("."), &ToNodeId, &ToPinName, ESearchCase::CaseSensitive, ESearchDir::FromEnd))
+		if (!GraphNode)
 		{
 			continue;
 		}
 
-		FromNodeId.TrimStartAndEndInline();
-		ToNodeId.TrimStartAndEndInline();
-		if (FromNodeId.IsEmpty() || ToNodeId.IsEmpty())
+		const FString* FromNodeId = IdByNode.Find(GraphNode);
+		if (!FromNodeId)
 		{
 			continue;
 		}
 
-		OutgoingByNode.FindOrAdd(FromNodeId).Add(ToNodeId);
-		IncomingByNode.FindOrAdd(ToNodeId).Add(FromNodeId);
+		for (UEdGraphPin* Pin : GraphNode->Pins)
+		{
+			if (!Pin || Pin->Direction != EGPD_Output)
+			{
+				continue;
+			}
+
+			for (UEdGraphPin* LinkedPin : Pin->LinkedTo)
+			{
+				if (!LinkedPin || !LinkedPin->GetOwningNode())
+				{
+					continue;
+				}
+
+				const FString* ToNodeId = IdByNode.Find(LinkedPin->GetOwningNode());
+				if (!ToNodeId)
+				{
+					continue;
+				}
+
+				OutgoingByNode.FindOrAdd(*FromNodeId).Add(*ToNodeId);
+				IncomingByNode.FindOrAdd(*ToNodeId).Add(*FromNodeId);
+			}
+		}
 	}
 
 	TSet<FString> PositionedIds;
@@ -91,12 +115,9 @@ void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, cons
 
 		MaxNodePosX = FMath::Max(MaxNodePosX, GraphNode->NodePosX);
 		MaxNodePosY = FMath::Max(MaxNodePosY, GraphNode->NodePosY);
-		if (const FString* StableId = NodeById.FindKey(GraphNode))
+		if (const FString* StableId = IdByNode.Find(GraphNode))
 		{
-			const FBlueprintGraphApplyNodeSpec* const* NodeSpecPtr = SpecById.Find(*StableId);
-			const bool bCreatedWithoutExplicitPosition = NodeSpecPtr && *NodeSpecPtr && CreatedNodeIds.Contains(*StableId)
-				&& !(*NodeSpecPtr)->bHasExplicitX && !(*NodeSpecPtr)->bHasExplicitY;
-			if (!bCreatedWithoutExplicitPosition)
+			if (!NodeIdsToArrange.Contains(*StableId))
 			{
 				PositionedIds.Add(*StableId);
 			}
@@ -104,17 +125,17 @@ void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, cons
 	}
 
 	TMap<FString, int32> AnchorUsageCounts;
-	for (int32 PassIndex = 0; PassIndex < NodeSpecs.Num(); ++PassIndex)
+	for (int32 PassIndex = 0; PassIndex < NodeIdsToArrange.Num(); ++PassIndex)
 	{
 		bool bPlacedNodeInPass = false;
-		for (const FBlueprintGraphApplyNodeSpec& NodeSpec : NodeSpecs)
+		for (const FString& NodeId : NodeIdsToArrange)
 		{
-			if (!CreatedNodeIds.Contains(NodeSpec.Id) || (NodeSpec.bHasExplicitX && NodeSpec.bHasExplicitY) || PositionedIds.Contains(NodeSpec.Id))
+			if (PositionedIds.Contains(NodeId))
 			{
 				continue;
 			}
 
-			UEdGraphNode* const* NodePtr = NodeById.Find(NodeSpec.Id);
+			UEdGraphNode* const* NodePtr = NodeById.Find(NodeId);
 			if (!NodePtr || !*NodePtr)
 			{
 				continue;
@@ -125,7 +146,7 @@ void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, cons
 			TArray<FString> IncomingAnchorIds;
 			TArray<FString> OutgoingAnchorIds;
 
-			if (const TArray<FString>* IncomingIds = IncomingByNode.Find(NodeSpec.Id))
+			if (const TArray<FString>* IncomingIds = IncomingByNode.Find(NodeId))
 			{
 				for (const FString& IncomingId : *IncomingIds)
 				{
@@ -142,7 +163,7 @@ void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, cons
 				}
 			}
 
-			if (const TArray<FString>* OutgoingIds = OutgoingByNode.Find(NodeSpec.Id))
+			if (const TArray<FString>* OutgoingIds = OutgoingByNode.Find(NodeId))
 			{
 				for (const FString& OutgoingId : *OutgoingIds)
 				{
@@ -199,7 +220,7 @@ void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, cons
 			TargetY += LaneIndex * BatLayoutVerticalSpacing;
 			(*NodePtr)->NodePosX = SnapToGrid(TargetX);
 			(*NodePtr)->NodePosY = SnapToGrid(TargetY);
-			PositionedIds.Add(NodeSpec.Id);
+			PositionedIds.Add(NodeId);
 			bPlacedNodeInPass = true;
 		}
 
@@ -211,14 +232,14 @@ void FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(UEdGraph* Graph, cons
 
 	int32 FallbackIndex = 0;
 	const int32 FallbackX = SnapToGrid(MaxNodePosX + BatLayoutHorizontalSpacing);
-	for (const FBlueprintGraphApplyNodeSpec& NodeSpec : NodeSpecs)
+	for (const FString& NodeId : NodeIdsToArrange)
 	{
-		if (!CreatedNodeIds.Contains(NodeSpec.Id) || PositionedIds.Contains(NodeSpec.Id))
+		if (PositionedIds.Contains(NodeId))
 		{
 			continue;
 		}
 
-		if (UEdGraphNode* const* NodePtr = NodeById.Find(NodeSpec.Id))
+		if (UEdGraphNode* const* NodePtr = NodeById.Find(NodeId))
 		{
 			if (*NodePtr)
 			{

@@ -37,7 +37,18 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 	FBlueprintGraphLinkService::ApplyLinks(Target.Graph, Request.Links, NodeById, Request.Options.bDryRun, ApplyResult);
 	if (bWillMutate)
 	{
-		FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(Target.Graph, Request.Nodes, Request.Links, NodeById, CreatedNodeIds);
+		TSet<FString> NodeIdsToArrange = CreatedNodeIds;
+		if (Request.Options.bAutoArrangeExistingNodes)
+		{
+			for (const FBlueprintGraphApplyNodeSpec& NodeSpec : Request.Nodes)
+			{
+				if (!NodeSpec.bHasExplicitX && !NodeSpec.bHasExplicitY && NodeById.Contains(NodeSpec.Id))
+				{
+					NodeIdsToArrange.Add(NodeSpec.Id);
+				}
+			}
+		}
+		FBlueprintGraphLayoutService::AutoArrangeNodes(Target.Graph, NodeById, NodeIdsToArrange);
 	}
 	if (bWillMutate)
 	{
