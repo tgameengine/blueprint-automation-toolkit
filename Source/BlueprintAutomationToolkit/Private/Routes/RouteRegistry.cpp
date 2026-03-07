@@ -11,6 +11,7 @@ namespace
 void FBlueprintAutomationToolkitModule::BindRoutes()
 {
 	const FRouteBinder RouteBinders[] = {
+		{&FBlueprintAutomationToolkitModule::BindDiscoverRoutes},
 		{&FBlueprintAutomationToolkitModule::BindEditorRoutes},
 		{&FBlueprintAutomationToolkitModule::BindPieControlRoutes},
 		{&FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes},

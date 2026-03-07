@@ -37,6 +37,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExtensionCommandRegistrationMetadataTest, "
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPendingResponseExportWritesViaSharedJsonBuilderTest, "BlueprintAutomationToolkit.Security.PendingResponseExportWritesViaSharedJsonBuilder", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPieEditBlockRouteClassificationTest, "BlueprintAutomationToolkit.Security.PieEditBlockRouteClassification", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthMissingResponseHasTokenHintTest, "BlueprintAutomationToolkit.Security.AuthMissingResponseHasTokenHint", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATJsonOkEnvelopeIncludesCanonicalFieldsTest, "BlueprintAutomationToolkit.Transport.JsonOkEnvelopeIncludesCanonicalFields", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthFailureUsesCanonicalErrorArrayTest, "BlueprintAutomationToolkit.Transport.AuthFailureUsesCanonicalErrorArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListPropertiesTest, "BlueprintAutomationToolkit.Reflection.ListProperties", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -77,6 +79,12 @@ namespace
 	static TSharedPtr<FJsonObject> GetStructuredRoot(const FAutomationResult& Result)
 	{
 		return (Result.Data.IsValid() && Result.Data->Type == EJson::Object) ? Result.Data->AsObject() : nullptr;
+	}
+
+	static bool ParseJsonObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
+	{
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
+		return FJsonSerializer::Deserialize(Reader, OutObject) && OutObject.IsValid();
 	}
 
 	static TSharedPtr<FJsonObject> GetStructuredData(const FAutomationResult& Result)
@@ -441,6 +449,82 @@ bool FBATAuthMissingResponseHasTokenHintTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Auth missing response avoids settings-file guidance"), !Json.Contains(TEXT("EditorPerProjectUserSettings.ini"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("Auth missing response includes WWW-Authenticate Bearer challenge"), WwwAuthenticate.Contains(TEXT("Bearer realm=\"BlueprintAutomationToolkit\""), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("Auth missing response identifies invalid_request"), WwwAuthenticate.Contains(TEXT("error=\"invalid_request\""), ESearchCase::CaseSensitive));
+	return true;
+}
+
+bool FBATJsonOkEnvelopeIncludesCanonicalFieldsTest::RunTest(const FString& Parameters)
+{
+	const FString RequestId = TEXT("json-ok-envelope-test");
+	TUniquePtr<FHttpServerResponse> Response = BAT::Http::MakeJsonOk(MakeShared<FJsonValueString>(TEXT("ok")), 200, RequestId);
+	if (!TestNotNull(TEXT("MakeJsonOk should return a response"), Response.Get()))
+	{
+		return false;
+	}
+
+	const FString Body = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Response->Body.GetData())));
+	TSharedPtr<FJsonObject> Root;
+	if (!TestTrue(TEXT("MakeJsonOk response body parses as JSON"), ParseJsonObject(Body, Root)))
+	{
+		return false;
+	}
+
+	bool bOk = false;
+	TestTrue(TEXT("MakeJsonOk response contains ok field"), Root->TryGetBoolField(TEXT("ok"), bOk));
+	TestTrue(TEXT("MakeJsonOk response sets ok=true"), bOk);
+
+	FString ParsedRequestId;
+	TestTrue(TEXT("MakeJsonOk response contains requestId field"), Root->TryGetStringField(TEXT("requestId"), ParsedRequestId));
+	TestEqual(TEXT("MakeJsonOk response preserves requestId"), ParsedRequestId, RequestId);
+
+	const TArray<TSharedPtr<FJsonValue>>* Errors = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* Warnings = nullptr;
+	TestTrue(TEXT("MakeJsonOk response contains errors array"), Root->TryGetArrayField(TEXT("errors"), Errors) && Errors);
+	TestTrue(TEXT("MakeJsonOk response contains warnings array"), Root->TryGetArrayField(TEXT("warnings"), Warnings) && Warnings);
+	TestTrue(TEXT("MakeJsonOk response contains data field"), Root->HasField(TEXT("data")));
+	return true;
+}
+
+bool FBATAuthFailureUsesCanonicalErrorArrayTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	FString Json;
+	FString WwwAuthenticate;
+	if (!TestTrue(TEXT("Auth failure response should be buildable"), Module.Test_BuildAuthFailureResponse(TEXT("auth_missing"), Json, WwwAuthenticate)))
+	{
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> Root;
+	if (!TestTrue(TEXT("Auth failure response body parses as JSON"), ParseJsonObject(Json, Root)))
+	{
+		return false;
+	}
+
+	bool bOk = true;
+	TestTrue(TEXT("Auth failure response contains ok field"), Root->TryGetBoolField(TEXT("ok"), bOk));
+	TestFalse(TEXT("Auth failure response sets ok=false"), bOk);
+	TestFalse(TEXT("Auth failure response does not use legacy top-level error object"), Root->HasField(TEXT("error")));
+
+	const TArray<TSharedPtr<FJsonValue>>* Errors = nullptr;
+	if (!TestTrue(TEXT("Auth failure response contains errors array"), Root->TryGetArrayField(TEXT("errors"), Errors) && Errors && Errors->Num() > 0))
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject> FirstError = (*Errors)[0].IsValid() ? (*Errors)[0]->AsObject() : nullptr;
+	if (!TestNotNull(TEXT("Auth failure response first error is structured"), FirstError.Get()))
+	{
+		return false;
+	}
+
+	FString Code;
+	FString Message;
+	bool bRecoverable = false;
+	TestTrue(TEXT("Auth failure response error includes code"), FirstError->TryGetStringField(TEXT("code"), Code));
+	TestTrue(TEXT("Auth failure response error includes message"), FirstError->TryGetStringField(TEXT("message"), Message));
+	TestTrue(TEXT("Auth failure response error includes recoverable flag"), FirstError->TryGetBoolField(TEXT("recoverable"), bRecoverable));
+	TestEqual(TEXT("Auth failure response normalizes auth_missing code"), Code, FString(TEXT("auth_missing")));
+	TestTrue(TEXT("Auth failure response marks missing auth as recoverable"), bRecoverable);
 	return true;
 }
 

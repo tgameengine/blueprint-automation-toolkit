@@ -9,6 +9,7 @@
 #include "Misc/ScopeLock.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "Transport/ErrorMapping.h"
 
 namespace
 {
@@ -223,40 +224,47 @@ namespace BAT::Http
 
 	TUniquePtr<FHttpServerResponse> MakeJsonResponse(int32 StatusCode, const TSharedRef<FJsonObject>& Object, const FString& RequestId)
 	{
-		const FString Json = ToJsonString(Object);
-		return MakeJsonResponseFromString(StatusCode, Json, RequestId);
+		const FString ResolvedRequestId = ResolveRequestId(RequestId);
+		TSharedRef<FJsonObject> ResponseObject = MakeShared<FJsonObject>(*Object);
+		if (!ResolvedRequestId.IsEmpty() && !ResponseObject->HasField(TEXT("requestId")))
+		{
+			ResponseObject->SetStringField(TEXT("requestId"), ResolvedRequestId);
+		}
+
+		const FString Json = ToJsonString(ResponseObject);
+		return MakeJsonResponseFromString(StatusCode, Json, ResolvedRequestId);
 	}
 
 	TUniquePtr<FHttpServerResponse> MakeJsonOk(const TSharedPtr<FJsonValue>& Data, int32 StatusCode, const FString& RequestId)
 	{
+		const FString ResolvedRequestId = ResolveRequestId(RequestId);
 		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 		Root->SetBoolField(TEXT("ok"), true);
+		Root->SetStringField(TEXT("requestId"), ResolvedRequestId);
 
 		TArray<TSharedPtr<FJsonValue>> Errors;
 		TArray<TSharedPtr<FJsonValue>> Warnings;
 		Root->SetArrayField(TEXT("errors"), Errors);
 		Root->SetArrayField(TEXT("warnings"), Warnings);
 		Root->SetField(TEXT("data"), Data.IsValid() ? Data : MakeShared<FJsonValueObject>(MakeShared<FJsonObject>()));
-		return MakeJsonResponse(StatusCode, Root, RequestId);
+		return MakeJsonResponse(StatusCode, Root, ResolvedRequestId);
 	}
 
 	TUniquePtr<FHttpServerResponse> MakeJsonError(int32 StatusCode, const FString& Code, const FString& Message, const FString& RequestId)
 	{
+		const FString ResolvedRequestId = ResolveRequestId(RequestId);
 		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 		Root->SetBoolField(TEXT("ok"), false);
-
-		TSharedRef<FJsonObject> Error = MakeShared<FJsonObject>();
-		Error->SetStringField(TEXT("code"), Code);
-		Error->SetStringField(TEXT("message"), Message);
+		Root->SetStringField(TEXT("requestId"), ResolvedRequestId);
 
 		TArray<TSharedPtr<FJsonValue>> Errors;
-		Errors.Add(MakeShared<FJsonValueObject>(Error));
+		Errors.Add(MakeShared<FJsonValueObject>(BAT::Transport::MakeIssueObject(Code, Message)));
 		TArray<TSharedPtr<FJsonValue>> Warnings;
 
 		Root->SetArrayField(TEXT("errors"), Errors);
 		Root->SetArrayField(TEXT("warnings"), Warnings);
 		Root->SetObjectField(TEXT("data"), MakeShared<FJsonObject>());
-		return MakeJsonResponse(StatusCode, Root, RequestId);
+		return MakeJsonResponse(StatusCode, Root, ResolvedRequestId);
 	}
 
 	void JsonOk(const FHttpResultCallback& OnComplete, const TSharedPtr<FJsonValue>& Data, int32 StatusCode, const FString& RequestId)

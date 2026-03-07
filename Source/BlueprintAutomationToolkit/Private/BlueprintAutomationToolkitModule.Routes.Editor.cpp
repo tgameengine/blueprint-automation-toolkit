@@ -827,19 +827,6 @@ bool FBlueprintAutomationToolkitModule::ExecuteEditorLayoutApply(const TArray<TS
 
 void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 {
-	HealthRoute = Router->BindRoute(
-		FHttpPath(TEXT("/health")),
-		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-			Obj->SetBoolField(TEXT("ok"), true);
-			Obj->SetNumberField(TEXT("port"), Port);
-			const FString RequestId = ResolveOrCreateRequestId(Request);
-			BAT::Http::JsonOk(OnComplete, MakeShared<FJsonValueObject>(Obj), 200, RequestId);
-			return true;
-		}));
-
 	EditorMapRoute = Router->BindRoute(
 		FHttpPath(TEXT("/ai/editor/map")),
 		EHttpServerRequestVerbs::VERB_GET,
@@ -945,72 +932,6 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			Obj->SetStringField(TEXT("requestId"), RequestId);
 			OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Obj), RequestId));
 
-			return true;
-		}));
-
-	CapabilitiesRoute = Router->BindRoute(
-		FHttpPath(TEXT("/ai/capabilities")),
-		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/ai/capabilities")))
-			{
-				return true;
-			}
-
-			const FString RequestId = ResolveOrCreateRequestId(Request);
-			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, BuildCapabilitiesSummary()));
-			return true;
-		}));
-
-	EngineDiscoverRoute = Router->BindRoute(
-		FHttpPath(TEXT("/engine/discover")),
-		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/engine/discover")))
-			{
-				return true;
-			}
-
-			const FString RequestId = ResolveOrCreateRequestId(Request);
-			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, BuildEngineDiscoverPayload()));
-			return true;
-		}));
-
-	OpenApiRoute = Router->BindRoute(
-		FHttpPath(TEXT("/openapi")),
-		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/openapi")))
-			{
-				return true;
-			}
-
-			TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
-			if (!Plugin.IsValid())
-			{
-				Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
-			}
-			if (!Plugin.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::ServerError, TEXT("plugin_not_found"), TEXT("Plugin not found")));
-				return true;
-			}
-
-			const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
-			FString Spec;
-			if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::ServerError, TEXT("openapi_missing"), TEXT("OpenAPI spec not found")));
-				return true;
-			}
-
-			TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(Spec, TEXT("application/yaml"));
-			Response->Code = EHttpServerResponseCodes::Ok;
-			Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower));
-			OnComplete(MoveTemp(Response));
 			return true;
 		}));
 

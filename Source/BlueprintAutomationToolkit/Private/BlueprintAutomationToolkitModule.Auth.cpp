@@ -28,6 +28,7 @@
 #include "Serialization/JsonSerializer.h"
 #include "FileHelpers.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Transport/ResponseWriter.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBlueprintAutomationToolkitAuth, Log, All);
 
@@ -437,27 +438,7 @@ TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeAuthFailu
 
 TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeErrorResponse(int32 HttpCode, const FString& RequestId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details) const
 {
-	TSharedRef<FJsonObject> ErrorObj = MakeShared<FJsonObject>();
-	ErrorObj->SetStringField(TEXT("code"), Code);
-	ErrorObj->SetStringField(TEXT("message"), Message);
-	if (Details.IsValid())
-	{
-		ErrorObj->SetObjectField(TEXT("details"), Details.ToSharedRef());
-	}
-
-	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetBoolField(TEXT("ok"), false);
-
-	TArray<TSharedPtr<FJsonValue>> Errors;
-	Errors.Add(MakeShared<FJsonValueObject>(ErrorObj));
-	TArray<TSharedPtr<FJsonValue>> Warnings;
-	Root->SetArrayField(TEXT("errors"), Errors);
-	Root->SetArrayField(TEXT("warnings"), Warnings);
-	Root->SetObjectField(TEXT("data"), MakeShared<FJsonObject>());
-
-	TUniquePtr<FHttpServerResponse> Response = BAT::Http::MakeJsonResponse(HttpCode, Root, RequestId);
-	Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(RequestId);
-	return Response;
+	return BAT::Transport::MakeErrorResponse(HttpCode, RequestId, Code, Message, Details);
 }
 
 TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeErrorResponse(EHttpServerResponseCodes HttpCode, const FString& RequestId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details) const
@@ -478,147 +459,17 @@ TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeErrorResp
 
 TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeCanonicalSuccessResponse(int32 HttpCode, const FString& RequestId, const TSharedPtr<FJsonObject>& Data, const TArray<TSharedPtr<FJsonValue>>& Warnings) const
 {
-	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetBoolField(TEXT("success"), true);
-	Root->SetArrayField(TEXT("warnings"), Warnings);
-	Root->SetObjectField(TEXT("data"), Data.IsValid() ? Data.ToSharedRef() : MakeShared<FJsonObject>());
-	return BAT::Http::MakeJsonResponse(HttpCode, Root, RequestId);
+	return BAT::Transport::MakeSuccessResponse(HttpCode, RequestId, Data, Warnings);
 }
 
 TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeCanonicalErrorResponse(int32 HttpCode, const FString& RequestId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details, const TArray<TSharedPtr<FJsonValue>>& Warnings, const FString& SuggestedAction, const TOptional<bool>& RetryableOverride) const
 {
-	bool bRetryable = false;
-	FString EffectiveSuggestedAction = SuggestedAction;
-	DescribeCanonicalError(Code, HttpCode, bRetryable, EffectiveSuggestedAction);
-	if (RetryableOverride.IsSet())
-	{
-		bRetryable = RetryableOverride.GetValue();
-	}
-	if (!SuggestedAction.IsEmpty())
-	{
-		EffectiveSuggestedAction = SuggestedAction;
-	}
-
-	TSharedRef<FJsonObject> ErrorObj = MakeShared<FJsonObject>();
-	ErrorObj->SetStringField(TEXT("code"), NormalizeCanonicalErrorCode(Code));
-	ErrorObj->SetStringField(TEXT("message"), Message);
-	ErrorObj->SetBoolField(TEXT("retryable"), bRetryable);
-	if (!EffectiveSuggestedAction.IsEmpty())
-	{
-		ErrorObj->SetStringField(TEXT("suggestedAction"), EffectiveSuggestedAction);
-	}
-	if (Details.IsValid())
-	{
-		ErrorObj->SetObjectField(TEXT("details"), Details.ToSharedRef());
-	}
-
-	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-	Root->SetBoolField(TEXT("success"), false);
-	Root->SetArrayField(TEXT("warnings"), Warnings);
-	Root->SetObjectField(TEXT("error"), ErrorObj);
-	return BAT::Http::MakeJsonResponse(HttpCode, Root, RequestId);
+	return BAT::Transport::MakeErrorResponse(HttpCode, RequestId, Code, Message, Details, Warnings, SuggestedAction, RetryableOverride);
 }
 
 TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeCanonicalResponseFromAutomationResult(const FAutomationResult& Result, const FString& RequestId) const
 {
-	TArray<TSharedPtr<FJsonValue>> Warnings;
-	TSharedPtr<FJsonObject> Data;
-	TSharedPtr<FJsonObject> Details;
-	FString ErrorCode = Result.ErrorCode;
-	FString ErrorMessage = Result.ErrorMessage;
-
-	const TSharedPtr<FJsonObject> PrimaryObject = JsonValueToObject(Result.bSuccess ? Result.Data : (Result.ErrorData.IsValid() ? Result.ErrorData : Result.Data));
-	bool bTreatAsFailure = !Result.bSuccess;
-	if (PrimaryObject.IsValid())
-	{
-		bool bStructuredSuccess = true;
-		if ((PrimaryObject->TryGetBoolField(TEXT("success"), bStructuredSuccess) || PrimaryObject->TryGetBoolField(TEXT("ok"), bStructuredSuccess)) && !bStructuredSuccess)
-		{
-			bTreatAsFailure = true;
-		}
-	}
-	if (PrimaryObject.IsValid())
-	{
-		const TArray<TSharedPtr<FJsonValue>>* WarningArray = nullptr;
-		if (PrimaryObject->TryGetArrayField(TEXT("warnings"), WarningArray) && WarningArray)
-		{
-			Warnings = NormalizeIssueArray(*WarningArray, TEXT("warning"));
-		}
-
-		const TSharedPtr<FJsonObject>* DataPtr = nullptr;
-		if (PrimaryObject->TryGetObjectField(TEXT("data"), DataPtr) && DataPtr && DataPtr->IsValid())
-		{
-			Data = MakeShared<FJsonObject>(**DataPtr);
-		}
-		else if (Result.bSuccess)
-		{
-			Data = MakeShared<FJsonObject>(*PrimaryObject);
-		}
-
-		if (bTreatAsFailure)
-		{
-			const TSharedPtr<FJsonObject>* ErrorPtr = nullptr;
-			if (PrimaryObject->TryGetObjectField(TEXT("error"), ErrorPtr) && ErrorPtr && ErrorPtr->IsValid())
-			{
-				const TSharedPtr<FJsonObject>& RawError = *ErrorPtr;
-				RawError->TryGetStringField(TEXT("code"), ErrorCode);
-				RawError->TryGetStringField(TEXT("message"), ErrorMessage);
-				const TSharedPtr<FJsonObject>* DetailPtr = nullptr;
-				if (RawError->TryGetObjectField(TEXT("details"), DetailPtr) && DetailPtr && DetailPtr->IsValid())
-				{
-					Details = MakeShared<FJsonObject>(**DetailPtr);
-				}
-			}
-
-			const TArray<TSharedPtr<FJsonValue>>* ErrorArray = nullptr;
-			if (PrimaryObject->TryGetArrayField(TEXT("errors"), ErrorArray) && ErrorArray)
-			{
-				const TArray<TSharedPtr<FJsonValue>> NormalizedErrors = NormalizeIssueArray(*ErrorArray, TEXT("error"));
-				if (NormalizedErrors.Num() > 0)
-				{
-					if (!Details.IsValid())
-					{
-						Details = MakeShared<FJsonObject>();
-					}
-					Details->SetArrayField(TEXT("errors"), NormalizedErrors);
-
-					const TSharedPtr<FJsonObject> FirstError = JsonValueToObject(NormalizedErrors[0]);
-					if (FirstError.IsValid())
-					{
-						FirstError->TryGetStringField(TEXT("code"), ErrorCode);
-						FirstError->TryGetStringField(TEXT("message"), ErrorMessage);
-					}
-				}
-			}
-
-			if (Data.IsValid())
-			{
-				if (!Details.IsValid())
-				{
-					Details = MakeShared<FJsonObject>();
-				}
-				PromoteObjectReferenceFields(Data);
-				Details->SetObjectField(TEXT("result"), Data.ToSharedRef());
-			}
-		}
-	}
-
-	if (!bTreatAsFailure)
-	{
-		if (!Data.IsValid())
-		{
-			Data = MakeShared<FJsonObject>();
-			if (Result.Data.IsValid())
-			{
-				Data->SetField(TEXT("value"), Result.Data);
-			}
-		}
-
-		PromoteObjectReferenceFields(Data);
-		return MakeCanonicalSuccessResponse(Result.StatusCode, RequestId, Data, Warnings);
-	}
-
-	return MakeCanonicalErrorResponse(Result.StatusCode, RequestId, ErrorCode, ErrorMessage.IsEmpty() ? TEXT("Request failed") : ErrorMessage, Details, Warnings);
+	return BAT::Transport::MakeResponseFromAutomationResult(Result, RequestId);
 }
 
 TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::NormalizeCanonicalObjectRequest(const TSharedPtr<FJsonObject>& BodyObj) const

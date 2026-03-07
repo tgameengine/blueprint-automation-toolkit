@@ -112,6 +112,7 @@ private:
 	friend class FTokenAuthMiddleware;
 
 	void BindRoutes();
+	void BindDiscoverRoutes();
 	void BindEditorRoutes();
 	void BindExecRoute();
 	void BindPieControlRoutes();
