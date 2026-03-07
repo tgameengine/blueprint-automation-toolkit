@@ -30,6 +30,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExecPythonRequiresPythonPermissionTest, "Bl
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversPieAliasesTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversPieAliases", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversBlueprintCompileSaveTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversBlueprintCompileSave", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportAddsFilesystemPermissionTest, "BlueprintAutomationToolkit.Security.ResponseExportAddsFilesystemPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPendingResponseExportWritesViaSharedJsonBuilderTest, "BlueprintAutomationToolkit.Security.PendingResponseExportWritesViaSharedJsonBuilder", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPieEditBlockRouteClassificationTest, "BlueprintAutomationToolkit.Security.PieEditBlockRouteClassification", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthMissingResponseHasTokenHintTest, "BlueprintAutomationToolkit.Security.AuthMissingResponseHasTokenHint", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -238,6 +239,55 @@ bool FBATResponseExportAddsFilesystemPermissionTest::RunTest(const FString& Para
 	BodyObj->SetStringField(TEXT("responseOutputPath"), TEXT("tests/permission-check"));
 
 	TestEqual(TEXT("/object/get with response export requires Editor and Filesystem permissions"), Module.Test_GetRequestRequiredPermissions(TEXT("/object/get"), BodyObj), ExpectedMask);
+	return true;
+}
+
+bool FBATPendingResponseExportWritesViaSharedJsonBuilderTest::RunTest(const FString& Parameters)
+{
+	const FString RequestId = TEXT("pending-response-export-test");
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("responseOutputPath"), TEXT("tests/pending-json-builder"));
+
+	FString ResolveError;
+	FString OutputPath;
+	if (!TestTrue(TEXT("Safe responseOutputPath resolves"), BAT::Http::TryResolveResponseOutputPath(Body, RequestId, OutputPath, ResolveError)))
+	{
+		AddError(ResolveError);
+		return false;
+	}
+
+	FString RegisterError;
+	if (!TestTrue(TEXT("Pending response export registers successfully"), BAT::Http::RegisterPendingResponseExport(Body, RequestId, RegisterError)))
+	{
+		AddError(RegisterError);
+		return false;
+	}
+
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetBoolField(TEXT("ok"), true);
+	TUniquePtr<FHttpServerResponse> Response = BAT::Http::MakeJsonResponse(200, Root, RequestId);
+	if (!TestNotNull(TEXT("Shared JSON builder returns a response"), Response.Get()))
+	{
+		return false;
+	}
+
+	FString Contents;
+	if (!TestTrue(TEXT("Pending export file exists after shared JSON builder response"), FFileHelper::LoadFileToString(Contents, *OutputPath)))
+	{
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> ExportedObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
+	if (!TestTrue(TEXT("Pending export file contains valid JSON"), FJsonSerializer::Deserialize(Reader, ExportedObj) && ExportedObj.IsValid()))
+	{
+		return false;
+	}
+
+	bool bOk = false;
+	TestTrue(TEXT("Pending export file contains ok field"), ExportedObj->TryGetBoolField(TEXT("ok"), bOk));
+	TestTrue(TEXT("Pending export file contains ok=true"), bOk);
+	IFileManager::Get().Delete(*OutputPath, false, true, true);
 	return true;
 }
 

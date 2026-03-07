@@ -6,11 +6,15 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeLock.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
 namespace
 {
+	static FCriticalSection GPendingResponseExportMutex;
+	static TMap<FString, FString> GPendingResponseExports;
+
 	static FString ResolveRequestId(const FString& RequestId)
 	{
 		return RequestId.IsEmpty()
@@ -41,6 +45,47 @@ namespace
 		}
 
 		return false;
+	}
+
+	static bool WriteResponseFile(const FString& AbsolutePath, const FHttpServerResponse& Response, FString& OutError)
+	{
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(AbsolutePath), true);
+		if (!FFileHelper::SaveArrayToFile(Response.Body, *AbsolutePath))
+		{
+			OutError = FString::Printf(TEXT("Failed to write response to '%s'."), *AbsolutePath);
+			return false;
+		}
+
+		return true;
+	}
+
+	static void TryFlushPendingResponseExport(const FString& RequestId, const FHttpServerResponse& Response)
+	{
+		if (RequestId.IsEmpty())
+		{
+			return;
+		}
+
+		FString AbsolutePath;
+		{
+			FScopeLock Lock(&GPendingResponseExportMutex);
+			if (FString* PendingPath = GPendingResponseExports.Find(RequestId))
+			{
+				AbsolutePath = *PendingPath;
+				GPendingResponseExports.Remove(RequestId);
+			}
+		}
+
+		if (AbsolutePath.IsEmpty())
+		{
+			return;
+		}
+
+		FString Error;
+		if (!WriteResponseFile(AbsolutePath, Response, Error))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("BlueprintAutomationToolkit response export failed for request '%s': %s"), *RequestId, *Error);
+		}
 	}
 }
 
@@ -143,24 +188,43 @@ namespace BAT::Http
 			return OutError.IsEmpty();
 		}
 
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(OutAbsolutePath), true);
-		if (!FFileHelper::SaveArrayToFile(Response.Body, *OutAbsolutePath))
+		return WriteResponseFile(OutAbsolutePath, Response, OutError);
+	}
+
+	bool RegisterPendingResponseExport(const TSharedPtr<FJsonObject>& BodyObj, const FString& RequestId, FString& OutError)
+	{
+		OutError.Reset();
+		if (!HasResponseOutputPath(BodyObj))
 		{
-			OutError = FString::Printf(TEXT("Failed to write response to '%s'."), *OutAbsolutePath);
+			return true;
+		}
+
+		FString AbsolutePath;
+		if (!TryResolveResponseOutputPath(BodyObj, RequestId, AbsolutePath, OutError))
+		{
 			return false;
 		}
 
+		FScopeLock Lock(&GPendingResponseExportMutex);
+		GPendingResponseExports.Add(RequestId, AbsolutePath);
 		return true;
+	}
+
+	TUniquePtr<FHttpServerResponse> MakeJsonResponseFromString(int32 StatusCode, const FString& JsonString, const FString& RequestId)
+	{
+		const FString ResolvedRequestId = ResolveRequestId(RequestId);
+		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
+		Response->Code = static_cast<EHttpServerResponseCodes>(StatusCode);
+		Response->Headers.FindOrAdd(TEXT("Cache-Control")).Add(TEXT("no-store"));
+		Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(ResolvedRequestId);
+		TryFlushPendingResponseExport(ResolvedRequestId, *Response);
+		return Response;
 	}
 
 	TUniquePtr<FHttpServerResponse> MakeJsonResponse(int32 StatusCode, const TSharedRef<FJsonObject>& Object, const FString& RequestId)
 	{
 		const FString Json = ToJsonString(Object);
-		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(Json, TEXT("application/json"));
-		Response->Code = static_cast<EHttpServerResponseCodes>(StatusCode);
-		Response->Headers.FindOrAdd(TEXT("Cache-Control")).Add(TEXT("no-store"));
-		Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(ResolveRequestId(RequestId));
-		return Response;
+		return MakeJsonResponseFromString(StatusCode, Json, RequestId);
 	}
 
 	TUniquePtr<FHttpServerResponse> MakeJsonOk(const TSharedPtr<FJsonValue>& Data, int32 StatusCode, const FString& RequestId)

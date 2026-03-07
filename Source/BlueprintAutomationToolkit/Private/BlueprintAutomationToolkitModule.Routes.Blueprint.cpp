@@ -52,11 +52,7 @@ namespace
 
 	static TUniquePtr<FHttpServerResponse> MakeJsonResponse(EHttpServerResponseCodes Code, const FString& JsonString)
 	{
-		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
-		Response->Code = Code;
-		Response->Headers.FindOrAdd(TEXT("Cache-Control")).Add(TEXT("no-store"));
-		Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower));
-		return Response;
+		return BAT::Http::MakeJsonResponseFromString(static_cast<int32>(Code), JsonString);
 	}
 
 	static FString ToJsonString(const TSharedRef<FJsonObject>& Object)
@@ -2973,7 +2969,7 @@ BlueprintCreateRoute = Router->BindRoute(
 					Cached->SetStringField(TEXT("jobId"), *ExistingJobId);
 					Cached->SetStringField(TEXT("requestId"), RequestId);
 					Cached->SetBoolField(TEXT("idempotent_replay"), true);
-					OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Cached)));
+					OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Cached), RequestId));
 					return true;
 				}
 			}
@@ -2988,7 +2984,7 @@ BlueprintCreateRoute = Router->BindRoute(
 			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
 			Obj->SetStringField(TEXT("jobId"), JobId);
 			Obj->SetStringField(TEXT("requestId"), RequestId);
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Obj)));
+			OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Obj), RequestId));
 
 			return true;
 		}));
@@ -3103,7 +3099,7 @@ BlueprintCreateRoute = Router->BindRoute(
 				}
 			};
 
-			const bool bCompleted = RunOnGameThreadWait([this, BlueprintPath, DefaultsObj, ComponentsApply, bCompile, Complete]()
+			const bool bCompleted = RunOnGameThreadWait([this, BlueprintPath, DefaultsObj, ComponentsApply, bCompile, Complete, RequestId]()
 			{
 				UBlueprint* Blueprint = nullptr;
 				FString ObjectPath;
@@ -3364,7 +3360,7 @@ BlueprintCreateRoute = Router->BindRoute(
 				Obj->SetArrayField(TEXT("errors"), Errors);
 				Obj->SetArrayField(TEXT("components_applied"), ComponentsApplied);
 				Obj->SetArrayField(TEXT("component_errors"), ComponentErrors);
-				Complete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj)));
+				Complete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Ok), ToJsonString(Obj), RequestId));
 			}, 10.0);
 
 			if (!bCompleted && !bResponded->Exchange(true))

@@ -141,11 +141,7 @@ namespace
 
 	static TUniquePtr<FHttpServerResponse> MakeJsonResponse(EHttpServerResponseCodes Code, const FString& JsonString)
 	{
-		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
-		Response->Code = Code;
-		Response->Headers.FindOrAdd(TEXT("Cache-Control")).Add(TEXT("no-store"));
-		Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower));
-		return Response;
+		return BAT::Http::MakeJsonResponseFromString(static_cast<int32>(Code), JsonString);
 	}
 
 	static FString ToJsonString(const TSharedRef<FJsonObject>& Object)
@@ -898,7 +894,8 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			Obj->SetStringField(TEXT("world"), TEXT("editor"));
 			Obj->SetStringField(TEXT("map_package"), PackageName);
 			Obj->SetStringField(TEXT("world_object"), WorldName);
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj)));
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Ok), ToJsonString(Obj), RequestId));
 			return true;
 		}));
 
@@ -964,7 +961,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
 			Obj->SetStringField(TEXT("jobId"), JobId);
 			Obj->SetStringField(TEXT("requestId"), RequestId);
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Obj)));
+			OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Obj), RequestId));
 
 			return true;
 		}));
@@ -1125,7 +1122,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 					TSharedRef<FJsonObject> Cached = MakeShared<FJsonObject>();
 					Cached->SetStringField(TEXT("jobId"), *ExistingJobId);
 					Cached->SetBoolField(TEXT("idempotent_replay"), true);
-					OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Cached)));
+					OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Cached), RequestId));
 					return true;
 				}
 			}
@@ -1147,7 +1144,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
 			Obj->SetStringField(TEXT("jobId"), JobId);
 			Obj->SetStringField(TEXT("requestId"), RequestId);
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Obj)));
+			OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Obj), RequestId));
 			return true;
 		}));
 
@@ -1314,7 +1311,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 					OnComplete(MoveTemp(Response));
 				}
 			};
-			const bool bCompleted = RunOnGameThreadWait([this, Complete, Ops]()
+			const bool bCompleted = RunOnGameThreadWait([this, Complete, Ops, RequestId]()
 			{
 				TArray<TSharedPtr<FJsonValue>> Errors;
 				int32 TotalInstances = 0;
@@ -1388,7 +1385,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 				TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
 				ResponseObj->SetBoolField(TEXT("ok"), Errors.Num() == 0);
 				ResponseObj->SetArrayField(TEXT("errors"), Errors);
-				Complete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(ResponseObj)));
+				Complete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Ok), ToJsonString(ResponseObj), RequestId));
 			}, 10.0);
 
 			if (!bCompleted && !bResponded->Exchange(true))
@@ -1437,7 +1434,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 					Cached->SetStringField(TEXT("jobId"), *ExistingJobId);
 					Cached->SetStringField(TEXT("requestId"), RequestId);
 					Cached->SetBoolField(TEXT("idempotent_replay"), true);
-					OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Cached)));
+					OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Cached), RequestId));
 					return true;
 				}
 			}
@@ -1451,7 +1448,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
 			Obj->SetStringField(TEXT("jobId"), JobId);
 			Obj->SetStringField(TEXT("requestId"), RequestId);
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Accepted, ToJsonString(Obj)));
+			OnComplete(BAT::Http::MakeJsonResponseFromString(static_cast<int32>(EHttpServerResponseCodes::Accepted), ToJsonString(Obj), RequestId));
 
 			return true;
 		}));

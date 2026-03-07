@@ -14,6 +14,8 @@ namespace BAT::Http
 	bool HasResponseOutputPath(const TSharedPtr<FJsonObject>& BodyObj);
 	bool TryResolveResponseOutputPath(const TSharedPtr<FJsonObject>& BodyObj, const FString& RequestId, FString& OutAbsolutePath, FString& OutError);
 	bool TryWriteResponseToDisk(const TSharedPtr<FJsonObject>& BodyObj, const FString& RequestId, const FHttpServerResponse& Response, FString& OutAbsolutePath, FString& OutError);
+	bool RegisterPendingResponseExport(const TSharedPtr<FJsonObject>& BodyObj, const FString& RequestId, FString& OutError);
+	TUniquePtr<FHttpServerResponse> MakeJsonResponseFromString(int32 StatusCode, const FString& JsonString, const FString& RequestId = FString());
 
 	TUniquePtr<FHttpServerResponse> MakeJsonResponse(int32 StatusCode, const TSharedRef<FJsonObject>& Object, const FString& RequestId = FString());
 	TUniquePtr<FHttpServerResponse> MakeJsonOk(const TSharedPtr<FJsonValue>& Data, int32 StatusCode = 200, const FString& RequestId = FString());

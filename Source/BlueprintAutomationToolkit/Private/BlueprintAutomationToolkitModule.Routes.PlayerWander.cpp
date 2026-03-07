@@ -3,24 +3,20 @@
 #include "Async/Async.h"
 #include "Dom/JsonObject.h"
 #include "Editor.h"
+#include "Http/HttpRequestUtils.h"
 #include "HttpPath.h"
 #include "HttpResultCallback.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
-#include "Misc/Guid.h"
 #include "IHttpRouter.h"
 #include "Math/RotationMatrix.h"
 #include "Serialization/JsonSerializer.h"
 
 namespace
 {
-	static TUniquePtr<FHttpServerResponse> MakeJsonResponse(EHttpServerResponseCodes Code, const FString& JsonString)
+	static TUniquePtr<FHttpServerResponse> MakeJsonResponse(EHttpServerResponseCodes Code, const FString& JsonString, const FString& RequestId = FString())
 	{
-		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
-		Response->Code = Code;
-		Response->Headers.FindOrAdd(TEXT("Cache-Control")).Add(TEXT("no-store"));
-		Response->Headers.FindOrAdd(TEXT("X-Request-Id")).Add(FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower));
-		return Response;
+		return BAT::Http::MakeJsonResponseFromString(static_cast<int32>(Code), JsonString, RequestId);
 	}
 
 	static FString ToJsonString(const TSharedRef<FJsonObject>& Object)
@@ -81,7 +77,7 @@ void FBlueprintAutomationToolkitModule::BindPlayerWanderRoute()
 				}
 			};
 
-			const bool bCompleted = RunOnGameThreadWait([this, Seconds, Strength, Complete]()
+			const bool bCompleted = RunOnGameThreadWait([this, Seconds, Strength, Complete, RequestId]()
 			{
 				if (!GEditor || GEditor->PlayWorld == nullptr)
 				{
@@ -156,7 +152,7 @@ void FBlueprintAutomationToolkitModule::BindPlayerWanderRoute()
 				Obj->SetBoolField(TEXT("ok"), true);
 				Obj->SetNumberField(TEXT("seconds"), Seconds);
 				Obj->SetNumberField(TEXT("strength"), Strength);
-				Complete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj)));
+				Complete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj), RequestId));
 			}, 10.0);
 
 			if (!bCompleted && !bResponded->Exchange(true))

@@ -393,6 +393,13 @@ bool FBlueprintAutomationToolkitModule::ValidateAndHandleRequest(const FHttpServ
 			Fail(400, TEXT("schema_validation_failed"), SchemaError.IsEmpty() ? TEXT("Schema validation failed") : SchemaError, TEXT("schema_validation_failed"));
 			return false;
 		}
+
+		FString ResponseExportError;
+		if (!BAT::Http::RegisterPendingResponseExport(BodyObj, RequestId, ResponseExportError))
+		{
+			Fail(400, TEXT("bad_args"), ResponseExportError.IsEmpty() ? TEXT("Invalid responseOutputPath") : ResponseExportError, TEXT("bad_args"));
+			return false;
+		}
 	}
 
 	if (IsPieSessionRunning() && IsEditorAssetMutationBlockedDuringPie(EndpointString))
