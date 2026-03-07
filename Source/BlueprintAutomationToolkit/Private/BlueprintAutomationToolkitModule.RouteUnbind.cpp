@@ -6,8 +6,11 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 {
 	if (!Router.IsValid())
 	{
+		DynamicAutomationRoutes.Reset();
 		return;
 	}
+
+	UnbindRegisteredAutomationRoutes();
 
 	if (HealthRoute.IsValid())
 	{

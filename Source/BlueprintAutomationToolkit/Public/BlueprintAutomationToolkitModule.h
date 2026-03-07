@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Modules/ModuleInterface.h"
+#include "IBlueprintAutomationToolkitModule.h"
 #include "HttpResultCallback.h"
 #include "HttpRouteHandle.h"
 #include "HttpServerResponse.h"
@@ -31,13 +31,17 @@ class FTokenAuthMiddleware;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintAutomationToolkit, Log, All);
 
-class FBlueprintAutomationToolkitModule final : public IModuleInterface
+class FBlueprintAutomationToolkitModule final : public IBlueprintAutomationToolkitModule
 {
 public:
 	~FBlueprintAutomationToolkitModule();
 
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+	virtual bool RegisterAutomationCommand(FBATAutomationCommandRegistration Registration, FString* OutError = nullptr) override;
+	virtual bool UnregisterAutomationCommand(const FString& Endpoint, FString* OutError = nullptr) override;
+	virtual bool HasAutomationCommand(const FString& Endpoint) const override;
+	virtual void GetAutomationCommandInfos(TArray<FBATAutomationCommandInfo>& OutCommands) const override;
 
 	const TSet<FName>& GetAllowedUObjectFunctions() const { return AllowedUObjectFunctions; }
 	const TSet<FName>& GetAllowedUObjectProperties() const { return AllowedUObjectProperties; }
@@ -119,6 +123,9 @@ private:
 	void BindUObjectRoutes();
 	void BindReflectionRoutes();
 	void BindAutomationCoreRoutes();
+	void BindRegisteredAutomationRoutes();
+	bool BindRegisteredAutomationRoute(const FString& Endpoint);
+	void UnbindRegisteredAutomationRoutes();
 	void BindAssetRoutes();
 	void BindActionsRoutes();
 	void BindBlueprintAssetsRoutes();
@@ -128,6 +135,7 @@ private:
 	void BindBlueprintAssetsRoutesInternal();
 	void BindBlueprintGraphRoutesInternal();
 	void RegisterAutomationCommands();
+	bool RegisterBuiltInAutomationCommand(FBATAutomationCommandRegistration Registration);
 	void UnbindRoutes();
 	bool EnsureServerPermissionGranted();
 	void ApplyDefaultSandboxPolicy();
@@ -273,6 +281,8 @@ private:
 	void ExecuteJob(const FString& JobId);
 	TSharedPtr<FJsonObject> ExecuteJobByKind(const FString& JobId, const FString& Kind, const TSharedPtr<FJsonObject>& Payload, FString& OutCode, FString& OutMessage);
 	TArray<FStructuredLogEntry> GetRecentLogs(int32 MaxCount) const;
+	uint32 ToInternalPermissionMask(EBATAutomationPermission Permissions) const;
+	TArray<FString> DescribePermissionMask(uint32 PermissionMask) const;
 
 	AActor* ResolveActor(UWorld* World, const FString& NameOrLabelOrPath, const FString& Tag = TEXT("")) const;
 
@@ -410,6 +420,7 @@ private:
 	FHttpRouteHandle PcgSpawnSpheresRoute;
 	FHttpRouteHandle ActionsListRoute;
 	FHttpRouteHandle ActionsRunRoute;
+	TMap<FString, FHttpRouteHandle> DynamicAutomationRoutes;
 
 	struct FWanderState
 	{

@@ -2390,70 +2390,325 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 	delete CommandDispatcher;
 	CommandDispatcher = new FCommandDispatcher();
 
-	using EPermissionTier = FCommandDispatcher::EPermissionTier;
+	RegisterBuiltInAutomationCommand({
+		TEXT("/blueprint/graph/apply"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FApplyGraphCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Blueprint,
+		false,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/blueprint/graph/read"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FReadGraphCommand>(); },
+		EBATAutomationPermissionTier::Read,
+		EBATAutomationPermission::Blueprint,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/blueprint/compile_save"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FCompileSaveBlueprintCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Blueprint | EBATAutomationPermission::Filesystem,
+		false,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/resolve"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FGetObjectCommand>(); },
+		EBATAutomationPermissionTier::Read,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/get"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FGetObjectCommand>(); },
+		EBATAutomationPermissionTier::Read,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/get_property"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FGetObjectCommand>(); },
+		EBATAutomationPermissionTier::Read,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/describe"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FDescribeObjectCommand>(); },
+		EBATAutomationPermissionTier::Read,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/set-property"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FSetPropertyCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		false,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/set_property"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FSetPropertyCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		false,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/call-function"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FCallFunctionCommand>(); },
+		EBATAutomationPermissionTier::Admin,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/object/call_function"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FCallFunctionCommand>(); },
+		EBATAutomationPermissionTier::Admin,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/actor/spawn"),
+		[]() -> TUniquePtr<FAutomationCommand>
+		{
+			static const FObjectAutomationService Service;
+			return MakeUnique<FSpawnActorCommand>(Service);
+		},
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/actor/destroy"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FDestroyActorCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		false,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/select"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FSelectEditorTargetCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/focus"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FFocusEditorTargetCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		false,
+		false,
+		false
+	});
+}
 
-	CommandDispatcher->Register(TEXT("/blueprint/graph/apply"), []() -> TUniquePtr<FAutomationCommand>
+bool FBlueprintAutomationToolkitModule::RegisterBuiltInAutomationCommand(FBATAutomationCommandRegistration Registration)
+{
+	FString Error;
+	const bool bRegistered = CommandDispatcher && CommandDispatcher->Register(MoveTemp(Registration), true, &Error);
+	if (!bRegistered)
 	{
-		return MakeUnique<FApplyGraphCommand>();
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/blueprint/graph/read"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FReadGraphCommand>();
-	}, EPermissionTier::Read);
-	CommandDispatcher->Register(TEXT("/blueprint/compile_save"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FCompileSaveBlueprintCommand>();
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/object/resolve"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FGetObjectCommand>();
-	}, EPermissionTier::Read);
-	CommandDispatcher->Register(TEXT("/object/get"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FGetObjectCommand>();
-	}, EPermissionTier::Read);
-	CommandDispatcher->Register(TEXT("/object/get_property"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FGetObjectCommand>();
-	}, EPermissionTier::Read);
-	CommandDispatcher->Register(TEXT("/object/describe"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FDescribeObjectCommand>();
-	}, EPermissionTier::Read);
-	CommandDispatcher->Register(TEXT("/object/set-property"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FSetPropertyCommand>();
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/object/set_property"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FSetPropertyCommand>();
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/object/call-function"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FCallFunctionCommand>();
-	}, EPermissionTier::Admin);
-	CommandDispatcher->Register(TEXT("/object/call_function"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FCallFunctionCommand>();
-	}, EPermissionTier::Admin);
+		UE_LOG(LogBlueprintAutomationToolkit, Warning, TEXT("Failed to register built-in automation command: %s"), *Error);
+	}
+	return bRegistered;
+}
 
-	CommandDispatcher->Register(TEXT("/actor/spawn"), []() -> TUniquePtr<FAutomationCommand>
+bool FBlueprintAutomationToolkitModule::RegisterAutomationCommand(FBATAutomationCommandRegistration Registration, FString* OutError)
+{
+	if (OutError)
 	{
-		static const FObjectAutomationService Service;
-		return MakeUnique<FSpawnActorCommand>(Service);
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/actor/destroy"), []() -> TUniquePtr<FAutomationCommand>
+		OutError->Reset();
+	}
+
+	if (!CommandDispatcher)
 	{
-		return MakeUnique<FDestroyActorCommand>();
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/editor/select"), []() -> TUniquePtr<FAutomationCommand>
+		CommandDispatcher = new FCommandDispatcher();
+	}
+
+	const FString Endpoint = Registration.Endpoint;
+	FCommandDispatcher::FRegistration PreviousRegistration;
+	const bool bHadPreviousRegistration = CommandDispatcher->TryGetRegistration(Endpoint, PreviousRegistration);
+
+	if (!CommandDispatcher->Register(MoveTemp(Registration), false, OutError))
 	{
-		return MakeUnique<FSelectEditorTargetCommand>();
-	}, EPermissionTier::Edit);
-	CommandDispatcher->Register(TEXT("/editor/focus"), []() -> TUniquePtr<FAutomationCommand>
+		return false;
+	}
+
+	FCommandDispatcher::FRegistration UpdatedRegistration;
+	if (!CommandDispatcher->TryGetRegistration(Endpoint, UpdatedRegistration))
 	{
-		return MakeUnique<FFocusEditorTargetCommand>();
-	}, EPermissionTier::Edit);
+		if (OutError)
+		{
+			*OutError = FString::Printf(TEXT("Endpoint '%s' was registered but could not be queried."), *Endpoint);
+		}
+		return false;
+	}
+
+	if (DynamicAutomationRoutes.Contains(Endpoint) && (!UpdatedRegistration.bBindRoute || UpdatedRegistration.bBuiltIn))
+	{
+		if (const FHttpRouteHandle* ExistingHandle = DynamicAutomationRoutes.Find(Endpoint); ExistingHandle && ExistingHandle->IsValid() && Router.IsValid())
+		{
+			Router->UnbindRoute(*ExistingHandle);
+		}
+		DynamicAutomationRoutes.Remove(Endpoint);
+	}
+
+	if (UpdatedRegistration.bBindRoute && bServerRunning && Router.IsValid() && !BindRegisteredAutomationRoute(Endpoint))
+	{
+		FString RevertError;
+		CommandDispatcher->Unregister(Endpoint, false, &RevertError);
+		if (OutError)
+		{
+			*OutError = FString::Printf(TEXT("Endpoint '%s' was registered but its HTTP route could not be bound."), *Endpoint);
+		}
+		return false;
+	}
+
+	if (bHadPreviousRegistration && PreviousRegistration.bBindRoute && !UpdatedRegistration.bBindRoute)
+	{
+		DynamicAutomationRoutes.Remove(Endpoint);
+	}
+
+	return true;
+}
+
+bool FBlueprintAutomationToolkitModule::UnregisterAutomationCommand(const FString& Endpoint, FString* OutError)
+{
+	if (OutError)
+	{
+		OutError->Reset();
+	}
+
+	if (!CommandDispatcher)
+	{
+		if (OutError)
+		{
+			*OutError = TEXT("Command dispatcher is not initialized.");
+		}
+		return false;
+	}
+
+	if (const FHttpRouteHandle* ExistingHandle = DynamicAutomationRoutes.Find(Endpoint); ExistingHandle && ExistingHandle->IsValid() && Router.IsValid())
+	{
+		Router->UnbindRoute(*ExistingHandle);
+	}
+	DynamicAutomationRoutes.Remove(Endpoint);
+
+	return CommandDispatcher->Unregister(Endpoint, false, OutError);
+}
+
+bool FBlueprintAutomationToolkitModule::HasAutomationCommand(const FString& Endpoint) const
+{
+	return CommandDispatcher && CommandDispatcher->HasCommand(Endpoint);
+}
+
+void FBlueprintAutomationToolkitModule::GetAutomationCommandInfos(TArray<FBATAutomationCommandInfo>& OutCommands) const
+{
+	if (!CommandDispatcher)
+	{
+		OutCommands.Reset();
+		return;
+	}
+
+	CommandDispatcher->GetRegisteredCommands(OutCommands);
+}
+
+void FBlueprintAutomationToolkitModule::BindRegisteredAutomationRoutes()
+{
+	TArray<FBATAutomationCommandInfo> Commands;
+	GetAutomationCommandInfos(Commands);
+	for (const FBATAutomationCommandInfo& CommandInfo : Commands)
+	{
+		if (CommandInfo.bBindRoute)
+		{
+			BindRegisteredAutomationRoute(CommandInfo.Endpoint);
+		}
+	}
+}
+
+bool FBlueprintAutomationToolkitModule::BindRegisteredAutomationRoute(const FString& Endpoint)
+{
+	if (!Router.IsValid() || Endpoint.IsEmpty() || DynamicAutomationRoutes.Contains(Endpoint))
+	{
+		return Router.IsValid() && !Endpoint.IsEmpty();
+	}
+
+	const FString EndpointCopy = Endpoint;
+	FHttpRouteHandle RouteHandle = Router->BindRoute(
+		FHttpPath(EndpointCopy),
+		EHttpServerRequestVerbs::VERB_POST,
+		FHttpRequestHandler::CreateLambda([this, EndpointCopy](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			if (!ValidateAndHandleRequest(Request, OnComplete, *EndpointCopy))
+			{
+				return true;
+			}
+
+			TSharedPtr<FJsonObject> BodyObj;
+			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
+			{
+				OnComplete(MakeCanonicalErrorResponse(400, ResolveOrCreateRequestId(Request), TEXT("bad_json"), TEXT("Invalid JSON body.")));
+				return true;
+			}
+
+			return DispatchAutomationCommandRoute(EndpointCopy, Request, OnComplete, BodyObj, true);
+		}));
+
+	if (!RouteHandle.IsValid())
+	{
+		return false;
+	}
+
+	DynamicAutomationRoutes.Add(EndpointCopy, RouteHandle);
+	return true;
+}
+
+void FBlueprintAutomationToolkitModule::UnbindRegisteredAutomationRoutes()
+{
+	if (!Router.IsValid())
+	{
+		DynamicAutomationRoutes.Reset();
+		return;
+	}
+
+	for (const TPair<FString, FHttpRouteHandle>& Pair : DynamicAutomationRoutes)
+	{
+		if (Pair.Value.IsValid())
+		{
+			Router->UnbindRoute(Pair.Value);
+		}
+	}
+
+	DynamicAutomationRoutes.Reset();
 }
 
 FAutomationResult FBlueprintAutomationToolkitModule::ExecuteAutomationCommand(const FString& Endpoint, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject) const

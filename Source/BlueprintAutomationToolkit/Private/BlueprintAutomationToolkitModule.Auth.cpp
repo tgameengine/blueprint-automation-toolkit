@@ -2,6 +2,7 @@
 
 #include "Auth/TokenAuthMiddleware.h"
 #include "Commands/AutomationCommand.h"
+#include "Commands/CommandDispatcher.h"
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Dom/JsonObject.h"
@@ -36,6 +37,21 @@ namespace
 	{
 		return Verb == EHttpServerRequestVerbs::VERB_POST;
 	}
+		static const TCHAR* ToPermissionTierString(EBATAutomationPermissionTier Tier)
+		{
+			switch (Tier)
+			{
+			case EBATAutomationPermissionTier::Read:
+				return TEXT("read");
+			case EBATAutomationPermissionTier::Edit:
+				return TEXT("edit");
+			case EBATAutomationPermissionTier::Admin:
+				return TEXT("admin");
+			default:
+				return TEXT("read");
+			}
+		}
+
 
 	static const TArray<FString>* FindHeaderCaseInsensitive(const TMap<FString, TArray<FString>>& Headers, const TCHAR* Name)
 	{
@@ -664,6 +680,66 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::NormalizeCanonicalObj
 	return Normalized;
 }
 
+uint32 FBlueprintAutomationToolkitModule::ToInternalPermissionMask(EBATAutomationPermission Permissions) const
+{
+	uint32 Mask = 0u;
+	if (EnumHasAnyFlags(Permissions, EBATAutomationPermission::Editor))
+	{
+		Mask |= static_cast<uint32>(EBATPermission::Editor);
+	}
+	if (EnumHasAnyFlags(Permissions, EBATAutomationPermission::Blueprint))
+	{
+		Mask |= static_cast<uint32>(EBATPermission::Blueprint);
+	}
+	if (EnumHasAnyFlags(Permissions, EBATAutomationPermission::Pie))
+	{
+		Mask |= static_cast<uint32>(EBATPermission::Pie);
+	}
+	if (EnumHasAnyFlags(Permissions, EBATAutomationPermission::Exec))
+	{
+		Mask |= static_cast<uint32>(EBATPermission::Exec);
+	}
+	if (EnumHasAnyFlags(Permissions, EBATAutomationPermission::Python))
+	{
+		Mask |= static_cast<uint32>(EBATPermission::Python);
+	}
+	if (EnumHasAnyFlags(Permissions, EBATAutomationPermission::Filesystem))
+	{
+		Mask |= static_cast<uint32>(EBATPermission::Filesystem);
+	}
+	return Mask;
+}
+
+TArray<FString> FBlueprintAutomationToolkitModule::DescribePermissionMask(uint32 PermissionMask) const
+{
+	TArray<FString> Permissions;
+	if ((PermissionMask & static_cast<uint32>(EBATPermission::Editor)) != 0u)
+	{
+		Permissions.Add(TEXT("editor"));
+	}
+	if ((PermissionMask & static_cast<uint32>(EBATPermission::Blueprint)) != 0u)
+	{
+		Permissions.Add(TEXT("blueprint"));
+	}
+	if ((PermissionMask & static_cast<uint32>(EBATPermission::Pie)) != 0u)
+	{
+		Permissions.Add(TEXT("pie"));
+	}
+	if ((PermissionMask & static_cast<uint32>(EBATPermission::Exec)) != 0u)
+	{
+		Permissions.Add(TEXT("exec"));
+	}
+	if ((PermissionMask & static_cast<uint32>(EBATPermission::Python)) != 0u)
+	{
+		Permissions.Add(TEXT("python"));
+	}
+	if ((PermissionMask & static_cast<uint32>(EBATPermission::Filesystem)) != 0u)
+	{
+		Permissions.Add(TEXT("filesystem"));
+	}
+	return Permissions;
+}
+
 TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSummary() const
 {
 	const bool bPythonEnabled = bEnableExecRoute && bAllowPythonExec && !bSafeModeEnabled;
@@ -695,6 +771,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("saveAsset"), true);
 	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
 	Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
+	Capabilities->SetBoolField(TEXT("extensibleCommands"), true);
 	Data->SetObjectField(TEXT("capabilities"), Capabilities);
 
 	TSharedRef<FJsonObject> Limits = MakeShared<FJsonObject>();
@@ -733,6 +810,40 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
 	Data->SetArrayField(TEXT("canonicalRoutes"), Routes);
+
+	TArray<FBATAutomationCommandInfo> CommandInfos;
+	GetAutomationCommandInfos(CommandInfos);
+
+	TArray<TSharedPtr<FJsonValue>> ExtensionRoutes;
+	TArray<TSharedPtr<FJsonValue>> RegisteredCommands;
+	for (const FBATAutomationCommandInfo& Info : CommandInfos)
+	{
+		TSharedRef<FJsonObject> Command = MakeShared<FJsonObject>();
+		Command->SetStringField(TEXT("endpoint"), Info.Endpoint);
+		Command->SetStringField(TEXT("permissionTier"), ToPermissionTierString(Info.PermissionTier));
+		Command->SetBoolField(TEXT("bindRoute"), Info.bBindRoute);
+		Command->SetBoolField(TEXT("blockDuringPie"), Info.bBlockDuringPie);
+		Command->SetBoolField(TEXT("builtIn"), Info.bBuiltIn);
+
+		TArray<TSharedPtr<FJsonValue>> PermissionValues;
+		for (const FString& Permission : DescribePermissionMask(ToInternalPermissionMask(Info.RequiredPermissions)))
+		{
+			PermissionValues.Add(MakeShared<FJsonValueString>(Permission));
+		}
+		Command->SetArrayField(TEXT("requiredPermissions"), PermissionValues);
+		RegisteredCommands.Add(MakeShared<FJsonValueObject>(Command));
+
+		if (!Info.bBuiltIn && Info.bBindRoute)
+		{
+			ExtensionRoutes.Add(MakeShared<FJsonValueString>(Info.Endpoint));
+		}
+	}
+
+	Data->SetArrayField(TEXT("registeredCommands"), RegisteredCommands);
+	if (ExtensionRoutes.Num() > 0)
+	{
+		Data->SetArrayField(TEXT("extensionRoutes"), ExtensionRoutes);
+	}
 
 	return Data;
 }
@@ -1003,6 +1114,15 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		return true;
 	}
 
+	if (CommandDispatcher)
+	{
+		FCommandDispatcher::FRegistration Registration;
+		if (CommandDispatcher->TryGetRegistration(Endpoint, Registration))
+		{
+			return Registration.bBlockDuringPie;
+		}
+	}
+
 	return false;
 }
 
@@ -1097,6 +1217,14 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	if (Endpoint.StartsWith(TEXT("/jobs")) || Endpoint.Equals(TEXT("/openapi"), ESearchCase::CaseSensitive) || Endpoint.StartsWith(TEXT("/logs/tail")) || Endpoint.Equals(TEXT("/engine/discover"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Editor);
+	}
+	if (CommandDispatcher)
+	{
+		FCommandDispatcher::FRegistration Registration;
+		if (CommandDispatcher->TryGetRegistration(Endpoint, Registration))
+		{
+			return ToInternalPermissionMask(Registration.RequiredPermissions);
+		}
 	}
 	return 0u;
 }

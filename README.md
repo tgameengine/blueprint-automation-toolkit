@@ -36,6 +36,58 @@ Preferred endpoints:
 
 Legacy narrow gameplay endpoints such as `ActorShoot`, `PlayerTeleport`, and `PlayerWander` remain in the codebase only for backward compatibility work. They are no longer part of the default automation contract and are not bound by the default route registry.
 
+## Extending It
+
+Other editor plugins can register additional automation commands at startup without editing this plugin's dispatcher.
+
+Registered extension commands are exposed as `POST` JSON endpoints, inherit the same auth/rate-limit pipeline, and appear in `GET /engine/discover` under `registeredCommands` and `extensionRoutes`.
+
+```cpp
+#include "Automation/AutomationCommand.h"
+#include "IBlueprintAutomationToolkitModule.h"
+
+class FMyCommand final : public FAutomationCommand
+{
+public:
+	virtual FAutomationResult Execute(FAutomationContext& Context) override
+	{
+		TSharedRef<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetStringField(TEXT("status"), TEXT("ok"));
+		return FAutomationResult::Ok(MakeShared<FJsonValueObject>(Data));
+	}
+};
+
+void FMyPluginModule::StartupModule()
+{
+	FBATAutomationCommandRegistration Registration;
+	Registration.Endpoint = TEXT("/my_plugin/do_work");
+	Registration.Factory = []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FMyCommand>();
+	};
+	Registration.PermissionTier = EBATAutomationPermissionTier::Edit;
+	Registration.RequiredPermissions = EBATAutomationPermission::Editor;
+	Registration.bBindRoute = true;
+
+	FString Error;
+	IBlueprintAutomationToolkitModule::Get().RegisterAutomationCommand(MoveTemp(Registration), &Error);
+}
+
+void FMyPluginModule::ShutdownModule()
+{
+	if (IBlueprintAutomationToolkitModule::IsAvailable())
+	{
+		IBlueprintAutomationToolkitModule::Get().UnregisterAutomationCommand(TEXT("/my_plugin/do_work"));
+	}
+}
+```
+
+Safety notes:
+
+- Built-in endpoints cannot be replaced or unregistered through the extension API.
+- Extension routes are `POST`-only and require a JSON object body.
+- Set `RequiredPermissions` and `bBlockDuringPie` explicitly so the command matches your editor safety expectations.
+
 ## Response Shape
 
 All automation endpoints return a structured JSON envelope:

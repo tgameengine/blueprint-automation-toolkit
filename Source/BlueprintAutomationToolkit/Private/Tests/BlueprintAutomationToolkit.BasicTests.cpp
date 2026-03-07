@@ -33,6 +33,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExecPythonRequiresPythonPermissionTest, "Bl
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversPieAliasesTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversPieAliases", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversBlueprintCompileSaveTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversBlueprintCompileSave", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportAddsFilesystemPermissionTest, "BlueprintAutomationToolkit.Security.ResponseExportAddsFilesystemPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExtensionCommandRegistrationMetadataTest, "BlueprintAutomationToolkit.Extension.CommandRegistrationMetadata", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPendingResponseExportWritesViaSharedJsonBuilderTest, "BlueprintAutomationToolkit.Security.PendingResponseExportWritesViaSharedJsonBuilder", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPieEditBlockRouteClassificationTest, "BlueprintAutomationToolkit.Security.PieEditBlockRouteClassification", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthMissingResponseHasTokenHintTest, "BlueprintAutomationToolkit.Security.AuthMissingResponseHasTokenHint", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -89,6 +90,16 @@ namespace
 		const TSharedPtr<FJsonObject>* Data = nullptr;
 		return Root->TryGetObjectField(TEXT("data"), Data) && Data ? *Data : nullptr;
 	}
+
+	struct FTestNoopAutomationCommand final : FAutomationCommand
+	{
+		virtual FAutomationResult Execute(FAutomationContext& Context) override
+		{
+			TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
+			Payload->SetStringField(TEXT("endpoint"), Context.Endpoint);
+			return FAutomationResult::Ok(MakeShared<FJsonValueObject>(Payload));
+		}
+	};
 }
 
 bool FBATOpenApiSpecExistsTest::RunTest(const FString& Parameters)
@@ -279,6 +290,62 @@ bool FBATResponseExportAddsFilesystemPermissionTest::RunTest(const FString& Para
 	BodyObj->SetStringField(TEXT("responseOutputPath"), TEXT("tests/permission-check"));
 
 	TestEqual(TEXT("/object/get with response export requires Editor and Filesystem permissions"), Module.Test_GetRequestRequiredPermissions(TEXT("/object/get"), BodyObj), ExpectedMask);
+	return true;
+}
+
+bool FBATExtensionCommandRegistrationMetadataTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	FString Error;
+	const FString Endpoint = TEXT("/extension/test/noop");
+	const uint32 ExpectedMask =
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Editor) |
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
+
+	FBATAutomationCommandRegistration Registration;
+	Registration.Endpoint = Endpoint;
+	Registration.Factory = []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FTestNoopAutomationCommand>();
+	};
+	Registration.PermissionTier = EBATAutomationPermissionTier::Edit;
+	Registration.RequiredPermissions = EBATAutomationPermission::Editor | EBATAutomationPermission::Filesystem;
+	Registration.bBindRoute = true;
+	Registration.bBlockDuringPie = true;
+
+	if (!TestTrue(TEXT("Extension command registration succeeds"), Module.RegisterAutomationCommand(MoveTemp(Registration), &Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+
+	TestTrue(TEXT("Extension command is discoverable via command lookup"), Module.HasAutomationCommand(Endpoint));
+	TestEqual(TEXT("Extension command permissions flow through route permission lookup"), Module.Test_GetRouteRequiredPermissions(Endpoint), ExpectedMask);
+	TestTrue(TEXT("Extension command PIE blocking flows from registration metadata"), Module.Test_IsEditorAssetMutationBlockedDuringPie(Endpoint));
+
+	TArray<FBATAutomationCommandInfo> Infos;
+	Module.GetAutomationCommandInfos(Infos);
+	const FBATAutomationCommandInfo* Match = Infos.FindByPredicate([&Endpoint](const FBATAutomationCommandInfo& Info)
+	{
+		return Info.Endpoint == Endpoint;
+	});
+
+	if (!TestNotNull(TEXT("Extension command appears in registration info"), Match))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("Extension command keeps POST route binding enabled"), Match->bBindRoute);
+	TestTrue(TEXT("Extension command metadata marks PIE blocking"), Match->bBlockDuringPie);
+	TestFalse(TEXT("Extension command is not marked built-in"), Match->bBuiltIn);
+
+	if (!TestTrue(TEXT("Extension command can be unregistered"), Module.UnregisterAutomationCommand(Endpoint, &Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+
+	TestFalse(TEXT("Extension command is removed after unregister"), Module.HasAutomationCommand(Endpoint));
 	return true;
 }
 
