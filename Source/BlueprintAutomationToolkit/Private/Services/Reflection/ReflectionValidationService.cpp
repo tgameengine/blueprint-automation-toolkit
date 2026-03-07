@@ -1,6 +1,9 @@
 #include "Services/Reflection/ReflectionValidationService.h"
 
 #include "BlueprintAutomationToolkitModule.h"
+
+#include "Services/Reflection/ReflectionObjectResolver.h"
+#include "Services/Reflection/ReflectionSerializationService.h"
 #include "Services/Reflection/ReflectionTypes.h"
 
 #include "UObject/UnrealType.h"
@@ -34,12 +37,22 @@ namespace
 	}
 }
 
+bool FReflectionValidationService::ValidateObject(UObject* Object, const FString& RequestId, FAutomationResult& OutFailure) const
+{
+	if (Object)
+	{
+		return true;
+	}
+
+	OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("not_found"), TEXT("Resolved object is null."), 404);
+	return false;
+}
+
 bool FReflectionValidationService::ResolveProperty(UObject* RootObject, const FString& PropertyPath, const FString& RequestId, BAT::Reflection::FResolvedProperty& OutResolved, FAutomationResult& OutFailure) const
 {
 	OutResolved = BAT::Reflection::FResolvedProperty();
-	if (!RootObject)
+	if (!ValidateObject(RootObject, RequestId, OutFailure))
 	{
-		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("not_found"), TEXT("Resolved object is null."), 404);
 		return false;
 	}
 
@@ -108,6 +121,52 @@ bool FReflectionValidationService::ResolveProperty(UObject* RootObject, const FS
 
 	OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("PropertyNotFound"), FString::Printf(TEXT("Property '%s' does not exist on object '%s'."), *PropertyPath, *RootObject->GetPathName()), 404);
 	return false;
+}
+
+bool FReflectionValidationService::ResolveFunction(UObject* RootObject, const FString& FunctionName, const FString& RequestId, UFunction*& OutFunction, FAutomationResult& OutFailure) const
+{
+	OutFunction = nullptr;
+	if (!ValidateObject(RootObject, RequestId, OutFailure))
+	{
+		return false;
+	}
+
+	const FString TrimmedName = FunctionName.TrimStartAndEnd();
+	if (TrimmedName.IsEmpty())
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("Function name must be non-empty."), 400);
+		return false;
+	}
+
+	OutFunction = RootObject->FindFunction(FName(*TrimmedName));
+	if (!OutFunction)
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("FunctionNotFound"), FString::Printf(TEXT("Function '%s' does not exist on object '%s'."), *TrimmedName, *RootObject->GetPathName()), 404);
+		return false;
+	}
+
+	return true;
+}
+
+bool FReflectionValidationService::ValidateValueTypeCompatibility(FProperty* Property, const TSharedPtr<FJsonValue>& JsonValue, const FReflectionObjectResolver& Resolver, FString& OutErrorCode, FString& OutErrorMessage) const
+{
+	OutErrorCode = TEXT("unsupported_type");
+	OutErrorMessage = TEXT("Unsupported reflected value type.");
+
+	if (!Property)
+	{
+		OutErrorCode = TEXT("PropertyNotFound");
+		OutErrorMessage = TEXT("Property could not be resolved.");
+		return false;
+	}
+
+	FReflectionSerializationService Serialization;
+	void* Storage = FMemory::Malloc(Property->GetSize(), Property->GetMinAlignment());
+	Property->InitializeValue(Storage);
+	const bool bCompatible = Serialization.DeserializeValue(Property, Storage, JsonValue, Resolver, OutErrorCode, OutErrorMessage);
+	Property->DestroyValue(Storage);
+	FMemory::Free(Storage);
+	return bCompatible;
 }
 
 bool FReflectionValidationService::ShouldListProperty(const FProperty* Property) const

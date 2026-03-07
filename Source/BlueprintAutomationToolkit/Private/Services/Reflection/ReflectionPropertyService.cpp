@@ -39,6 +39,36 @@ namespace
 	}
 }
 
+TSharedPtr<FJsonObject> FReflectionPropertyService::ListProperties(UObject* Object, FString& OutError) const
+{
+	OutError.Reset();
+	if (!Object)
+	{
+		OutError = TEXT("Object must be non-null.");
+		return nullptr;
+	}
+
+	FReflectionValidationService Validation;
+	FReflectionSerializationService Serialization;
+
+	TArray<TSharedPtr<FJsonValue>> Properties;
+	for (TFieldIterator<FProperty> It(Object->GetClass(), EFieldIteratorFlags::IncludeSuper); It; ++It)
+	{
+		FProperty* Property = *It;
+		if (!Validation.ShouldListProperty(Property))
+		{
+			continue;
+		}
+
+		Properties.Add(MakeShared<FJsonValueObject>(Serialization.DescribeProperty(Property)));
+	}
+
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetObjectField(TEXT("object"), Serialization.SerializeObjectReference(Object));
+	Root->SetArrayField(TEXT("properties"), Properties);
+	return Root;
+}
+
 FAutomationResult FReflectionPropertyService::GetObject(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj) const
 {
 	TOptional<FAutomationResult> Result;
@@ -230,6 +260,14 @@ FAutomationResult FReflectionPropertyService::SetProperty(FBlueprintAutomationTo
 			if (!Validation.ValidatePropertyWrite(Module, ResolvedObject, ResolvedProperty, RequestId, Failure))
 			{
 				Result = Failure;
+				return;
+			}
+
+			FString CompatibilityCode;
+			FString CompatibilityMessage;
+			if (!Validation.ValidateValueTypeCompatibility(ResolvedProperty.Property, Assignment.Value, Resolver, CompatibilityCode, CompatibilityMessage))
+			{
+				Result = BAT::Reflection::MakeStructuredError(RequestId, CompatibilityCode, FString::Printf(TEXT("Property '%s': %s"), *Assignment.Key, *CompatibilityMessage), 400);
 				return;
 			}
 

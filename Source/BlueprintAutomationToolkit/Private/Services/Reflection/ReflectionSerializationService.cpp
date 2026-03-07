@@ -240,6 +240,15 @@ TSharedRef<FJsonObject> FReflectionSerializationService::SerializeObjectReferenc
 	return Result;
 }
 
+TSharedPtr<FJsonObject> FReflectionSerializationService::SerializeReflectedValue(const FProperty* Property, const void* ValuePtr) const
+{
+	TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetStringField(TEXT("type"), Property ? Property->GetCPPType() : TEXT(""));
+	Result->SetBoolField(TEXT("supported"), IsSupportedPropertyType(Property, false));
+	Result->SetField(TEXT("value"), SerializeValue(Property, ValuePtr));
+	return Result;
+}
+
 TSharedRef<FJsonObject> FReflectionSerializationService::DescribeProperty(const FProperty* Property) const
 {
 	TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();

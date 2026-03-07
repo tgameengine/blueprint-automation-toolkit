@@ -52,7 +52,7 @@ namespace
 		return FString::Printf(TEXT("%s.%s_C"), *AssetObjectPath.Left(DotIndex), *ObjectName);
 	}
 
-	static UObject* ResolveObjectByPath(const FString& InPath)
+	static UObject* ResolveObjectByPathInternal(const FString& InPath)
 	{
 		FString Path = InPath;
 		Path.TrimStartAndEndInline();
@@ -71,12 +71,25 @@ namespace
 			return Found;
 		}
 
+		if (UObject* Loaded = LoadObject<UObject>(nullptr, *Path))
+		{
+			return Loaded;
+		}
+
 		const FString Normalized = NormalizeObjectPath(Path);
 		if (!Normalized.Equals(Path, ESearchCase::CaseSensitive))
 		{
 			if (UObject* Found = FindObject<UObject>(nullptr, *Normalized))
 			{
 				return Found;
+			}
+			if (UObject* Found = StaticFindObject(UObject::StaticClass(), nullptr, *Normalized))
+			{
+				return Found;
+			}
+			if (UObject* Loaded = LoadObject<UObject>(nullptr, *Normalized))
+			{
+				return Loaded;
 			}
 		}
 
@@ -104,7 +117,7 @@ namespace
 		return nullptr;
 	}
 
-	static AActor* ResolveActorByName(UWorld* World, const FString& ActorName)
+	static AActor* ResolveActorByNameInWorld(UWorld* World, const FString& ActorName)
 	{
 		if (!World)
 		{
@@ -135,6 +148,69 @@ namespace
 
 		return nullptr;
 	}
+}
+
+void FReflectionObjectResolver::SetLastError(const FString& Message) const
+{
+	LastErrorMessage = Message;
+}
+
+UObject* FReflectionObjectResolver::ResolveObjectByPath(const FString& ObjectPath) const
+{
+	SetLastError(TEXT(""));
+
+	const FString TrimmedPath = ObjectPath.TrimStartAndEnd();
+	if (TrimmedPath.IsEmpty())
+	{
+		SetLastError(TEXT("Object path must be non-empty."));
+		return nullptr;
+	}
+
+	if (UObject* ResolvedObject = ResolveObjectByPathInternal(TrimmedPath))
+	{
+		return ResolvedObject;
+	}
+
+	SetLastError(FString::Printf(TEXT("Object '%s' could not be resolved from full object path or soft object path."), *TrimmedPath));
+	return nullptr;
+}
+
+AActor* FReflectionObjectResolver::ResolveActorByName(const FString& ActorName) const
+{
+	SetLastError(TEXT(""));
+
+	const FString TrimmedName = ActorName.TrimStartAndEnd();
+	if (TrimmedName.IsEmpty())
+	{
+		SetLastError(TEXT("Actor name must be non-empty."));
+		return nullptr;
+	}
+
+#if WITH_EDITOR
+	if (!GEditor)
+	{
+		SetLastError(TEXT("GEditor is unavailable."));
+		return nullptr;
+	}
+
+	UWorld* EditorWorld = GEditor->GetEditorWorldContext().World();
+	if (!EditorWorld)
+	{
+		SetLastError(TEXT("Editor world context could not be resolved."));
+		return nullptr;
+	}
+
+	if (AActor* Actor = ResolveActorByNameInWorld(EditorWorld, TrimmedName))
+	{
+		return Actor;
+	}
+#else
+	SetLastError(TEXT("Actor name resolution requires editor world access."));
+	return nullptr;
+#endif
+
+	SetLastError(FString::Printf(TEXT("Actor '%s' was not found in the current editor world."), *TrimmedName));
+	return nullptr;
 }
 
 bool FReflectionObjectResolver::ResolveObjectReference(const FString& ReferencePath, UClass* RequiredClass, UObject*& OutObject) const
@@ -294,7 +370,7 @@ bool FReflectionObjectResolver::Resolve(FBlueprintAutomationToolkitModule& Modul
 		}
 		else
 		{
-			OutResolved.Object = ResolveActorByName(World, ActorName);
+			OutResolved.Object = ResolveActorByNameInWorld(World, ActorName);
 			OutResolved.ResolutionSource = TEXT("actorName");
 		}
 	}
@@ -306,7 +382,8 @@ bool FReflectionObjectResolver::Resolve(FBlueprintAutomationToolkitModule& Modul
 
 	if (!OutResolved.Object)
 	{
-		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("not_found"), TEXT("Requested object could not be resolved."), 404);
+		const FString ResolverMessage = GetLastErrorMessage();
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("not_found"), ResolverMessage.IsEmpty() ? TEXT("Requested object could not be resolved.") : ResolverMessage, 404);
 		return false;
 	}
 

@@ -8,7 +8,10 @@ class UFunction;
 class FReflectionValidationService
 {
 public:
+	bool ValidateObject(UObject* Object, const FString& RequestId, FAutomationResult& OutFailure) const;
 	bool ResolveProperty(UObject* RootObject, const FString& PropertyPath, const FString& RequestId, BAT::Reflection::FResolvedProperty& OutResolved, FAutomationResult& OutFailure) const;
+	bool ResolveFunction(UObject* RootObject, const FString& FunctionName, const FString& RequestId, UFunction*& OutFunction, FAutomationResult& OutFailure) const;
+	bool ValidateValueTypeCompatibility(FProperty* Property, const TSharedPtr<class FJsonValue>& JsonValue, const class FReflectionObjectResolver& Resolver, FString& OutErrorCode, FString& OutErrorMessage) const;
 	bool ShouldListProperty(const FProperty* Property) const;
 	bool ShouldReadProperty(const FProperty* Property) const;
 	bool ValidatePropertyWrite(const FBlueprintAutomationToolkitModule& Module, const BAT::Reflection::FResolvedObject& ResolvedObject, const BAT::Reflection::FResolvedProperty& ResolvedProperty, const FString& RequestId, FAutomationResult& OutFailure) const;

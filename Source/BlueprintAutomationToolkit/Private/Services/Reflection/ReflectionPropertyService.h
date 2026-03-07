@@ -7,6 +7,8 @@ class FBlueprintAutomationToolkitModule;
 class FReflectionPropertyService
 {
 public:
+	TSharedPtr<class FJsonObject> ListProperties(UObject* Object, FString& OutError) const;
+
 	FAutomationResult GetObject(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<class FJsonObject>& BodyObj) const;
 	FAutomationResult ListProperties(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<class FJsonObject>& BodyObj) const;
 	FAutomationResult SetProperty(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<class FJsonObject>& BodyObj) const;

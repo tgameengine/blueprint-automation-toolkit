@@ -33,6 +33,36 @@ namespace
 	}
 }
 
+TSharedPtr<FJsonObject> FReflectionFunctionService::ListFunctions(UObject* Object, FString& OutError) const
+{
+	OutError.Reset();
+	if (!Object)
+	{
+		OutError = TEXT("Object must be non-null.");
+		return nullptr;
+	}
+
+	FReflectionValidationService Validation;
+	FReflectionSerializationService Serialization;
+
+	TArray<TSharedPtr<FJsonValue>> Functions;
+	for (TFieldIterator<UFunction> It(Object->GetClass(), EFieldIteratorFlags::IncludeSuper); It; ++It)
+	{
+		UFunction* Function = *It;
+		if (!Validation.ShouldListFunction(Function))
+		{
+			continue;
+		}
+
+		Functions.Add(MakeShared<FJsonValueObject>(Serialization.DescribeFunction(Function, false)));
+	}
+
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetObjectField(TEXT("object"), Serialization.SerializeObjectReference(Object));
+	Root->SetArrayField(TEXT("functions"), Functions);
+	return Root;
+}
+
 FAutomationResult FReflectionFunctionService::ListFunctions(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj) const
 {
 	TOptional<FAutomationResult> Result;
@@ -96,7 +126,13 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 			return;
 		}
 
-		UFunction* Function = ResolvedObject.Object->FindFunction(FName(*FunctionName));
+		UFunction* Function = nullptr;
+		if (!Validation.ResolveFunction(ResolvedObject.Object, FunctionName, RequestId, Function, Failure))
+		{
+			Result = Failure;
+			return;
+		}
+
 		if (!Validation.ValidateFunctionCall(Module, ResolvedObject, Function, RequestId, Failure))
 		{
 			Result = Failure;
@@ -142,6 +178,14 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 				if (!ArgumentValue)
 				{
 					Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("missing_argument"), FString::Printf(TEXT("Function '%s' requires argument '%s'."), *Function->GetName(), *Parameter->GetName()), 400);
+					return;
+				}
+
+				FString CompatibilityCode;
+				FString CompatibilityMessage;
+				if (!Validation.ValidateValueTypeCompatibility(Parameter, *ArgumentValue, Resolver, CompatibilityCode, CompatibilityMessage))
+				{
+					Result = BAT::Reflection::MakeStructuredError(RequestId, CompatibilityCode, FString::Printf(TEXT("Argument '%s': %s"), *Parameter->GetName(), *CompatibilityMessage), 400);
 					return;
 				}
 
