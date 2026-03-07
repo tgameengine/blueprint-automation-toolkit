@@ -1809,6 +1809,11 @@ void FBlueprintAutomationToolkitModule::Test_SetReflectionPropertyDenyList(const
 	NormalizeReflectionNameValues(Values, DeniedReflectionProperties);
 }
 
+void FBlueprintAutomationToolkitModule::Test_NotifySettingChanged()
+{
+	NotifySettingChanged();
+}
+
 void FBlueprintAutomationToolkitModule::Test_CompleteJobSuccess(const FString& JobId, const TSharedPtr<FJsonObject>& Result)
 {
 	CompleteJobSuccess(JobId, Result);

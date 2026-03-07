@@ -80,6 +80,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionCallSafeFunctionTest, "BlueprintA
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSetPropertyCommandTest, "BlueprintAutomationToolkit.Reflection.SetPropertyCommand", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionCallFunctionCommandTest, "BlueprintAutomationToolkit.Reflection.CallFunctionCommand", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSafeModeBlockingTest, "BlueprintAutomationToolkit.Reflection.SafeModeBlocking", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATControlPanelSafeModeTogglePersistsTest, "BlueprintAutomationToolkit.Reflection.ControlPanelSafeModeTogglePersists", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionInvalidTargetsTest, "BlueprintAutomationToolkit.Reflection.InvalidTargets", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportWritesFileTest, "BlueprintAutomationToolkit.Reflection.ResponseExportWritesFile", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -1443,6 +1444,15 @@ bool FBATReflectionSafeModeBlockingTest::RunTest(const FString& Parameters)
 	DestroyReflectionTestObject(Object.Get());
 
 	return TestTrue(TEXT("Safe mode blocks function call for class outside allowlist"), !Result.bSuccess && Result.ErrorCode == TEXT("safe_mode_denied"));
+}
+
+bool FBATControlPanelSafeModeTogglePersistsTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	Module.Test_SetReflectionSafeMode(false);
+	Module.Test_NotifySettingChanged();
+
+	return TestTrue(TEXT("NotifySettingChanged should preserve the live Safe Mode toggle state"), !Module.IsSafeModeEnabled());
 }
 
 bool FBATReflectionInvalidTargetsTest::RunTest(const FString& Parameters)

@@ -2369,12 +2369,13 @@ bool FBlueprintAutomationToolkitModule::ConfirmUnsafeOption(const FText& Message
 
 void FBlueprintAutomationToolkitModule::NotifySettingChanged()
 {
-	if (const UBlueprintAutomationToolkitSettings* Settings = GetDefault<UBlueprintAutomationToolkitSettings>())
+	if (UBlueprintAutomationToolkitSettings* Settings = GetMutableDefault<UBlueprintAutomationToolkitSettings>())
 	{
-		Port = Settings->Port;
-		bServerEnabled = Settings->bEnableServer;
-		bRequireAuthToken = Settings->bRequireAuthToken;
-		bSafeModeEnabled = Settings->bSafeMode;
+		Settings->Port = Port;
+		Settings->bEnableServer = bServerEnabled;
+		Settings->bRequireAuthToken = bRequireAuthToken;
+		Settings->bSafeMode = bSafeModeEnabled;
+		Settings->SaveConfig();
 	}
 
 	PersistSettings(true);
@@ -3255,6 +3256,11 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 			DeniedReflectionFunctions.Add(FName(TEXT("ExecuteConsoleCommand")));
 			DeniedReflectionFunctions.Add(FName(TEXT("ConsoleCommand")));
 			DeniedReflectionFunctions.Add(FName(TEXT("CallFunctionByNameWithArguments")));
+		}
+
+		if (AllowedReflectionFunctions.Num() == 0)
+		{
+			AllowedReflectionFunctions.Add(FName(TEXT("UpdatePoseFromAnimation")));
 		}
 
 		GConfig->GetArray(TEXT("BlueprintAutomationToolkit"), TEXT("AllowedActionAssetPrefixes"), AllowedActionAssetPrefixes, GEditorPerProjectIni);

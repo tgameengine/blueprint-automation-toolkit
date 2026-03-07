@@ -110,6 +110,7 @@ public:
 	void Test_SetReflectionFunctionDenyList(const TArray<FString>& Values);
 	void Test_SetReflectionPropertyAllowList(const TArray<FString>& Values);
 	void Test_SetReflectionPropertyDenyList(const TArray<FString>& Values);
+	void Test_NotifySettingChanged();
 #endif
 
 private:
