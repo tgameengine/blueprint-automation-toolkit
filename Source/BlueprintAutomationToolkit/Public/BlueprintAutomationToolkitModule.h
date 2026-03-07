@@ -22,6 +22,7 @@
 class UWorld;
 class AActor;
 class FJsonObject;
+struct FAutomationResult;
 
 class IHttpRouter;
 class SDockTab;
@@ -141,6 +142,7 @@ private:
 
 	bool IsRequestAllowed(const struct FHttpServerRequest& Request, FString* OutDenyReason = nullptr, FString* OutClientKey = nullptr) const;
 	bool ValidateAndHandleRequest(const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TCHAR* Endpoint);
+	FAutomationResult ExecuteAutomationCommand(const FString& Endpoint, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject = false) const;
 	void RunOnGameThread(TFunction<void()> Fn) const;
 	bool RunOnGameThreadWait(TFunction<void()> Fn, double TimeoutSeconds = 10.0) const;
 
@@ -251,6 +253,12 @@ private:
 	TUniquePtr<struct FHttpServerResponse> MakeErrorResponse(enum EHttpServerResponseCodes HttpCode, const FString& RequestId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details = nullptr) const;
 	TUniquePtr<struct FHttpServerResponse> MakeErrorResponse(int32 HttpCode, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details = nullptr) const;
 	TUniquePtr<struct FHttpServerResponse> MakeErrorResponse(enum EHttpServerResponseCodes HttpCode, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details = nullptr) const;
+	TUniquePtr<struct FHttpServerResponse> MakeCanonicalSuccessResponse(int32 HttpCode, const FString& RequestId, const TSharedPtr<FJsonObject>& Data, const TArray<TSharedPtr<class FJsonValue>>& Warnings = {}) const;
+	TUniquePtr<struct FHttpServerResponse> MakeCanonicalErrorResponse(int32 HttpCode, const FString& RequestId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details = nullptr, const TArray<TSharedPtr<class FJsonValue>>& Warnings = {}, const FString& SuggestedAction = FString(), const TOptional<bool>& RetryableOverride = TOptional<bool>()) const;
+	TUniquePtr<struct FHttpServerResponse> MakeCanonicalResponseFromAutomationResult(const FAutomationResult& Result, const FString& RequestId) const;
+	TSharedPtr<FJsonObject> NormalizeCanonicalObjectRequest(const TSharedPtr<FJsonObject>& BodyObj) const;
+	TSharedPtr<FJsonObject> BuildCapabilitiesSummary() const;
+	TSharedPtr<FJsonObject> BuildEngineDiscoverPayload() const;
 	void AppendStructuredLog(const FStructuredLogEntry& Entry);
 	void FinalizeRequestLog(const FRequestContext& Context, int32 StatusCode, const FString& ErrorCode);
 
@@ -384,6 +392,7 @@ private:
 	FHttpRouteHandle UObjectSetRoute;
 	FHttpRouteHandle UObjectCallRoute;
 	FHttpRouteHandle ObjectResolveRoute;
+	FHttpRouteHandle ObjectDescribeRoute;
 	FHttpRouteHandle ObjectGetRoute;
 	FHttpRouteHandle ObjectSetPropertyRoute;
 	FHttpRouteHandle ObjectCallFunctionRoute;

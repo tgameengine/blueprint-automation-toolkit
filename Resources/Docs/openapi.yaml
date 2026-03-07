@@ -3,7 +3,8 @@ info:
   title: Blueprint Automation Toolkit
   version: 0.2.0
   description: |
-    Editor-only localhost automation API for Unreal Engine.
+    Editor-only localhost agent-control API for Unreal Engine.
+    The canonical agent flow is discover -> inspect -> mutate -> blueprint graph apply -> compile -> save.
     Mutating editor-asset routes return 409 pie_edit_blocked while PIE is running; stop PIE before retrying asset or Blueprint edits.
 servers:
   - url: http://127.0.0.1:9876
@@ -12,16 +13,25 @@ security:
 paths:
   /ai/health:
     get:
-      summary: Health check
+      summary: Canonical health check for agents
+      description: Returns the current server state in the canonical success/data envelope.
       responses:
         '200':
           description: OK
   /ai/capabilities:
     get:
-      summary: Server capabilities and limits
+      summary: Canonical capability summary for agents
+      description: Stable machine-readable capability, limit, and permission summary for tooling and agents.
       responses:
         '200':
           description: Capabilities
+  /engine/discover:
+    get:
+      summary: Canonical engine handshake endpoint
+      description: Preferred first request for agents and automation clients. Returns protocol metadata, current gates, preferred routes, deprecated routes, and capability flags before object or Blueprint requests.
+      responses:
+        '200':
+          description: Discovery and handshake metadata
   /openapi:
     get:
       summary: Returns this OpenAPI document
@@ -59,8 +69,9 @@ paths:
           description: Exec result
   /uobject/get:
     post:
+      deprecated: true
       summary: Get UObject property values via reflection
-      description: Returns scalar values plus object and class references as Unreal object path strings.
+      description: Legacy reflection read route. Prefer POST /object/get or POST /object/describe.
       requestBody:
         required: true
         content:
@@ -80,8 +91,9 @@ paths:
           description: Property values
   /uobject/set:
     post:
+      deprecated: true
       summary: Set UObject properties via reflection
-      description: Accepts scalar values plus object and class references encoded as Unreal object path strings. Returns 409 pie_edit_blocked while PIE is running.
+      description: Legacy reflection write route. Prefer POST /object/set-property. Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
         content:
@@ -98,29 +110,97 @@ paths:
       responses:
         '200':
           description: Property update result
+  /object/resolve:
+    post:
+      summary: Canonically resolve an automation target
+      description: Resolves target, objectPath, actorName, blueprintAssetPath, selectedActor, or classPath into a stable object reference for follow-up object and Blueprint requests.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionResolveRequest'
+      responses:
+        '200':
+          description: Reflection resolve result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/describe:
+    post:
+      summary: Canonically describe an automation target
+      description: One-round-trip inspection route for agents. Returns resolved identity, class information, concise editable property summaries, callable function summaries, selected readable values, and relevant object flags.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionDescribeRequest'
+      responses:
+        '200':
+          description: Reflection describe result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/get:
+    post:
+      summary: Canonically read reflected property values
+      description: Reads selected properties, or all supported safe-readable properties, from a resolved automation target.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionGetRequest'
+      responses:
+        '200':
+          description: Reflection get result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/list-properties:
+    post:
+      deprecated: true
+      summary: List reflected properties on a UObject
+      description: Legacy discovery route. Prefer POST /object/describe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionObjectRequest'
+      responses:
+        '200':
+          description: Reflection property list result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/set-property:
     post:
-      summary: Set UObject properties via reflection
-      description: Generic alias for /uobject/set. Accepts scalar values plus object and class references encoded as Unreal object path strings. Returns 409 pie_edit_blocked while PIE is running.
+      summary: Canonically set reflected properties
+      description: Supports target or objectPath addressing, primitive values, enums, object references, common structs, and arrays of supported scalar or object reference types. Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [path, values]
-              properties:
-                path:
-                  type: string
-                values:
-                  type: object
-                  description: Property assignments. Class and object properties accept string references such as /Game/MyBP.MyBP_C or /Game/MyAsset.MyAsset.
+              $ref: '#/components/schemas/ReflectionSetPropertyRequest'
       responses:
         '200':
           description: Property update result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /uobject/call:
     post:
+      deprecated: true
       summary: Call an allowlisted UFunction on a UObject
+      description: Legacy function-call route. Prefer POST /object/call-function.
       requestBody:
         required: true
         content:
@@ -138,27 +218,41 @@ paths:
       responses:
         '200':
           description: Function call result
+  /object/list-functions:
+    post:
+      deprecated: true
+      summary: List callable reflected functions on a UObject
+      description: Legacy discovery route. Prefer POST /object/describe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionObjectRequest'
+      responses:
+        '200':
+          description: Reflection function list result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/call-function:
     post:
-      summary: Call an allowlisted UFunction on a UObject
-      description: Generic alias for /uobject/call.
+      summary: Canonically call a reflected UFunction
+      description: Maps JSON arguments into reflected parameters, rejects unsupported signatures, and returns return value plus output parameters in the canonical success/data envelope.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [path, function]
-              properties:
-                path:
-                  type: string
-                function:
-                  type: string
-                args:
-                  type: object
+              $ref: '#/components/schemas/ReflectionCallFunctionRequest'
       responses:
         '200':
           description: Function call result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /actor/spawn:
     post:
       summary: Spawn an actor and optionally set initial properties
@@ -253,7 +347,7 @@ paths:
           description: Duplicate result
   /asset/save:
     post:
-      summary: Save one or more assets
+      summary: Canonically save one or more assets
       description: Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
@@ -261,12 +355,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [paths]
               properties:
+                target:
+                  type: string
+                path:
+                  type: string
                 paths:
                   type: array
                   items:
                     type: string
+              anyOf:
+                - required: [target]
+                - required: [path]
+                - required: [paths]
       responses:
         '200':
           description: Save result
@@ -596,7 +697,7 @@ paths:
           description: Job created
   /blueprint/compile:
     post:
-      summary: Submit blueprint compile job
+      summary: Canonically compile a Blueprint
       description: Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
@@ -611,12 +712,13 @@ paths:
                   minLength: 1
                   maxLength: 512
       responses:
-        '202':
-          description: Job created
+        '200':
+          description: Blueprint compile result
   /blueprint/save:
     post:
+      deprecated: true
       summary: Submit blueprint save job
-      description: Returns 409 pie_edit_blocked while PIE is running.
+      description: Legacy blueprint save route. Prefer POST /asset/save after POST /blueprint/compile or POST /blueprint/graph/apply.
       parameters:
         - in: header
           name: Idempotency-Key
@@ -728,8 +830,8 @@ paths:
           $ref: '#/components/responses/Error400'
   /blueprint/graph/apply:
     post:
-      summary: Apply blueprint graph edits (nodes and links)
-      description: Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
+      summary: Canonically apply Blueprint graph edits
+      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts plus compile/save status. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
       requestBody:
         required: true
         content:
@@ -887,6 +989,122 @@ components:
           additionalProperties: true
         requestId:
           type: string
+    ReflectionObjectRequest:
+      type: object
+      properties:
+        target:
+          type: string
+          description: Canonical target identifier. When provided without a more specific field, path-like values resolve as objectPath and plain names resolve as actorName.
+        path:
+          type: string
+          description: Legacy alias for objectPath.
+        objectPath:
+          type: string
+        softObjectPath:
+          type: string
+        actorName:
+          type: string
+        selectedActor:
+          type: boolean
+        blueprintAssetPath:
+          type: string
+        classPath:
+          type: string
+        requiredClass:
+          type: string
+        worldContext:
+          type: string
+          enum: [Editor, PIE, editor, pie]
+        pieIndex:
+          type: integer
+        responseOutputPath:
+          type: string
+          description: Optional relative file path under the toolkit response export directory. When set, the HTTP response body is also written to disk and the request requires filesystem permission.
+      description: Provide at least one object resolution field.
+    ReflectionResolveRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReflectionObjectRequest'
+    ReflectionGetRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReflectionObjectRequest'
+        - type: object
+          properties:
+            properties:
+              type: array
+              items:
+                type: string
+    ReflectionDescribeRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReflectionObjectRequest'
+        - type: object
+          properties:
+            verbose:
+              type: boolean
+            propertyLimit:
+              type: integer
+            functionLimit:
+              type: integer
+            valueLimit:
+              type: integer
+    ReflectionSetPropertyRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReflectionObjectRequest'
+        - type: object
+          properties:
+            property:
+              type: string
+            value:
+              description: Reflected value to assign.
+              nullable: true
+            values:
+              type: object
+              additionalProperties: true
+          anyOf:
+            - required: [property, value]
+            - required: [values]
+    ReflectionCallFunctionRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReflectionObjectRequest'
+        - type: object
+          required: [function]
+          properties:
+            function:
+              type: string
+            arguments:
+              type: object
+              additionalProperties: true
+            args:
+              type: object
+              additionalProperties: true
+    ReflectionStructuredResponse:
+      type: object
+      required: [success, warnings]
+      properties:
+        success:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        data:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            retryable:
+              type: boolean
+            suggestedAction:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
     JobSubmitRequest:
       type: object
       required: [kind, payload]

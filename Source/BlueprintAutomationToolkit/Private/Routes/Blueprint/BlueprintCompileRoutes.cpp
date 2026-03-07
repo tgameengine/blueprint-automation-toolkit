@@ -64,15 +64,42 @@ void FBlueprintAutomationToolkitModule::BindBlueprintCompileRoutes()
 				return true;
 			}
 
-			TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
-			Payload->SetStringField(TEXT("blueprint"), BlueprintPath);
 			const FString RequestId = ResolveOrCreateRequestId(Request);
-			const FString JobId = SubmitJob(TEXT("blueprint.compile"), RequestId, Payload);
+			const FString ObjectPath = NormalizeBlueprintObjectPathLocal(BlueprintPath);
 
-			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-			Obj->SetStringField(TEXT("jobId"), JobId);
-			Obj->SetStringField(TEXT("requestId"), RequestId);
-			BAT::Http::JsonOk(OnComplete, MakeShared<FJsonValueObject>(Obj), 202, RequestId);
+			TSharedRef<FJsonObject> Data = MakeShared<FJsonObject>();
+			TArray<TSharedPtr<FJsonValue>> Warnings;
+			const bool bCompleted = RunOnGameThreadWait([&Data, &ObjectPath]()
+			{
+				UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *ObjectPath);
+				if (!Blueprint)
+				{
+					return;
+				}
+
+				FKismetEditorUtilities::CompileBlueprint(Blueprint);
+				Data->SetStringField(TEXT("blueprint"), ObjectPath);
+				Data->SetStringField(TEXT("target"), ObjectPath);
+				Data->SetBoolField(TEXT("compiled"), true);
+				Data->SetBoolField(TEXT("saved"), false);
+				Data->SetStringField(TEXT("compileStatus"), TEXT("compiled"));
+				Data->SetStringField(TEXT("saveStatus"), TEXT("not_requested"));
+				Data->SetArrayField(TEXT("errors"), TArray<TSharedPtr<FJsonValue>>());
+			});
+
+			if (!bCompleted)
+			{
+				OnComplete(MakeCanonicalErrorResponse(504, RequestId, TEXT("game_thread_timeout"), TEXT("Timed out waiting for GameThread execution.")));
+				return true;
+			}
+
+			if (!Data->HasField(TEXT("compiled")))
+			{
+				OnComplete(MakeCanonicalErrorResponse(404, RequestId, TEXT("not_found"), TEXT("Blueprint not found.")));
+				return true;
+			}
+
+			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, Data, Warnings));
 
 			return true;
 		}));

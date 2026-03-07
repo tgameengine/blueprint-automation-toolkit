@@ -1,5 +1,6 @@
 #include "BlueprintAutomationToolkitModule.h"
 
+#include "Commands/AutomationCommand.h"
 #include "Http/HttpRequestUtils.h"
 
 #include "HttpPath.h"
@@ -27,7 +28,33 @@ void FBlueprintAutomationToolkitModule::BindReflectionRoutes()
 				return true;
 			}
 
-			return DispatchAutomationCommandRoute(TEXT("/object/resolve"), Request, OnComplete, BodyObj, true);
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			const FAutomationResult Result = ExecuteAutomationCommand(TEXT("/object/resolve"), RequestId, NormalizeCanonicalObjectRequest(BodyObj), true);
+			OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			return true;
+		}));
+
+	ObjectDescribeRoute = Router->BindRoute(
+		FHttpPath(TEXT("/object/describe")),
+		EHttpServerRequestVerbs::VERB_POST,
+		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/describe")))
+			{
+				return true;
+			}
+
+			TSharedPtr<FJsonObject> BodyObj;
+			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
+			{
+				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_json"), TEXT("Invalid JSON body")));
+				return true;
+			}
+
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			const FAutomationResult Result = ExecuteAutomationCommand(TEXT("/object/describe"), RequestId, NormalizeCanonicalObjectRequest(BodyObj), true);
+			OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			return true;
 		}));
 
 	ObjectGetRoute = Router->BindRoute(
@@ -47,7 +74,10 @@ void FBlueprintAutomationToolkitModule::BindReflectionRoutes()
 				return true;
 			}
 
-			return DispatchAutomationCommandRoute(TEXT("/object/get"), Request, OnComplete, BodyObj, true);
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			const FAutomationResult Result = ExecuteAutomationCommand(TEXT("/object/get"), RequestId, NormalizeCanonicalObjectRequest(BodyObj), true);
+			OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			return true;
 		}));
 
 	ObjectSetPropertyRoute = Router->BindRoute(
@@ -67,7 +97,10 @@ void FBlueprintAutomationToolkitModule::BindReflectionRoutes()
 				return true;
 			}
 
-			return DispatchAutomationCommandRoute(TEXT("/object/set-property"), Request, OnComplete, BodyObj, true);
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			const FAutomationResult Result = ExecuteAutomationCommand(TEXT("/object/set-property"), RequestId, NormalizeCanonicalObjectRequest(BodyObj), true);
+			OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			return true;
 		}));
 
 	ObjectCallFunctionRoute = Router->BindRoute(
@@ -87,7 +120,10 @@ void FBlueprintAutomationToolkitModule::BindReflectionRoutes()
 				return true;
 			}
 
-			return DispatchAutomationCommandRoute(TEXT("/object/call-function"), Request, OnComplete, BodyObj, true);
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			const FAutomationResult Result = ExecuteAutomationCommand(TEXT("/object/call-function"), RequestId, NormalizeCanonicalObjectRequest(BodyObj), true);
+			OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			return true;
 		}));
 
 	ObjectListPropertiesRoute = Router->BindRoute(

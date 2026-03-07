@@ -6,6 +6,7 @@
 #include "Commands/Blueprint/ApplyGraphCommand.h"
 #include "Commands/CommandDispatcher.h"
 #include "Commands/Reflection/CallFunctionCommand.h"
+#include "Commands/Reflection/DescribeObjectCommand.h"
 #include "Commands/Reflection/GetObjectCommand.h"
 #include "Commands/Reflection/ListFunctionsCommand.h"
 #include "Commands/Reflection/ListPropertiesCommand.h"
@@ -2402,6 +2403,10 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 	{
 		return MakeUnique<FGetObjectCommand>();
 	});
+	CommandDispatcher->Register(TEXT("/object/describe"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FDescribeObjectCommand>();
+	});
 	CommandDispatcher->Register(TEXT("/object/list-properties"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FListPropertiesCommand>();
@@ -2432,65 +2437,69 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 	});
 }
 
-bool FBlueprintAutomationToolkitModule::DispatchAutomationCommandRoute(const FString& Endpoint, const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject)
+FAutomationResult FBlueprintAutomationToolkitModule::ExecuteAutomationCommand(const FString& Endpoint, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject) const
 {
 	if (CommandDispatcher == nullptr)
 	{
-		OnComplete(MakeErrorResponse(500, ResolveOrCreateRequestId(Request), TEXT("dispatcher_unavailable"), TEXT("Command dispatcher is not initialized")));
-		return true;
+		return FAutomationResult::Error(TEXT("dispatcher_unavailable"), TEXT("Command dispatcher is not initialized"), 500);
 	}
 
 	FAutomationContext Context;
-	Context.RequestId = ResolveOrCreateRequestId(Request);
+	Context.RequestId = RequestId;
 	Context.Endpoint = Endpoint;
 	Context.Body = BodyObj;
-	Context.Module = this;
+	Context.Module = const_cast<FBlueprintAutomationToolkitModule*>(this);
 	Context.bReturnRawObject = bReturnRawObject;
+	return CommandDispatcher->Dispatch(Endpoint, Context);
+}
+
+bool FBlueprintAutomationToolkitModule::DispatchAutomationCommandRoute(const FString& Endpoint, const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject)
+{
+	const FString RequestId = ResolveOrCreateRequestId(Request);
+	const FAutomationResult Result = ExecuteAutomationCommand(Endpoint, RequestId, BodyObj, bReturnRawObject);
 
 	auto CompleteWithOptionalResponseExport = [&](TUniquePtr<FHttpServerResponse> Response)
 	{
 		if (!Response)
 		{
-			OnComplete(MakeErrorResponse(500, Context.RequestId, TEXT("internal_error"), TEXT("No HTTP response was produced.")));
+			OnComplete(MakeErrorResponse(500, RequestId, TEXT("internal_error"), TEXT("No HTTP response was produced.")));
 			return;
 		}
 
 		FString OutputPath;
 		FString OutputError;
-		if (!BAT::Http::TryWriteResponseToDisk(BodyObj, Context.RequestId, *Response, OutputPath, OutputError))
+		if (!BAT::Http::TryWriteResponseToDisk(BodyObj, RequestId, *Response, OutputPath, OutputError))
 		{
-			OnComplete(MakeErrorResponse(500, Context.RequestId, TEXT("response_export_failed"), OutputError.IsEmpty() ? TEXT("Failed to export response to disk.") : OutputError));
+			OnComplete(MakeErrorResponse(500, RequestId, TEXT("response_export_failed"), OutputError.IsEmpty() ? TEXT("Failed to export response to disk.") : OutputError));
 			return;
 		}
 
 		OnComplete(MoveTemp(Response));
 	};
-
-	const FAutomationResult Result = CommandDispatcher->Dispatch(Endpoint, Context);
 	if (!Result.bSuccess)
 	{
 		if (bReturnRawObject && Result.ErrorData.IsValid() && Result.ErrorData->Type == EJson::Object)
 		{
-			CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.ErrorData->AsObject().ToSharedRef(), Context.RequestId));
+			CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.ErrorData->AsObject().ToSharedRef(), RequestId));
 		}
 		else if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
 		{
-			CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
+			CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), RequestId));
 		}
 		else
 		{
-			CompleteWithOptionalResponseExport(MakeErrorResponse(Result.StatusCode, Context.RequestId, Result.ErrorCode, Result.ErrorMessage));
+			CompleteWithOptionalResponseExport(MakeErrorResponse(Result.StatusCode, RequestId, Result.ErrorCode, Result.ErrorMessage));
 		}
 		return true;
 	}
 
 	if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
 	{
-		CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
+		CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), RequestId));
 	}
 	else
 	{
-		CompleteWithOptionalResponseExport(BAT::Http::MakeJsonOk(Result.Data, Result.StatusCode, Context.RequestId));
+		CompleteWithOptionalResponseExport(BAT::Http::MakeJsonOk(Result.Data, Result.StatusCode, RequestId));
 	}
 
 	return true;

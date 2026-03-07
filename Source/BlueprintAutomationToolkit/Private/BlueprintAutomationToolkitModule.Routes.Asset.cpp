@@ -706,19 +706,34 @@ void FBlueprintAutomationToolkitModule::BindAssetRoutes()
 				return true;
 			}
 
-			const TArray<TSharedPtr<FJsonValue>>* PathsField = nullptr;
-			BodyObj->TryGetArrayField(TEXT("paths"), PathsField);
-			const TArray<TSharedPtr<FJsonValue>> Paths = PathsField ? *PathsField : TArray<TSharedPtr<FJsonValue>>();
 			const FString RequestId = ResolveOrCreateRequestId(Request);
+			TArray<TSharedPtr<FJsonValue>> Paths;
+
+			FString SinglePath;
+			if (BodyObj->TryGetStringField(TEXT("path"), SinglePath) && !SinglePath.TrimStartAndEnd().IsEmpty())
+			{
+				Paths.Add(MakeShared<FJsonValueString>(SinglePath.TrimStartAndEnd()));
+			}
+			else if (BodyObj->TryGetStringField(TEXT("target"), SinglePath) && !SinglePath.TrimStartAndEnd().IsEmpty())
+			{
+				Paths.Add(MakeShared<FJsonValueString>(SinglePath.TrimStartAndEnd()));
+			}
+			else
+			{
+				const TArray<TSharedPtr<FJsonValue>>* PathsField = nullptr;
+				BodyObj->TryGetArrayField(TEXT("paths"), PathsField);
+				Paths = PathsField ? *PathsField : TArray<TSharedPtr<FJsonValue>>();
+			}
 
 			AsyncTask(ENamedThreads::GameThread, [this, Paths, RequestId, OnComplete]()
 			{
 				int32 SavedCount = 0;
+				TArray<TSharedPtr<FJsonValue>> SavedAssets;
 				for (const TSharedPtr<FJsonValue>& PathValue : Paths)
 				{
 					if (!PathValue.IsValid() || PathValue->Type != EJson::String)
 					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, RequestId, TEXT("bad_args"), TEXT("'paths' must contain strings")));
+						OnComplete(MakeCanonicalErrorResponse(400, RequestId, TEXT("bad_args"), TEXT("'paths' must contain strings.")));
 						return;
 					}
 
@@ -726,23 +741,28 @@ void FBlueprintAutomationToolkitModule::BindAssetRoutes()
 					UObject* Asset = LoadObject<UObject>(nullptr, *ObjectPath);
 					if (!Asset)
 					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::NotFound, RequestId, TEXT("asset_not_found"), FString::Printf(TEXT("Asset not found: %s"), *ObjectPath)));
+						OnComplete(MakeCanonicalErrorResponse(404, RequestId, TEXT("asset_not_found"), FString::Printf(TEXT("Asset not found: %s"), *ObjectPath)));
 						return;
 					}
 
 					if (!SaveObjectPackage(Asset))
 					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::ServerError, RequestId, TEXT("save_failed"), FString::Printf(TEXT("Failed to save asset: %s"), *ObjectPath)));
+						OnComplete(MakeCanonicalErrorResponse(500, RequestId, TEXT("save_failed"), FString::Printf(TEXT("Failed to save asset: %s"), *ObjectPath)));
 						return;
 					}
 					++SavedCount;
+					SavedAssets.Add(MakeShared<FJsonValueString>(ObjectPath));
 				}
 
-				TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
-				ResponseObj->SetBoolField(TEXT("ok"), true);
-				ResponseObj->SetStringField(TEXT("request_id"), RequestId);
-				ResponseObj->SetNumberField(TEXT("saved"), SavedCount);
-				OnComplete(BAT::Http::MakeJsonResponse(200, ResponseObj, RequestId));
+				TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+				Data->SetNumberField(TEXT("savedCount"), SavedCount);
+				Data->SetArrayField(TEXT("savedAssets"), SavedAssets);
+				if (SavedAssets.Num() == 1)
+				{
+					Data->SetStringField(TEXT("target"), SavedAssets[0]->AsString());
+				}
+				Data->SetArrayField(TEXT("errors"), TArray<TSharedPtr<FJsonValue>>());
+				OnComplete(MakeCanonicalSuccessResponse(200, RequestId, Data));
 			});
 			return true;
 		}));

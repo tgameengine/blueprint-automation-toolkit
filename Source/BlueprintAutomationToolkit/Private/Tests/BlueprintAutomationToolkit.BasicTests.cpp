@@ -186,8 +186,12 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	}
 
 	TestTrue(TEXT("OpenAPI contains /blueprint/apply"), Spec.Contains(TEXT("/blueprint/apply:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /blueprint/graph/apply"), Spec.Contains(TEXT("/blueprint/graph/apply:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /blueprint/compile"), Spec.Contains(TEXT("/blueprint/compile:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/save"), Spec.Contains(TEXT("/asset/save:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/nodes"), Spec.Contains(TEXT("/blueprint/graph/nodes:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/resolve"), Spec.Contains(TEXT("/object/resolve:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /object/describe"), Spec.Contains(TEXT("/object/describe:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/get"), Spec.Contains(TEXT("/object/get:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/list-properties"), Spec.Contains(TEXT("/object/list-properties:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/list-functions"), Spec.Contains(TEXT("/object/list-functions:"), ESearchCase::CaseSensitive));
@@ -334,6 +338,7 @@ bool FBATPieEditBlockRouteClassificationTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("/blueprint/schema remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/schema")));
 	TestFalse(TEXT("/blueprint/graph/nodes remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/graph/nodes")));
 	TestFalse(TEXT("/blueprint/node/describe remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/node/describe")));
+	TestFalse(TEXT("/object/describe remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/object/describe")));
 	TestFalse(TEXT("/uobject/get remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/uobject/get")));
 	TestFalse(TEXT("/pie/start remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/pie/start")));
 	return true;

@@ -1,14 +1,18 @@
 # Blueprint Automation Toolkit (Editor Plugin)
 
-Blueprint Automation Toolkit is a small **Editor-only** Unreal Engine plugin that exposes **local-only HTTP endpoints** for automation.
+Blueprint Automation Toolkit is an **Editor-only**, **localhost-only**, token-authenticated HTTP control surface for Unreal Editor.
 
-It is designed to let an external process (AI agent, test runner, scripts, CI job, etc.) drive a running Unreal Editor instance in a controlled way:
+The primary use case is AI-agent and automation control of a running editor session through one canonical workflow:
 
-- Execute Unreal console commands
-- Start/stop Play In Editor (PIE)
-- Perform a few deliberately-simple gameplay actions during PIE
+1. Discover the server and its gates with `GET /engine/discover`
+2. Check runtime state with `GET /ai/health` and `GET /ai/capabilities`
+3. Resolve or describe a target object with `POST /object/resolve` or `POST /object/describe`
+4. Read or mutate objects with `POST /object/get`, `POST /object/set-property`, and `POST /object/call-function`
+5. Apply Blueprint graph edits with `POST /blueprint/graph/apply`
+6. Compile explicitly with `POST /blueprint/compile`
+7. Save explicitly with `POST /asset/save`
 
-This is intentionally not a general remote-control framework; it focuses on a small, stable API surface.
+The internal services stay modular, but the public API is organized as an agent-first protocol instead of a collection of route-specific utilities.
 
 ## Scope
 
@@ -16,16 +20,12 @@ This is intentionally not a general remote-control framework; it focuses on a sm
 
 - Run while the **Unreal Editor is running**.
 - Serve HTTP requests on **loopback only** (`127.0.0.1` / `::1`).
-- Execute console commands via `GEngine->Exec`.
-- Start/stop PIE.
-- During PIE, drive simple actions:
-	- Make the player wander.
-	- Interact with a named actor (scripted damage, or optional player input simulation).
-
-- Create and modify Blueprint *assets* in the editor (limited scope):
-	- Create a Blueprint asset derived from a parent class.
-	- Set Blueprint Class Default values (CDO).
-	- Compile and save Blueprint packages.
+- Let an external agent discover capabilities, limits, permissions, and preferred routes.
+- Resolve objects, inspect reflected properties/functions, read current values, and mutate safe editor objects.
+- Create and modify Blueprint assets and Blueprint graphs in the editor.
+- Compile Blueprints explicitly and save assets explicitly.
+- Start/stop PIE and execute carefully gated editor commands when enabled.
+- Keep legacy gameplay/demo endpoints available as optional auxiliary routes.
 
 ### What it cannot do (non-goals)
 
@@ -64,7 +64,7 @@ Typical setup:
 	 - `<YourProject>/Plugins/blueprint-automation-toolkit/`
 2. Ensure the plugin is enabled in the editor.
 3. Configure port/token in `DefaultEditor.ini` (below).
-4. Launch the editor and verify `GET /ai/health` responds.
+4. Launch the editor and verify `GET /engine/discover` responds.
 
 ## VS Code / Copilot workflow
 
@@ -192,7 +192,7 @@ Optional response export:
 
 ## Start the Editor (AI Workflow)
 
-If an AI request fails before reaching `GET /ai/health`, make sure Unreal Editor itself is running first.
+If an AI request fails before reaching `GET /engine/discover`, make sure Unreal Editor itself is running first.
 
 1. Start Unreal Editor for your project.
 2. Wait for the project/map to finish loading.
@@ -202,7 +202,7 @@ If an AI request fails before reaching `GET /ai/health`, make sure Unreal Editor
 Quick check from a terminal after startup (raw HTTP):
 
 ```http
-GET /ai/health HTTP/1.1
+GET /engine/discover HTTP/1.1
 Host: 127.0.0.1:9876
 Authorization: Bearer YOUR_TOKEN
 ```
@@ -215,7 +215,7 @@ If requests fail with connection refused, the HTTP listener is not running yet.
 2. Open the `Blueprint Automation Toolkit` panel.
 3. Click `Start Server`.
 4. Accept the permission prompt the first time.
-5. Verify with `GET /ai/health`.
+5. Verify with `GET /engine/discover`.
 
 Optional auto-start:
 
@@ -230,10 +230,15 @@ OpenAPI spec:
 
 - `GET /openapi` (source file: `Resources/Docs/openapi.yaml`)
 
-Recommended handshake:
+Canonical agent workflow:
 
-- `GET /engine/discover` is the recommended first request for agents and external automation clients.
-- It provides a short engine capability summary, points clients at `GET /openapi`, and advertises the recommended reflection-first flow.
+1. `GET /engine/discover`
+2. `GET /ai/health`
+3. `POST /object/resolve` or `POST /object/describe`
+4. `POST /object/set-property` or `POST /object/call-function`
+5. `POST /blueprint/graph/apply`
+6. `POST /blueprint/compile`
+7. `POST /asset/save`
 
 Base URL:
 
@@ -246,17 +251,31 @@ All responses are JSON.
 Recommended capability-first flow for agents:
 
 1. `GET /engine/discover`
-2. `POST /object/resolve`
-3. `POST /object/list-properties`
-4. Call the relevant action endpoint for the resolved target
+2. `GET /ai/health`
+3. `POST /object/describe`
+4. `POST /object/set-property` or `POST /object/call-function`
+5. `POST /blueprint/graph/apply`
+6. `POST /blueprint/compile`
+7. `POST /asset/save`
 
-Short capability summary:
+Canonical routes:
 
-- Discovery and handshake: `GET /engine/discover`
-- Server capabilities and limits: `GET /ai/capabilities`
-- Full schema and endpoint contract: `GET /openapi`
-- Reflection inspection: `POST /object/resolve`, `POST /object/list-properties`, `POST /object/list-functions`
-- Follow-up action routes depend on the resolved target, such as `POST /object/set-property`, `POST /object/call-function`, or other editor/Blueprint endpoints
+- `GET /engine/discover`
+- `GET /ai/health`
+- `GET /ai/capabilities`
+- `POST /object/resolve`
+- `POST /object/describe`
+- `POST /object/get`
+- `POST /object/set-property`
+- `POST /object/call-function`
+- `POST /blueprint/graph/apply`
+- `POST /blueprint/compile`
+- `POST /asset/save`
+
+Legacy and auxiliary routes:
+
+- Legacy reflection routes such as `POST /uobject/get`, `POST /uobject/set`, `POST /uobject/call`, `POST /object/list-properties`, and `POST /object/list-functions` remain available for compatibility, but new clients should prefer the canonical routes above.
+- Gameplay/demo routes such as wander, teleport, and actor shoot remain supported as optional auxiliary routes. They are not the core agent protocol.
 
 Example agent flow:
 

@@ -3967,7 +3967,75 @@ BlueprintGraphsRoute = Router->BindRoute(
 				return true;
 			}
 
-			return DispatchAutomationCommandRoute(Route_BlueprintGraphApply, Request, OnComplete, BodyObj, true);
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			const FAutomationResult Result = ExecuteAutomationCommand(Route_BlueprintGraphApply, RequestId, BodyObj, true);
+			const TSharedPtr<FJsonObject> Root = Result.Data.IsValid() && Result.Data->Type == EJson::Object ? Result.Data->AsObject() : nullptr;
+
+			bool bApplySucceeded = Result.bSuccess;
+			if (Root.IsValid())
+			{
+				Root->TryGetBoolField(TEXT("ok"), bApplySucceeded);
+			}
+
+			if (!bApplySucceeded || !Root.IsValid())
+			{
+				OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+				return true;
+			}
+
+			const TSharedPtr<FJsonObject>* RawDataPtr = nullptr;
+			if (!Root->TryGetObjectField(TEXT("data"), RawDataPtr) || !RawDataPtr || !RawDataPtr->IsValid())
+			{
+				OnComplete(MakeCanonicalErrorResponse(500, RequestId, TEXT("internal_error"), TEXT("Blueprint graph apply returned no data payload.")));
+				return true;
+			}
+
+			const TSharedPtr<FJsonObject> RawData = *RawDataPtr;
+			const TArray<TSharedPtr<FJsonValue>>* RawWarnings = nullptr;
+			const TArray<TSharedPtr<FJsonValue>>* RawErrors = nullptr;
+			Root->TryGetArrayField(TEXT("warnings"), RawWarnings);
+			Root->TryGetArrayField(TEXT("errors"), RawErrors);
+
+			const TSharedPtr<FJsonObject>* OptionsPtr = nullptr;
+			bool bCompileRequested = false;
+			bool bSaveRequested = false;
+			bool bDryRun = false;
+			if (BodyObj->TryGetObjectField(TEXT("options"), OptionsPtr) && OptionsPtr && OptionsPtr->IsValid())
+			{
+				(*OptionsPtr)->TryGetBoolField(TEXT("compile"), bCompileRequested);
+				(*OptionsPtr)->TryGetBoolField(TEXT("save"), bSaveRequested);
+				(*OptionsPtr)->TryGetBoolField(TEXT("dryRun"), bDryRun);
+			}
+
+			TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+			FString BlueprintPath;
+			FString GraphName;
+			RawData->TryGetStringField(TEXT("blueprint"), BlueprintPath);
+			RawData->TryGetStringField(TEXT("graph"), GraphName);
+			Data->SetStringField(TEXT("blueprint"), BlueprintPath);
+			Data->SetStringField(TEXT("target"), BlueprintPath);
+			Data->SetStringField(TEXT("graph"), GraphName);
+
+			const TArray<TSharedPtr<FJsonValue>>* CreatedNodes = nullptr;
+			const TArray<TSharedPtr<FJsonValue>>* UpdatedNodes = nullptr;
+			RawData->TryGetArrayField(TEXT("createdNodes"), CreatedNodes);
+			RawData->TryGetArrayField(TEXT("updatedNodes"), UpdatedNodes);
+			Data->SetArrayField(TEXT("nodesCreated"), CreatedNodes ? *CreatedNodes : TArray<TSharedPtr<FJsonValue>>());
+			Data->SetArrayField(TEXT("nodesUpdated"), UpdatedNodes ? *UpdatedNodes : TArray<TSharedPtr<FJsonValue>>());
+
+			double LinksCreated = 0.0;
+			RawData->TryGetNumberField(TEXT("createdLinks"), LinksCreated);
+			Data->SetNumberField(TEXT("linksCreated"), LinksCreated);
+			Data->SetNumberField(TEXT("linksRemoved"), 0.0);
+			Data->SetBoolField(TEXT("compiled"), bCompileRequested && !bDryRun);
+			Data->SetBoolField(TEXT("saved"), bSaveRequested && !bDryRun);
+			Data->SetStringField(TEXT("compileStatus"), bCompileRequested ? (bDryRun ? TEXT("skipped_dry_run") : TEXT("compiled")) : TEXT("not_requested"));
+			Data->SetStringField(TEXT("saveStatus"), bSaveRequested ? (bDryRun ? TEXT("skipped_dry_run") : TEXT("saved")) : TEXT("not_requested"));
+			Data->SetArrayField(TEXT("warnings"), RawWarnings ? *RawWarnings : TArray<TSharedPtr<FJsonValue>>());
+			Data->SetArrayField(TEXT("errors"), RawErrors ? *RawErrors : TArray<TSharedPtr<FJsonValue>>());
+
+			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, Data, RawWarnings ? *RawWarnings : TArray<TSharedPtr<FJsonValue>>()));
+			return true;
 		}));
 
 	BlueprintNodeAddCallFunctionRoute = Router->BindRoute(

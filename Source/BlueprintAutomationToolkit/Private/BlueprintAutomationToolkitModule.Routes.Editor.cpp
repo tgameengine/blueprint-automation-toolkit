@@ -850,11 +850,14 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 				return true;
 			}
 
-			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-			Obj->SetBoolField(TEXT("ok"), true);
-			Obj->SetNumberField(TEXT("port"), Port);
 			const FString RequestId = ResolveOrCreateRequestId(Request);
-			BAT::Http::JsonOk(OnComplete, MakeShared<FJsonValueObject>(Obj), 200, RequestId);
+			TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+			Data->SetStringField(TEXT("status"), TEXT("ok"));
+			Data->SetNumberField(TEXT("port"), Port);
+			Data->SetBoolField(TEXT("safeMode"), bSafeModeEnabled);
+			Data->SetBoolField(TEXT("pieRunning"), IsPieSessionRunning());
+			Data->SetBoolField(TEXT("tokenAuthRequired"), bRequireAuthToken);
+			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, Data));
 			return true;
 		}));
 
@@ -976,78 +979,8 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 				return true;
 			}
 
-			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-			Obj->SetBoolField(TEXT("ok"), true);
-			Obj->SetBoolField(TEXT("safe_mode"), bSafeModeEnabled);
-			Obj->SetBoolField(TEXT("jobs_enabled"), true);
-			Obj->SetBoolField(TEXT("openapi_enabled"), true);
-			Obj->SetNumberField(TEXT("rate_limit_per_second"), RateLimitPerSecond);
-			Obj->SetNumberField(TEXT("max_request_body_bytes"), MaxRequestBodyBytes);
-			Obj->SetNumberField(TEXT("max_ops_per_plan"), MaxOpsPerPlan);
-			Obj->SetNumberField(TEXT("max_actors_per_layout"), MaxActorsPerLayout);
-			Obj->SetNumberField(TEXT("max_instances_per_op"), MaxInstancesPerOp);
-			Obj->SetNumberField(TEXT("max_total_instances_per_plan"), MaxTotalInstancesPerPlan);
-
-			TSharedRef<FJsonObject> EditorObj = MakeShared<FJsonObject>();
-			TArray<TSharedPtr<FJsonValue>> LayoutClasses;
-			LayoutClasses.Add(MakeShared<FJsonValueString>(TEXT("/Script/Engine.StaticMeshActor")));
-			LayoutClasses.Add(MakeShared<FJsonValueString>(TEXT("/Script/Engine.PointLight")));
-			LayoutClasses.Add(MakeShared<FJsonValueString>(TEXT("/Script/PCG.PCGVolume")));
-			EditorObj->SetArrayField(TEXT("layout_allowed_classes"), LayoutClasses);
-			Obj->SetObjectField(TEXT("editor"), EditorObj);
-
-			TSharedRef<FJsonObject> BlueprintObj = MakeShared<FJsonObject>();
-			TArray<TSharedPtr<FJsonValue>> ComponentClasses;
-			ComponentClasses.Add(MakeShared<FJsonValueString>(TEXT("/Script/Engine.StaticMeshComponent")));
-			ComponentClasses.Add(MakeShared<FJsonValueString>(TEXT("/Script/Engine.InstancedStaticMeshComponent")));
-			ComponentClasses.Add(MakeShared<FJsonValueString>(TEXT("/Script/Engine.HierarchicalInstancedStaticMeshComponent")));
-			BlueprintObj->SetArrayField(TEXT("component_classes"), ComponentClasses);
-
-			TSharedRef<FJsonObject> AllowedProps = MakeShared<FJsonObject>();
-			AllowedProps->SetArrayField(TEXT("StaticMeshComponent"), {
-				MakeShared<FJsonValueString>(TEXT("StaticMesh")),
-				MakeShared<FJsonValueString>(TEXT("Materials")),
-				MakeShared<FJsonValueString>(TEXT("Mobility"))
-			});
-			AllowedProps->SetArrayField(TEXT("InstancedStaticMeshComponent"), {
-				MakeShared<FJsonValueString>(TEXT("StaticMesh")),
-				MakeShared<FJsonValueString>(TEXT("Materials")),
-				MakeShared<FJsonValueString>(TEXT("Mobility")),
-				MakeShared<FJsonValueString>(TEXT("NumCustomDataFloats"))
-			});
-			AllowedProps->SetArrayField(TEXT("HierarchicalInstancedStaticMeshComponent"), {
-				MakeShared<FJsonValueString>(TEXT("StaticMesh")),
-				MakeShared<FJsonValueString>(TEXT("Materials")),
-				MakeShared<FJsonValueString>(TEXT("Mobility")),
-				MakeShared<FJsonValueString>(TEXT("NumCustomDataFloats"))
-			});
-			BlueprintObj->SetObjectField(TEXT("component_allowed_properties"), AllowedProps);
-			Obj->SetObjectField(TEXT("blueprint"), BlueprintObj);
-
-			TSharedRef<FJsonObject> PermissionsObj = MakeShared<FJsonObject>();
-			PermissionsObj->SetBoolField(TEXT("editor"), bPermissionEditor);
-			PermissionsObj->SetBoolField(TEXT("blueprint"), bPermissionBlueprint);
-			PermissionsObj->SetBoolField(TEXT("pie"), bPermissionPie);
-			PermissionsObj->SetBoolField(TEXT("exec"), bPermissionExec);
-			PermissionsObj->SetBoolField(TEXT("python"), bPermissionPython);
-			PermissionsObj->SetBoolField(TEXT("filesystem"), bPermissionFilesystem);
-			Obj->SetObjectField(TEXT("permissions"), PermissionsObj);
-
-			TArray<TSharedPtr<FJsonValue>> PlanHistory;
-			{
-				FScopeLock Lock(&SecurityStateMutex);
-				for (const FPlanExecutionEntry& Entry : PlanExecutionLog)
-				{
-					TSharedRef<FJsonObject> EntryObj = MakeShared<FJsonObject>();
-					EntryObj->SetStringField(TEXT("timestamp"), Entry.Timestamp.ToIso8601());
-					EntryObj->SetNumberField(TEXT("op_count"), Entry.OpCount);
-					EntryObj->SetBoolField(TEXT("success"), Entry.bSuccess);
-					PlanHistory.Add(MakeShared<FJsonValueObject>(EntryObj));
-				}
-			}
-			Obj->SetArrayField(TEXT("plan_execution_log"), PlanHistory);
-
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj)));
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, BuildCapabilitiesSummary()));
 			return true;
 		}));
 
@@ -1061,35 +994,8 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 				return true;
 			}
 
-			TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-			Obj->SetBoolField(TEXT("ok"), true);
-			Obj->SetStringField(TEXT("handshake"), TEXT("recommended"));
-			Obj->SetStringField(TEXT("openapi"), TEXT("/openapi"));
-			Obj->SetStringField(TEXT("capabilities"), TEXT("/ai/capabilities"));
-			Obj->SetBoolField(TEXT("safe_mode"), bSafeModeEnabled);
-			Obj->SetBoolField(TEXT("jobs_enabled"), true);
-			Obj->SetBoolField(TEXT("openapi_enabled"), true);
-			Obj->SetNumberField(TEXT("rate_limit_per_second"), RateLimitPerSecond);
-			Obj->SetNumberField(TEXT("max_request_body_bytes"), MaxRequestBodyBytes);
-			Obj->SetNumberField(TEXT("max_ops_per_plan"), MaxOpsPerPlan);
-			Obj->SetNumberField(TEXT("max_actors_per_layout"), MaxActorsPerLayout);
-			Obj->SetNumberField(TEXT("max_instances_per_op"), MaxInstancesPerOp);
-			Obj->SetNumberField(TEXT("max_total_instances_per_plan"), MaxTotalInstancesPerPlan);
-
-			TArray<TSharedPtr<FJsonValue>> RecommendedFlow;
-			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("/engine/discover")));
-			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("/object/resolve")));
-			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("/object/list-properties")));
-			RecommendedFlow.Add(MakeShared<FJsonValueString>(TEXT("<action-endpoint>")));
-			Obj->SetArrayField(TEXT("recommended_flow"), RecommendedFlow);
-
-			TArray<TSharedPtr<FJsonValue>> ReflectionEndpoints;
-			ReflectionEndpoints.Add(MakeShared<FJsonValueString>(TEXT("/object/resolve")));
-			ReflectionEndpoints.Add(MakeShared<FJsonValueString>(TEXT("/object/list-properties")));
-			ReflectionEndpoints.Add(MakeShared<FJsonValueString>(TEXT("/object/list-functions")));
-			Obj->SetArrayField(TEXT("reflection_endpoints"), ReflectionEndpoints);
-
-			OnComplete(MakeJsonResponse(EHttpServerResponseCodes::Ok, ToJsonString(Obj)));
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, BuildEngineDiscoverPayload()));
 			return true;
 		}));
 

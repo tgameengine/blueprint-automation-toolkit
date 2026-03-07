@@ -1,6 +1,7 @@
 #include "BlueprintAutomationToolkitModule.h"
 
 #include "Auth/TokenAuthMiddleware.h"
+#include "Commands/AutomationCommand.h"
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Dom/JsonObject.h"
@@ -17,6 +18,7 @@
 #include "Core/EditorExecution.h"
 #include "Misc/Base64.h"
 #include "Misc/DateTime.h"
+#include "Misc/EngineVersion.h"
 #include "Misc/Guid.h"
 #include "Misc/SecureHash.h"
 #include "Misc/ScopeLock.h"
@@ -80,6 +82,218 @@ namespace
 		return Path;
 	}
 
+		static FString NormalizeCanonicalErrorCode(const FString& InCode)
+		{
+			FString Code = InCode.TrimStartAndEnd();
+			if (Code.IsEmpty())
+			{
+				return TEXT("internal_error");
+			}
+
+			FString Out;
+			Out.Reserve(Code.Len() + 8);
+			for (int32 Index = 0; Index < Code.Len(); ++Index)
+			{
+				const TCHAR Char = Code[Index];
+				if (Char == TEXT(' ') || Char == TEXT('-') || Char == TEXT('.'))
+				{
+					if (!Out.IsEmpty() && !Out.EndsWith(TEXT("_"), ESearchCase::CaseSensitive))
+					{
+						Out.AppendChar(TEXT('_'));
+					}
+					continue;
+				}
+
+				const bool bIsUpper = FChar::IsUpper(Char);
+				const bool bHasPrev = Index > 0;
+				const TCHAR Prev = bHasPrev ? Code[Index - 1] : 0;
+				if (bIsUpper && bHasPrev && (FChar::IsLower(Prev) || FChar::IsDigit(Prev)) && !Out.EndsWith(TEXT("_"), ESearchCase::CaseSensitive))
+				{
+					Out.AppendChar(TEXT('_'));
+				}
+
+				Out.AppendChar(FChar::ToLower(Char));
+			}
+
+			while (Out.ReplaceInline(TEXT("__"), TEXT("_"), ESearchCase::CaseSensitive) > 0)
+			{
+			}
+
+			return Out.TrimStartAndEnd();
+		}
+
+		static TSharedRef<FJsonObject> MakeIssueObject(const FString& RawCode, const FString& Message)
+		{
+			TSharedRef<FJsonObject> Issue = MakeShared<FJsonObject>();
+			Issue->SetStringField(TEXT("code"), NormalizeCanonicalErrorCode(RawCode.IsEmpty() ? TEXT("unknown") : RawCode));
+			Issue->SetStringField(TEXT("message"), Message);
+			return Issue;
+		}
+
+		static TSharedPtr<FJsonObject> JsonValueToObject(const TSharedPtr<FJsonValue>& Value)
+		{
+			return Value.IsValid() && Value->Type == EJson::Object ? Value->AsObject() : nullptr;
+		}
+
+		static TArray<TSharedPtr<FJsonValue>> NormalizeIssueArray(const TArray<TSharedPtr<FJsonValue>>& RawIssues, const FString& DefaultCode)
+		{
+			TArray<TSharedPtr<FJsonValue>> Issues;
+			for (const TSharedPtr<FJsonValue>& RawIssue : RawIssues)
+			{
+				if (!RawIssue.IsValid())
+				{
+					continue;
+				}
+
+				if (RawIssue->Type == EJson::Object)
+				{
+					const TSharedPtr<FJsonObject> RawObject = RawIssue->AsObject();
+					if (!RawObject.IsValid())
+					{
+						continue;
+					}
+
+					TSharedRef<FJsonObject> Normalized = MakeShared<FJsonObject>(*RawObject);
+					FString Code;
+					if (!Normalized->TryGetStringField(TEXT("code"), Code) || Code.IsEmpty())
+					{
+						Code = DefaultCode;
+					}
+					Normalized->SetStringField(TEXT("code"), NormalizeCanonicalErrorCode(Code));
+
+					FString Message;
+					if (!Normalized->TryGetStringField(TEXT("message"), Message) || Message.IsEmpty())
+					{
+						Message = Code;
+						Normalized->SetStringField(TEXT("message"), Message);
+					}
+
+					Issues.Add(MakeShared<FJsonValueObject>(Normalized));
+					continue;
+				}
+
+				const FString Message = RawIssue->Type == EJson::String ? RawIssue->AsString() : TEXT("Issue reported");
+				Issues.Add(MakeShared<FJsonValueObject>(MakeIssueObject(DefaultCode, Message)));
+			}
+
+			return Issues;
+		}
+
+		static FString DeriveObjectNameFromPath(const FString& ObjectPath)
+		{
+			int32 DotIndex = INDEX_NONE;
+			if (ObjectPath.FindLastChar(TEXT('.'), DotIndex) && DotIndex + 1 < ObjectPath.Len())
+			{
+				return ObjectPath.Mid(DotIndex + 1);
+			}
+
+			int32 SlashIndex = INDEX_NONE;
+			if (ObjectPath.FindLastChar(TEXT('/'), SlashIndex) && SlashIndex + 1 < ObjectPath.Len())
+			{
+				return ObjectPath.Mid(SlashIndex + 1);
+			}
+
+			return ObjectPath;
+		}
+
+		static void PromoteObjectReferenceFields(TSharedPtr<FJsonObject>& Data)
+		{
+			if (!Data.IsValid())
+			{
+				return;
+			}
+
+			const TSharedPtr<FJsonObject>* ObjectPtr = nullptr;
+			if (!Data->TryGetObjectField(TEXT("object"), ObjectPtr) || !ObjectPtr || !ObjectPtr->IsValid())
+			{
+				if (Data->HasTypedField<EJson::Object>(TEXT("target")))
+				{
+					return;
+				}
+				return;
+			}
+
+			const TSharedPtr<FJsonObject> Object = *ObjectPtr;
+			Data->SetObjectField(TEXT("target"), Object.ToSharedRef());
+
+			FString ObjectPath;
+			if (Object->TryGetStringField(TEXT("objectPath"), ObjectPath) && !ObjectPath.IsEmpty())
+			{
+				Data->SetStringField(TEXT("objectPath"), ObjectPath);
+				if (!Data->HasField(TEXT("objectName")))
+				{
+					Data->SetStringField(TEXT("objectName"), DeriveObjectNameFromPath(ObjectPath));
+				}
+			}
+
+			FString ClassPath;
+			if (Object->TryGetStringField(TEXT("classPath"), ClassPath) && !ClassPath.IsEmpty())
+			{
+				Data->SetStringField(TEXT("classPath"), ClassPath);
+			}
+
+			FString ClassName;
+			if (Object->TryGetStringField(TEXT("className"), ClassName) && !ClassName.IsEmpty())
+			{
+				Data->SetStringField(TEXT("className"), ClassName);
+			}
+		}
+
+		static void DescribeCanonicalError(const FString& InCode, int32 StatusCode, bool& OutRetryable, FString& OutSuggestedAction)
+		{
+			const FString Code = NormalizeCanonicalErrorCode(InCode);
+			OutRetryable = false;
+			OutSuggestedAction.Reset();
+
+			if (Code == TEXT("pie_edit_blocked"))
+			{
+				OutRetryable = true;
+				OutSuggestedAction = TEXT("stop_pie");
+			}
+			else if (Code == TEXT("game_thread_timeout"))
+			{
+				OutRetryable = true;
+				OutSuggestedAction = TEXT("retry");
+			}
+			else if (Code == TEXT("request_too_large"))
+			{
+				OutSuggestedAction = TEXT("reduce_payload");
+			}
+			else if (Code == TEXT("bad_json") || Code == TEXT("invalid_request") || Code.StartsWith(TEXT("missing_")) || Code == TEXT("schema_validation_failed") || Code == TEXT("invalid_arguments"))
+			{
+				OutSuggestedAction = TEXT("fix_request");
+			}
+			else if (Code.Contains(TEXT("not_found")) || Code == TEXT("object_not_found") || Code == TEXT("property_not_found") || Code == TEXT("function_not_found"))
+			{
+				OutSuggestedAction = TEXT("inspect_target");
+			}
+			else if (Code == TEXT("safe_mode_denied"))
+			{
+				OutSuggestedAction = TEXT("inspect_policy");
+			}
+			else if (Code == TEXT("exec_route_disabled"))
+			{
+				OutSuggestedAction = TEXT("enable_exec");
+			}
+			else if (Code == TEXT("python_disabled"))
+			{
+				OutSuggestedAction = TEXT("enable_python");
+			}
+			else if (Code == TEXT("forbidden"))
+			{
+				OutSuggestedAction = TEXT("grant_permission");
+			}
+			else if (Code.StartsWith(TEXT("auth_")) || StatusCode == 401)
+			{
+				OutRetryable = true;
+				OutSuggestedAction = TEXT("authenticate");
+			}
+			else if (StatusCode >= 500)
+			{
+				OutRetryable = true;
+				OutSuggestedAction = TEXT("retry");
+			}
+		}
 	static bool TryLoadBlueprintByPath(const FString& InPath, UBlueprint*& OutBlueprint, FString& OutObjectPath)
 	{
 		OutBlueprint = nullptr;
@@ -244,6 +458,316 @@ TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeErrorResp
 TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeErrorResponse(EHttpServerResponseCodes HttpCode, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details) const
 {
 	return MakeErrorResponse((int32)HttpCode, Code, Message, Details);
+}
+
+TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeCanonicalSuccessResponse(int32 HttpCode, const FString& RequestId, const TSharedPtr<FJsonObject>& Data, const TArray<TSharedPtr<FJsonValue>>& Warnings) const
+{
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetBoolField(TEXT("success"), true);
+	Root->SetArrayField(TEXT("warnings"), Warnings);
+	Root->SetObjectField(TEXT("data"), Data.IsValid() ? Data.ToSharedRef() : MakeShared<FJsonObject>());
+	return BAT::Http::MakeJsonResponse(HttpCode, Root, RequestId);
+}
+
+TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeCanonicalErrorResponse(int32 HttpCode, const FString& RequestId, const FString& Code, const FString& Message, const TSharedPtr<FJsonObject>& Details, const TArray<TSharedPtr<FJsonValue>>& Warnings, const FString& SuggestedAction, const TOptional<bool>& RetryableOverride) const
+{
+	bool bRetryable = false;
+	FString EffectiveSuggestedAction = SuggestedAction;
+	DescribeCanonicalError(Code, HttpCode, bRetryable, EffectiveSuggestedAction);
+	if (RetryableOverride.IsSet())
+	{
+		bRetryable = RetryableOverride.GetValue();
+	}
+	if (!SuggestedAction.IsEmpty())
+	{
+		EffectiveSuggestedAction = SuggestedAction;
+	}
+
+	TSharedRef<FJsonObject> ErrorObj = MakeShared<FJsonObject>();
+	ErrorObj->SetStringField(TEXT("code"), NormalizeCanonicalErrorCode(Code));
+	ErrorObj->SetStringField(TEXT("message"), Message);
+	ErrorObj->SetBoolField(TEXT("retryable"), bRetryable);
+	if (!EffectiveSuggestedAction.IsEmpty())
+	{
+		ErrorObj->SetStringField(TEXT("suggestedAction"), EffectiveSuggestedAction);
+	}
+	if (Details.IsValid())
+	{
+		ErrorObj->SetObjectField(TEXT("details"), Details.ToSharedRef());
+	}
+
+	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetBoolField(TEXT("success"), false);
+	Root->SetArrayField(TEXT("warnings"), Warnings);
+	Root->SetObjectField(TEXT("error"), ErrorObj);
+	return BAT::Http::MakeJsonResponse(HttpCode, Root, RequestId);
+}
+
+TUniquePtr<FHttpServerResponse> FBlueprintAutomationToolkitModule::MakeCanonicalResponseFromAutomationResult(const FAutomationResult& Result, const FString& RequestId) const
+{
+	TArray<TSharedPtr<FJsonValue>> Warnings;
+	TSharedPtr<FJsonObject> Data;
+	TSharedPtr<FJsonObject> Details;
+	FString ErrorCode = Result.ErrorCode;
+	FString ErrorMessage = Result.ErrorMessage;
+
+	const TSharedPtr<FJsonObject> PrimaryObject = JsonValueToObject(Result.bSuccess ? Result.Data : (Result.ErrorData.IsValid() ? Result.ErrorData : Result.Data));
+	bool bTreatAsFailure = !Result.bSuccess;
+	if (PrimaryObject.IsValid())
+	{
+		bool bStructuredSuccess = true;
+		if ((PrimaryObject->TryGetBoolField(TEXT("success"), bStructuredSuccess) || PrimaryObject->TryGetBoolField(TEXT("ok"), bStructuredSuccess)) && !bStructuredSuccess)
+		{
+			bTreatAsFailure = true;
+		}
+	}
+	if (PrimaryObject.IsValid())
+	{
+		const TArray<TSharedPtr<FJsonValue>>* WarningArray = nullptr;
+		if (PrimaryObject->TryGetArrayField(TEXT("warnings"), WarningArray) && WarningArray)
+		{
+			Warnings = NormalizeIssueArray(*WarningArray, TEXT("warning"));
+		}
+
+		const TSharedPtr<FJsonObject>* DataPtr = nullptr;
+		if (PrimaryObject->TryGetObjectField(TEXT("data"), DataPtr) && DataPtr && DataPtr->IsValid())
+		{
+			Data = MakeShared<FJsonObject>(**DataPtr);
+		}
+		else if (Result.bSuccess)
+		{
+			Data = MakeShared<FJsonObject>(*PrimaryObject);
+		}
+
+		if (bTreatAsFailure)
+		{
+			const TSharedPtr<FJsonObject>* ErrorPtr = nullptr;
+			if (PrimaryObject->TryGetObjectField(TEXT("error"), ErrorPtr) && ErrorPtr && ErrorPtr->IsValid())
+			{
+				const TSharedPtr<FJsonObject>& RawError = *ErrorPtr;
+				RawError->TryGetStringField(TEXT("code"), ErrorCode);
+				RawError->TryGetStringField(TEXT("message"), ErrorMessage);
+				const TSharedPtr<FJsonObject>* DetailPtr = nullptr;
+				if (RawError->TryGetObjectField(TEXT("details"), DetailPtr) && DetailPtr && DetailPtr->IsValid())
+				{
+					Details = MakeShared<FJsonObject>(**DetailPtr);
+				}
+			}
+
+			const TArray<TSharedPtr<FJsonValue>>* ErrorArray = nullptr;
+			if (PrimaryObject->TryGetArrayField(TEXT("errors"), ErrorArray) && ErrorArray)
+			{
+				const TArray<TSharedPtr<FJsonValue>> NormalizedErrors = NormalizeIssueArray(*ErrorArray, TEXT("error"));
+				if (NormalizedErrors.Num() > 0)
+				{
+					if (!Details.IsValid())
+					{
+						Details = MakeShared<FJsonObject>();
+					}
+					Details->SetArrayField(TEXT("errors"), NormalizedErrors);
+
+					const TSharedPtr<FJsonObject> FirstError = JsonValueToObject(NormalizedErrors[0]);
+					if (FirstError.IsValid())
+					{
+						FirstError->TryGetStringField(TEXT("code"), ErrorCode);
+						FirstError->TryGetStringField(TEXT("message"), ErrorMessage);
+					}
+				}
+			}
+
+			if (Data.IsValid())
+			{
+				if (!Details.IsValid())
+				{
+					Details = MakeShared<FJsonObject>();
+				}
+				PromoteObjectReferenceFields(Data);
+				Details->SetObjectField(TEXT("result"), Data.ToSharedRef());
+			}
+		}
+	}
+
+	if (!bTreatAsFailure)
+	{
+		if (!Data.IsValid())
+		{
+			Data = MakeShared<FJsonObject>();
+			if (Result.Data.IsValid())
+			{
+				Data->SetField(TEXT("value"), Result.Data);
+			}
+		}
+
+		PromoteObjectReferenceFields(Data);
+		return MakeCanonicalSuccessResponse(Result.StatusCode, RequestId, Data, Warnings);
+	}
+
+	return MakeCanonicalErrorResponse(Result.StatusCode, RequestId, ErrorCode, ErrorMessage.IsEmpty() ? TEXT("Request failed") : ErrorMessage, Details, Warnings);
+}
+
+TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::NormalizeCanonicalObjectRequest(const TSharedPtr<FJsonObject>& BodyObj) const
+{
+	if (!BodyObj.IsValid())
+	{
+		return BodyObj;
+	}
+
+	TSharedPtr<FJsonObject> Normalized = MakeShared<FJsonObject>(*BodyObj);
+
+	FString Path;
+	if (Normalized->TryGetStringField(TEXT("path"), Path) && !Path.TrimStartAndEnd().IsEmpty() && !Normalized->HasField(TEXT("objectPath")))
+	{
+		Normalized->SetStringField(TEXT("objectPath"), Path);
+	}
+
+	FString World;
+	if (Normalized->TryGetStringField(TEXT("world"), World) && !World.TrimStartAndEnd().IsEmpty() && !Normalized->HasField(TEXT("worldContext")))
+	{
+		Normalized->SetStringField(TEXT("worldContext"), World);
+	}
+
+	double PieIndex = 0.0;
+	if (Normalized->TryGetNumberField(TEXT("pie_index"), PieIndex) && !Normalized->HasField(TEXT("pieIndex")))
+	{
+		Normalized->SetNumberField(TEXT("pieIndex"), PieIndex);
+	}
+
+	const TSharedPtr<FJsonObject>* ArgsPtr = nullptr;
+	if (!Normalized->HasField(TEXT("arguments")) && Normalized->TryGetObjectField(TEXT("args"), ArgsPtr) && ArgsPtr && ArgsPtr->IsValid())
+	{
+		Normalized->SetObjectField(TEXT("arguments"), (*ArgsPtr).ToSharedRef());
+	}
+
+	FString Target;
+	if (Normalized->TryGetStringField(TEXT("target"), Target)
+		&& !Target.TrimStartAndEnd().IsEmpty()
+		&& !Normalized->HasField(TEXT("objectPath"))
+		&& !Normalized->HasField(TEXT("actorName"))
+		&& !Normalized->HasField(TEXT("blueprintAssetPath"))
+		&& !Normalized->HasField(TEXT("classPath")))
+	{
+		Target.TrimStartAndEndInline();
+		if (Target.StartsWith(TEXT("/Script/"), ESearchCase::CaseSensitive))
+		{
+			Normalized->SetStringField(TEXT("classPath"), Target);
+		}
+		else if (Target.StartsWith(TEXT("/"), ESearchCase::CaseSensitive) || Target.Contains(TEXT(".")))
+		{
+			Normalized->SetStringField(TEXT("objectPath"), Target);
+		}
+		else
+		{
+			Normalized->SetStringField(TEXT("actorName"), Target);
+		}
+	}
+
+	return Normalized;
+}
+
+TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSummary() const
+{
+	const bool bPythonEnabled = bEnableExecRoute && bAllowPythonExec && !bSafeModeEnabled;
+
+	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
+	Data->SetStringField(TEXT("protocolVersion"), TEXT("1.0"));
+	Data->SetBoolField(TEXT("safeMode"), bSafeModeEnabled);
+	Data->SetBoolField(TEXT("pieRunning"), IsPieSessionRunning());
+	Data->SetBoolField(TEXT("execEnabled"), bEnableExecRoute);
+	Data->SetBoolField(TEXT("pythonEnabled"), bPythonEnabled);
+	Data->SetBoolField(TEXT("localhostOnly"), true);
+	Data->SetBoolField(TEXT("tokenAuthRequired"), bRequireAuthToken);
+
+	TSharedRef<FJsonObject> Capabilities = MakeShared<FJsonObject>();
+	Capabilities->SetBoolField(TEXT("reflection"), true);
+	Capabilities->SetBoolField(TEXT("objectDescribe"), true);
+	Capabilities->SetBoolField(TEXT("objectGet"), true);
+	Capabilities->SetBoolField(TEXT("objectSetProperty"), true);
+	Capabilities->SetBoolField(TEXT("objectCallFunction"), true);
+	Capabilities->SetBoolField(TEXT("blueprintGraphApply"), true);
+	Capabilities->SetBoolField(TEXT("compileBlueprint"), true);
+	Capabilities->SetBoolField(TEXT("saveAsset"), true);
+	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
+	Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
+	Data->SetObjectField(TEXT("capabilities"), Capabilities);
+
+	TSharedRef<FJsonObject> Limits = MakeShared<FJsonObject>();
+	Limits->SetNumberField(TEXT("bodySizeBytes"), MaxRequestBodyBytes);
+	Limits->SetNumberField(TEXT("rateLimitPerSecond"), RateLimitPerSecond);
+	Limits->SetNumberField(TEXT("rateLimitBurst"), RateLimitBurst);
+	Limits->SetNumberField(TEXT("maxOpsPerPlan"), MaxOpsPerPlan);
+	Limits->SetNumberField(TEXT("maxActorsPerLayout"), MaxActorsPerLayout);
+	Limits->SetNumberField(TEXT("maxInstancesPerOp"), MaxInstancesPerOp);
+	Limits->SetNumberField(TEXT("maxTotalInstancesPerPlan"), MaxTotalInstancesPerPlan);
+	Data->SetObjectField(TEXT("limits"), Limits);
+
+	TSharedRef<FJsonObject> Permissions = MakeShared<FJsonObject>();
+	Permissions->SetBoolField(TEXT("editor"), bPermissionEditor);
+	Permissions->SetBoolField(TEXT("blueprint"), bPermissionBlueprint);
+	Permissions->SetBoolField(TEXT("pie"), bPermissionPie);
+	Permissions->SetBoolField(TEXT("exec"), bPermissionExec);
+	Permissions->SetBoolField(TEXT("python"), bPermissionPython);
+	Permissions->SetBoolField(TEXT("filesystem"), bPermissionFilesystem);
+	Data->SetObjectField(TEXT("permissions"), Permissions);
+
+	TArray<TSharedPtr<FJsonValue>> Routes;
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/engine/discover")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/ai/health")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/describe")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/set-property")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/call-function")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/save")));
+	Data->SetArrayField(TEXT("canonicalRoutes"), Routes);
+
+	return Data;
+}
+
+TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPayload() const
+{
+	const bool bPythonEnabled = bEnableExecRoute && bAllowPythonExec && !bSafeModeEnabled;
+	TSharedPtr<FJsonObject> Data = BuildCapabilitiesSummary();
+	Data->SetStringField(TEXT("pluginName"), TEXT("Blueprint Automation Toolkit"));
+	Data->SetStringField(TEXT("moduleName"), TEXT("BlueprintAutomationToolkit"));
+	Data->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+
+	TSharedRef<FJsonObject> PreferredRoutes = MakeShared<FJsonObject>();
+	PreferredRoutes->SetStringField(TEXT("resolveObject"), TEXT("/object/resolve"));
+	PreferredRoutes->SetStringField(TEXT("describeObject"), TEXT("/object/describe"));
+	PreferredRoutes->SetStringField(TEXT("getObject"), TEXT("/object/get"));
+	PreferredRoutes->SetStringField(TEXT("setProperty"), TEXT("/object/set-property"));
+	PreferredRoutes->SetStringField(TEXT("callFunction"), TEXT("/object/call-function"));
+	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
+	PreferredRoutes->SetStringField(TEXT("compileBlueprint"), TEXT("/blueprint/compile"));
+	PreferredRoutes->SetStringField(TEXT("saveAsset"), TEXT("/asset/save"));
+	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
+
+	TArray<TSharedPtr<FJsonValue>> DeprecatedRoutes;
+	for (const TCHAR* Route : {
+		TEXT("/uobject/get"),
+		TEXT("/uobject/set"),
+		TEXT("/uobject/call"),
+		TEXT("/object/list-properties"),
+		TEXT("/object/list-functions"),
+		TEXT("/blueprint/save"),
+		TEXT("/blueprint/compile_save") })
+	{
+		DeprecatedRoutes.Add(MakeShared<FJsonValueString>(Route));
+	}
+	Data->SetArrayField(TEXT("deprecatedRoutes"), DeprecatedRoutes);
+
+	TSharedPtr<FJsonObject> Capabilities;
+	if (const TSharedPtr<FJsonObject>* CapabilitiesPtr = nullptr; Data->TryGetObjectField(TEXT("capabilities"), CapabilitiesPtr) && CapabilitiesPtr && CapabilitiesPtr->IsValid())
+	{
+		Capabilities = *CapabilitiesPtr;
+		Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
+		Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
+	}
+
+	Data->SetBoolField(TEXT("blueprintEditsDuringPie"), false);
+	Data->SetBoolField(TEXT("execEnabled"), bEnableExecRoute);
+	Data->SetBoolField(TEXT("pythonEnabled"), bPythonEnabled);
+	return Data;
 }
 
 bool FBlueprintAutomationToolkitModule::ConsumeRateLimitToken(const FString& ClientKey)
@@ -509,6 +1033,7 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 		|| Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/describe"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/get"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/list-properties"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/list-functions"), ESearchCase::CaseSensitive)
@@ -945,10 +1470,14 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 	}
 	else if (Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive))
 	{
+		FString SinglePath;
+		const bool bHasSinglePath =
+			(BodyObj->TryGetStringField(TEXT("path"), SinglePath) && !SinglePath.TrimStartAndEnd().IsEmpty())
+			|| (BodyObj->TryGetStringField(TEXT("target"), SinglePath) && !SinglePath.TrimStartAndEnd().IsEmpty());
 		const TArray<TSharedPtr<FJsonValue>>* Paths = nullptr;
-		if (!BodyObj->TryGetArrayField(TEXT("paths"), Paths) || !Paths || Paths->Num() <= 0)
+		if (!bHasSinglePath && (!BodyObj->TryGetArrayField(TEXT("paths"), Paths) || !Paths || Paths->Num() <= 0))
 		{
-			OutError = TEXT("'paths' array is required");
+			OutError = TEXT("'path', 'target', or non-empty 'paths' array is required");
 			return false;
 		}
 	}

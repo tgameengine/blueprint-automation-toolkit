@@ -3,7 +3,8 @@ info:
   title: Blueprint Automation Toolkit
   version: 0.2.0
   description: |
-    Editor-only localhost automation API for Unreal Engine.
+    Editor-only localhost agent-control API for Unreal Engine.
+    The canonical agent flow is discover -> inspect -> mutate -> blueprint graph apply -> compile -> save.
     Mutating editor-asset routes return 409 pie_edit_blocked while PIE is running; stop PIE before retrying asset or Blueprint edits.
 servers:
   - url: http://127.0.0.1:9876
@@ -12,20 +13,22 @@ security:
 paths:
   /ai/health:
     get:
-      summary: Health check
+      summary: Canonical health check for agents
+      description: Returns the current server state in the canonical success/data envelope.
       responses:
         '200':
           description: OK
   /ai/capabilities:
     get:
-      summary: Server capabilities and limits
+      summary: Canonical capability summary for agents
+      description: Stable machine-readable capability, limit, and permission summary for tooling and agents.
       responses:
         '200':
           description: Capabilities
   /engine/discover:
     get:
-      summary: Recommended engine handshake endpoint
-      description: Preferred first request for agents and automation clients. Returns handshake metadata, recommended discovery flow, and high-level capability hints before reflection or action requests.
+      summary: Canonical engine handshake endpoint
+      description: Preferred first request for agents and automation clients. Returns protocol metadata, current gates, preferred routes, deprecated routes, and capability flags before object or Blueprint requests.
       responses:
         '200':
           description: Discovery and handshake metadata
@@ -66,8 +69,9 @@ paths:
           description: Exec result
   /uobject/get:
     post:
+      deprecated: true
       summary: Get UObject property values via reflection
-      description: Returns scalar values plus object and class references as Unreal object path strings.
+      description: Legacy reflection read route. Prefer POST /object/get or POST /object/describe.
       requestBody:
         required: true
         content:
@@ -87,8 +91,9 @@ paths:
           description: Property values
   /uobject/set:
     post:
+      deprecated: true
       summary: Set UObject properties via reflection
-      description: Accepts scalar values plus object and class references encoded as Unreal object path strings. Returns 409 pie_edit_blocked while PIE is running.
+      description: Legacy reflection write route. Prefer POST /object/set-property. Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
         content:
@@ -107,8 +112,8 @@ paths:
           description: Property update result
   /object/resolve:
     post:
-      summary: Resolve a UObject from a generic reflection identifier
-      description: Resolves object paths, soft object paths, actor names, selected actors, blueprint asset paths, and class paths into a stable object reference for automation.
+      summary: Canonically resolve an automation target
+      description: Resolves target, objectPath, actorName, blueprintAssetPath, selectedActor, or classPath into a stable object reference for follow-up object and Blueprint requests.
       requestBody:
         required: true
         content:
@@ -122,10 +127,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/describe:
+    post:
+      summary: Canonically describe an automation target
+      description: One-round-trip inspection route for agents. Returns resolved identity, class information, concise editable property summaries, callable function summaries, selected readable values, and relevant object flags.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionDescribeRequest'
+      responses:
+        '200':
+          description: Reflection describe result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/get:
     post:
-      summary: Read safe reflected property values from a UObject
-      description: Returns selected properties or all supported safe-readable properties as stable JSON values.
+      summary: Canonically read reflected property values
+      description: Reads selected properties, or all supported safe-readable properties, from a resolved automation target.
       requestBody:
         required: true
         content:
@@ -141,8 +163,9 @@ paths:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/list-properties:
     post:
+      deprecated: true
       summary: List reflected properties on a UObject
-      description: Returns reflected property metadata so external tools and AI agents can discover writable and readable properties dynamically.
+      description: Legacy discovery route. Prefer POST /object/describe.
       requestBody:
         required: true
         content:
@@ -158,8 +181,8 @@ paths:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/set-property:
     post:
-      summary: Set a reflected UObject property
-      description: Supports primitive values, enums, object references, common structs, and arrays of supported scalar or object reference types. Returns 409 pie_edit_blocked while PIE is running.
+      summary: Canonically set reflected properties
+      description: Supports target or objectPath addressing, primitive values, enums, object references, common structs, and arrays of supported scalar or object reference types. Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
         content:
@@ -175,7 +198,9 @@ paths:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
   /uobject/call:
     post:
+      deprecated: true
       summary: Call an allowlisted UFunction on a UObject
+      description: Legacy function-call route. Prefer POST /object/call-function.
       requestBody:
         required: true
         content:
@@ -195,8 +220,9 @@ paths:
           description: Function call result
   /object/list-functions:
     post:
+      deprecated: true
       summary: List callable reflected functions on a UObject
-      description: Returns callable function metadata including parameter information, return types, and safe-mode callability hints.
+      description: Legacy discovery route. Prefer POST /object/describe.
       requestBody:
         required: true
         content:
@@ -212,8 +238,8 @@ paths:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/call-function:
     post:
-      summary: Call a safe reflected UFunction on a UObject
-      description: Maps JSON arguments into reflected parameters, rejects unsupported signatures, and returns both return value and output parameters in stable JSON.
+      summary: Canonically call a reflected UFunction
+      description: Maps JSON arguments into reflected parameters, rejects unsupported signatures, and returns return value plus output parameters in the canonical success/data envelope.
       requestBody:
         required: true
         content:
@@ -321,7 +347,7 @@ paths:
           description: Duplicate result
   /asset/save:
     post:
-      summary: Save one or more assets
+      summary: Canonically save one or more assets
       description: Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
@@ -329,12 +355,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [paths]
               properties:
+                target:
+                  type: string
+                path:
+                  type: string
                 paths:
                   type: array
                   items:
                     type: string
+              anyOf:
+                - required: [target]
+                - required: [path]
+                - required: [paths]
       responses:
         '200':
           description: Save result
@@ -664,7 +697,7 @@ paths:
           description: Job created
   /blueprint/compile:
     post:
-      summary: Submit blueprint compile job
+      summary: Canonically compile a Blueprint
       description: Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
@@ -679,12 +712,13 @@ paths:
                   minLength: 1
                   maxLength: 512
       responses:
-        '202':
-          description: Job created
+        '200':
+          description: Blueprint compile result
   /blueprint/save:
     post:
+      deprecated: true
       summary: Submit blueprint save job
-      description: Returns 409 pie_edit_blocked while PIE is running.
+      description: Legacy blueprint save route. Prefer POST /asset/save after POST /blueprint/compile or POST /blueprint/graph/apply.
       parameters:
         - in: header
           name: Idempotency-Key
@@ -796,8 +830,8 @@ paths:
           $ref: '#/components/responses/Error400'
   /blueprint/graph/apply:
     post:
-      summary: Apply blueprint graph edits (nodes and links)
-      description: Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
+      summary: Canonically apply Blueprint graph edits
+      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts plus compile/save status. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
       requestBody:
         required: true
         content:
@@ -958,6 +992,12 @@ components:
     ReflectionObjectRequest:
       type: object
       properties:
+        target:
+          type: string
+          description: Canonical target identifier. When provided without a more specific field, path-like values resolve as objectPath and plain names resolve as actorName.
+        path:
+          type: string
+          description: Legacy alias for objectPath.
         objectPath:
           type: string
         softObjectPath:
@@ -993,6 +1033,19 @@ components:
               type: array
               items:
                 type: string
+    ReflectionDescribeRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReflectionObjectRequest'
+        - type: object
+          properties:
+            verbose:
+              type: boolean
+            propertyLimit:
+              type: integer
+            functionLimit:
+              type: integer
+            valueLimit:
+              type: integer
     ReflectionSetPropertyRequest:
       allOf:
         - $ref: '#/components/schemas/ReflectionObjectRequest'
@@ -1025,21 +1078,29 @@ components:
               additionalProperties: true
     ReflectionStructuredResponse:
       type: object
-      required: [success, requestId]
+      required: [success, warnings]
       properties:
         success:
           type: boolean
-        requestId:
-          type: string
+        warnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
         data:
           type: object
           additionalProperties: true
         error:
           type: object
+          required: [code, message, retryable]
           properties:
             code:
               type: string
             message:
+              type: string
+            retryable:
+              type: boolean
+            suggestedAction:
               type: string
             details:
               type: object
