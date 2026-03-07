@@ -28,6 +28,10 @@ class IHttpRouter;
 class SDockTab;
 class FCommandDispatcher;
 class FTokenAuthMiddleware;
+namespace BAT::Transport
+{
+	bool ValidateAndHandleRequest(class FBlueprintAutomationToolkitModule& Module, const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TCHAR* Endpoint);
+}
 
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintAutomationToolkit, Log, All);
 
@@ -110,6 +114,7 @@ public:
 
 private:
 	friend class FTokenAuthMiddleware;
+	friend bool BAT::Transport::ValidateAndHandleRequest(FBlueprintAutomationToolkitModule& Module, const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TCHAR* Endpoint);
 
 	void BindRoutes();
 	void BindDiscoverRoutes();

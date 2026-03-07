@@ -9,95 +9,8 @@
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "IHttpRouter.h"
-
-namespace
-{
-	static TSharedPtr<FJsonObject> BuildObjectQueryBody(const FHttpServerRequest& Request)
-	{
-		TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
-
-		auto CopyString = [&Request, &Body](const TCHAR* QueryName, const TCHAR* FieldName)
-		{
-			if (const FString* Value = Request.QueryParams.Find(QueryName); Value && !Value->TrimStartAndEnd().IsEmpty())
-			{
-				Body->SetStringField(FieldName, *Value);
-			}
-		};
-
-		auto CopyBool = [&Request, &Body](const TCHAR* QueryName, const TCHAR* FieldName)
-		{
-			if (const FString* Value = Request.QueryParams.Find(QueryName))
-			{
-				const bool bValue = Value->Equals(TEXT("true"), ESearchCase::IgnoreCase) || Value->Equals(TEXT("1"), ESearchCase::CaseSensitive);
-				Body->SetBoolField(FieldName, bValue);
-			}
-		};
-
-		auto CopyNumber = [&Request, &Body](const TCHAR* QueryName, const TCHAR* FieldName)
-		{
-			if (const FString* Value = Request.QueryParams.Find(QueryName))
-			{
-				double NumberValue = 0.0;
-				if (LexTryParseString(NumberValue, **Value))
-				{
-					Body->SetNumberField(FieldName, NumberValue);
-				}
-			}
-		};
-
-		CopyString(TEXT("target"), TEXT("target"));
-		CopyString(TEXT("objectPath"), TEXT("objectPath"));
-		CopyString(TEXT("path"), TEXT("path"));
-		CopyString(TEXT("actorName"), TEXT("actorName"));
-		CopyString(TEXT("classPath"), TEXT("classPath"));
-		CopyString(TEXT("world"), TEXT("world"));
-		CopyString(TEXT("function"), TEXT("function"));
-		CopyBool(TEXT("selectedActor"), TEXT("selectedActor"));
-		CopyBool(TEXT("verbose"), TEXT("verbose"));
-		CopyNumber(TEXT("pie_index"), TEXT("pie_index"));
-		CopyNumber(TEXT("propertyLimit"), TEXT("propertyLimit"));
-		CopyNumber(TEXT("functionLimit"), TEXT("functionLimit"));
-		CopyNumber(TEXT("valueLimit"), TEXT("valueLimit"));
-
-		if (const FString* PropertyValue = Request.QueryParams.Find(TEXT("property")); PropertyValue && !PropertyValue->TrimStartAndEnd().IsEmpty())
-		{
-			TArray<TSharedPtr<FJsonValue>> Properties;
-			Properties.Add(MakeShared<FJsonValueString>(*PropertyValue));
-			Body->SetArrayField(TEXT("properties"), Properties);
-		}
-		else if (const FString* PropertiesValue = Request.QueryParams.Find(TEXT("properties")); PropertiesValue && !PropertiesValue->TrimStartAndEnd().IsEmpty())
-		{
-			TArray<FString> SplitValues;
-			PropertiesValue->ParseIntoArray(SplitValues, TEXT(","), true);
-			TArray<TSharedPtr<FJsonValue>> Properties;
-			for (const FString& Property : SplitValues)
-			{
-				const FString Trimmed = Property.TrimStartAndEnd();
-				if (!Trimmed.IsEmpty())
-				{
-					Properties.Add(MakeShared<FJsonValueString>(Trimmed));
-				}
-			}
-			Body->SetArrayField(TEXT("properties"), Properties);
-		}
-
-		return Body;
-	}
-
-	static TSharedPtr<FJsonObject> BuildGraphReadQueryBody(const FHttpServerRequest& Request)
-	{
-		TSharedPtr<FJsonObject> Body = MakeShared<FJsonObject>();
-		if (const FString* Blueprint = Request.QueryParams.Find(TEXT("blueprint")); Blueprint && !Blueprint->TrimStartAndEnd().IsEmpty())
-		{
-			Body->SetStringField(TEXT("blueprint"), *Blueprint);
-		}
-		if (const FString* Graph = Request.QueryParams.Find(TEXT("graph")); Graph && !Graph->TrimStartAndEnd().IsEmpty())
-		{
-			Body->SetStringField(TEXT("graph"), *Graph);
-		}
-		return Body;
-	}
-}
+#include "Transport/PolicyMiddleware.h"
+#include "Transport/RequestParsing.h"
 
 void FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes()
 {
@@ -108,13 +21,13 @@ void FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes()
 			EHttpServerRequestVerbs::VERB_POST,
 			FHttpRequestHandler::CreateLambda([this, Endpoint, bNormalizeObjectRequest](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 			{
-				if (!ValidateAndHandleRequest(Request, OnComplete, Endpoint))
+				if (!BAT::Transport::ValidateAndHandleRequest(*this, Request, OnComplete, Endpoint))
 				{
 					return true;
 				}
 
 				TSharedPtr<FJsonObject> BodyObj;
-				if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
+				if (!BAT::Transport::TryParseJsonObjectBody(Request, BodyObj))
 				{
 					OnComplete(MakeCanonicalErrorResponse(400, ResolveOrCreateRequestId(Request), TEXT("bad_json"), TEXT("Invalid JSON body.")));
 					return true;
@@ -132,7 +45,7 @@ void FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes()
 			EHttpServerRequestVerbs::VERB_GET,
 			FHttpRequestHandler::CreateLambda([this, Endpoint, BodyBuilder, bNormalizeObjectRequest](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 			{
-				if (!ValidateAndHandleRequest(Request, OnComplete, Endpoint))
+				if (!BAT::Transport::ValidateAndHandleRequest(*this, Request, OnComplete, Endpoint))
 				{
 					return true;
 				}
@@ -147,11 +60,11 @@ void FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes()
 	};
 
 	BindPostCommandRoute(ObjectResolveRoute, TEXT("/object/resolve"), TEXT("/object/resolve"), true);
-	BindGetCommandRoute(ObjectDescribeGetRoute, TEXT("/object/describe"), TEXT("/object/describe"), BuildObjectQueryBody, true);
-	BindGetCommandRoute(ObjectGetPropertyRoute, TEXT("/object/get_property"), TEXT("/object/get_property"), BuildObjectQueryBody, true);
+	BindGetCommandRoute(ObjectDescribeGetRoute, TEXT("/object/describe"), TEXT("/object/describe"), BAT::Transport::BuildObjectQueryBody, true);
+	BindGetCommandRoute(ObjectGetPropertyRoute, TEXT("/object/get_property"), TEXT("/object/get_property"), BAT::Transport::BuildObjectQueryBody, true);
 	BindPostCommandRoute(ObjectSetPropertyAliasRoute, TEXT("/object/set_property"), TEXT("/object/set_property"), true);
 	BindPostCommandRoute(ObjectCallFunctionAliasRoute, TEXT("/object/call_function"), TEXT("/object/call_function"), true);
-	BindGetCommandRoute(BlueprintGraphReadRoute, TEXT("/blueprint/graph/read"), TEXT("/blueprint/graph/read"), BuildGraphReadQueryBody, false);
+	BindGetCommandRoute(BlueprintGraphReadRoute, TEXT("/blueprint/graph/read"), TEXT("/blueprint/graph/read"), BAT::Transport::BuildBlueprintGraphReadQueryBody, false);
 	BindPostCommandRoute(BlueprintCompileSaveRoute, TEXT("/blueprint/compile_save"), TEXT("/blueprint/compile_save"), false);
 	BindPostCommandRoute(ActorDestroyRoute, TEXT("/actor/destroy"), TEXT("/actor/destroy"), true);
 	BindPostCommandRoute(EditorSelectRoute, TEXT("/editor/select"), TEXT("/editor/select"), true);

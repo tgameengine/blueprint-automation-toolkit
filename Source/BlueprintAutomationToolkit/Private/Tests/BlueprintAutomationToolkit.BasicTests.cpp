@@ -11,6 +11,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Http/HttpRequestUtils.h"
+#include "Transport/RequestParsing.h"
 #include "Services/Reflection/ReflectionFunctionService.h"
 #include "Services/Reflection/ReflectionObjectResolver.h"
 #include "Services/Reflection/ReflectionPropertyService.h"
@@ -20,6 +21,7 @@
 #include "Serialization/JsonSerializer.h"
 
 #include "Engine/EngineTypes.h"
+#include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "HAL/FileManager.h"
 #include "UObject/UObjectGlobals.h"
@@ -39,6 +41,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPieEditBlockRouteClassificationTest, "Bluep
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthMissingResponseHasTokenHintTest, "BlueprintAutomationToolkit.Security.AuthMissingResponseHasTokenHint", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATJsonOkEnvelopeIncludesCanonicalFieldsTest, "BlueprintAutomationToolkit.Transport.JsonOkEnvelopeIncludesCanonicalFields", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthFailureUsesCanonicalErrorArrayTest, "BlueprintAutomationToolkit.Transport.AuthFailureUsesCanonicalErrorArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATObjectQueryParsingBuildsPropertiesArrayTest, "BlueprintAutomationToolkit.Transport.ObjectQueryParsingBuildsPropertiesArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingBuildsBodyTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingBuildsBody", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListPropertiesTest, "BlueprintAutomationToolkit.Reflection.ListProperties", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -525,6 +529,63 @@ bool FBATAuthFailureUsesCanonicalErrorArrayTest::RunTest(const FString& Paramete
 	TestTrue(TEXT("Auth failure response error includes recoverable flag"), FirstError->TryGetBoolField(TEXT("recoverable"), bRecoverable));
 	TestEqual(TEXT("Auth failure response normalizes auth_missing code"), Code, FString(TEXT("auth_missing")));
 	TestTrue(TEXT("Auth failure response marks missing auth as recoverable"), bRecoverable);
+	return true;
+}
+
+bool FBATObjectQueryParsingBuildsPropertiesArrayTest::RunTest(const FString& Parameters)
+{
+	FHttpServerRequest Request;
+	Request.QueryParams.Add(TEXT("target"), TEXT("/Game/Test/BP_Test.BP_Test"));
+	Request.QueryParams.Add(TEXT("properties"), TEXT("Health, MaxHealth ,TeamId"));
+	Request.QueryParams.Add(TEXT("verbose"), TEXT("true"));
+	Request.QueryParams.Add(TEXT("pie_index"), TEXT("2"));
+
+	const TSharedPtr<FJsonObject> Body = BAT::Transport::BuildObjectQueryBody(Request);
+	if (!TestNotNull(TEXT("Object query parsing should build a body object"), Body.Get()))
+	{
+		return false;
+	}
+
+	FString Target;
+	bool bVerbose = false;
+	double PieIndex = -1.0;
+	const TArray<TSharedPtr<FJsonValue>>* Properties = nullptr;
+
+	TestTrue(TEXT("Object query parsing copies target"), Body->TryGetStringField(TEXT("target"), Target));
+	TestEqual(TEXT("Object query parsing preserves target value"), Target, FString(TEXT("/Game/Test/BP_Test.BP_Test")));
+	TestTrue(TEXT("Object query parsing copies verbose flag"), Body->TryGetBoolField(TEXT("verbose"), bVerbose));
+	TestTrue(TEXT("Object query parsing sets verbose=true"), bVerbose);
+	TestTrue(TEXT("Object query parsing copies pie_index"), Body->TryGetNumberField(TEXT("pie_index"), PieIndex));
+	TestEqual(TEXT("Object query parsing preserves pie_index"), PieIndex, 2.0);
+
+	if (!TestTrue(TEXT("Object query parsing builds properties array"), Body->TryGetArrayField(TEXT("properties"), Properties) && Properties))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Object query parsing splits properties into three entries"), Properties->Num(), 3);
+	TestEqual(TEXT("Object query parsing trims property whitespace"), (*Properties)[1]->AsString(), FString(TEXT("MaxHealth")));
+	return true;
+}
+
+bool FBATGraphReadQueryParsingBuildsBodyTest::RunTest(const FString& Parameters)
+{
+	FHttpServerRequest Request;
+	Request.QueryParams.Add(TEXT("blueprint"), TEXT("/Game/BP_Spawner"));
+	Request.QueryParams.Add(TEXT("graph"), TEXT("EventGraph"));
+
+	const TSharedPtr<FJsonObject> Body = BAT::Transport::BuildBlueprintGraphReadQueryBody(Request);
+	if (!TestNotNull(TEXT("Graph read query parsing should build a body object"), Body.Get()))
+	{
+		return false;
+	}
+
+	FString Blueprint;
+	FString Graph;
+	TestTrue(TEXT("Graph read query parsing copies blueprint"), Body->TryGetStringField(TEXT("blueprint"), Blueprint));
+	TestTrue(TEXT("Graph read query parsing copies graph"), Body->TryGetStringField(TEXT("graph"), Graph));
+	TestEqual(TEXT("Graph read query parsing preserves blueprint value"), Blueprint, FString(TEXT("/Game/BP_Spawner")));
+	TestEqual(TEXT("Graph read query parsing preserves graph value"), Graph, FString(TEXT("EventGraph")));
 	return true;
 }
 
