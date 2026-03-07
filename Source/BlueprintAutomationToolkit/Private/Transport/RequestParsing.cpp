@@ -102,6 +102,7 @@ namespace BAT::Transport
 		}
 		CopyBool(TEXT("includeNodeProperties"), TEXT("includeNodeProperties"));
 		CopyBool(TEXT("includeNodeValidation"), TEXT("includeNodeValidation"));
+		CopyBool(TEXT("includeGraphAnalysis"), TEXT("includeGraphAnalysis"));
 
 		if (const FString* PropertyPaths = Request.QueryParams.Find(TEXT("propertyPaths")); PropertyPaths && !PropertyPaths->TrimStartAndEnd().IsEmpty())
 		{

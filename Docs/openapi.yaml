@@ -873,7 +873,7 @@ paths:
   /blueprint/graph/read:
     get:
       summary: Preferred Blueprint graph introspection endpoint
-      description: Returns graph summaries when only `blueprint` is provided, or a full node/link snapshot when both `blueprint` and `graph` are provided. Optional flags can include selected resolved node properties and machine-readable node validation issues for AI inspection.
+      description: Returns graph summaries when only `blueprint` is provided, or a full node/link snapshot when both `blueprint` and `graph` are provided. Optional flags can include selected resolved node properties, machine-readable node validation issues, and graph analysis hints for AI inspection.
       parameters:
         - in: query
           name: blueprint
@@ -892,6 +892,12 @@ paths:
           name: includeNodeValidation
           schema:
             type: boolean
+          description: When true, includes per-node nodeValidation issues in the response for supported AnimGraph nodes.
+        - in: query
+          name: includeGraphAnalysis
+          schema:
+            type: boolean
+          description: When true, includes graph-level blend summaries plus per-node stage and pose-space hints in the response.
         - in: query
           name: propertyPaths
           schema:

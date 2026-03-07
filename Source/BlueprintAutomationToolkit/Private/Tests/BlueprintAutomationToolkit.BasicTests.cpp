@@ -50,6 +50,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthFailureUsesCanonicalErrorArrayTest, "Bl
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATObjectQueryParsingBuildsPropertiesArrayTest, "BlueprintAutomationToolkit.Transport.ObjectQueryParsingBuildsPropertiesArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingBuildsBodyTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingBuildsBody", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingSupportsInspectionOptionsTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingSupportsInspectionOptions", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingSupportsGraphAnalysisTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingSupportsGraphAnalysis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetDuplicateServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.DuplicateServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, "BlueprintAutomationToolkit.Assets.CreateServiceRejectsInvalidClass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -229,6 +230,7 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI documents compileDiagnostics"), Spec.Contains(TEXT("compileDiagnostics"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents nodeValidation"), Spec.Contains(TEXT("nodeValidation"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents includeNodeProperties"), Spec.Contains(TEXT("includeNodeProperties"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents includeGraphAnalysis"), Spec.Contains(TEXT("includeGraphAnalysis"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents updateOnly"), Spec.Contains(TEXT("updateOnly"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /actor/destroy"), Spec.Contains(TEXT("/actor/destroy:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/select"), Spec.Contains(TEXT("/editor/select:"), ESearchCase::CaseSensitive));
@@ -636,6 +638,24 @@ bool FBATGraphReadQueryParsingSupportsInspectionOptionsTest::RunTest(const FStri
 	TestEqual(TEXT("Graph read inspection query parsing splits propertyPaths into three entries"), PropertyPaths->Num(), 3);
 	TestEqual(TEXT("Graph read inspection query parsing trims property path whitespace"), (*PropertyPaths)[1]->AsString(), FString(TEXT("Node.LayerSetup")));
 	return true;
+}
+
+bool FBATGraphReadQueryParsingSupportsGraphAnalysisTest::RunTest(const FString& Parameters)
+{
+	FHttpServerRequest Request;
+	Request.QueryParams.Add(TEXT("blueprint"), TEXT("/Game/BP_Spawner"));
+	Request.QueryParams.Add(TEXT("graph"), TEXT("AnimGraph"));
+	Request.QueryParams.Add(TEXT("includeGraphAnalysis"), TEXT("true"));
+
+	const TSharedPtr<FJsonObject> Body = BAT::Transport::BuildBlueprintGraphReadQueryBody(Request);
+	if (!TestNotNull(TEXT("Graph read analysis query parsing should build a body object"), Body.Get()))
+	{
+		return false;
+	}
+
+	bool bIncludeGraphAnalysis = false;
+	TestTrue(TEXT("Graph read analysis query parsing copies includeGraphAnalysis"), Body->TryGetBoolField(TEXT("includeGraphAnalysis"), bIncludeGraphAnalysis));
+	return TestTrue(TEXT("Graph read analysis query parsing sets includeGraphAnalysis=true"), bIncludeGraphAnalysis);
 }
 
 bool FBATAssetDuplicateServiceRejectsEmptyRequestTest::RunTest(const FString& Parameters)
