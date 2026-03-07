@@ -8,12 +8,18 @@
 #include "Interfaces/IPluginManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Http/HttpRequestUtils.h"
 #include "Services/Reflection/ReflectionFunctionService.h"
 #include "Services/Reflection/ReflectionObjectResolver.h"
 #include "Services/Reflection/ReflectionPropertyService.h"
 #include "Tests/BATReflectionTestTypes.h"
 
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+
 #include "Engine/EngineTypes.h"
+#include "HttpServerResponse.h"
+#include "HAL/FileManager.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiSpecExistsTest, "BlueprintAutomationToolkit.OpenApi.SpecExists", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -23,6 +29,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintSchemaPathTest, "Bluepri
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExecPythonRequiresPythonPermissionTest, "BlueprintAutomationToolkit.Security.ExecPythonRequiresPythonPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversPieAliasesTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversPieAliases", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversBlueprintCompileSaveTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversBlueprintCompileSave", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportAddsFilesystemPermissionTest, "BlueprintAutomationToolkit.Security.ResponseExportAddsFilesystemPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPieEditBlockRouteClassificationTest, "BlueprintAutomationToolkit.Security.PieEditBlockRouteClassification", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthMissingResponseHasTokenHintTest, "BlueprintAutomationToolkit.Security.AuthMissingResponseHasTokenHint", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -34,6 +41,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListFunctionsTest, "BlueprintAuto
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionCallSafeFunctionTest, "BlueprintAutomationToolkit.Reflection.CallSafeFunction", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSafeModeBlockingTest, "BlueprintAutomationToolkit.Reflection.SafeModeBlocking", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionInvalidTargetsTest, "BlueprintAutomationToolkit.Reflection.InvalidTargets", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportWritesFileTest, "BlueprintAutomationToolkit.Reflection.ResponseExportWritesFile", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 namespace
 {
@@ -215,6 +223,21 @@ bool FBATPermissionMapCoversBlueprintCompileSaveTest::RunTest(const FString& Par
 		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
 
 	TestEqual(TEXT("/blueprint/compile_save requires Blueprint and Filesystem permissions"), Module.Test_GetRouteRequiredPermissions(TEXT("/blueprint/compile_save")), ExpectedMask);
+	return true;
+}
+
+bool FBATResponseExportAddsFilesystemPermissionTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const uint32 ExpectedMask =
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Editor) |
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
+
+	TSharedRef<FJsonObject> BodyObj = MakeShared<FJsonObject>();
+	BodyObj->SetStringField(TEXT("objectPath"), TEXT("/Engine/Transient.Dummy"));
+	BodyObj->SetStringField(TEXT("responseOutputPath"), TEXT("tests/permission-check"));
+
+	TestEqual(TEXT("/object/get with response export requires Editor and Filesystem permissions"), Module.Test_GetRequestRequiredPermissions(TEXT("/object/get"), BodyObj), ExpectedMask);
 	return true;
 }
 
@@ -496,6 +519,43 @@ bool FBATReflectionInvalidTargetsTest::RunTest(const FString& Parameters)
 	const bool bMissingProperty = !BadPropertyResult.bSuccess && BadPropertyResult.ErrorCode == TEXT("PropertyNotFound");
 	const bool bMissingFunction = !BadFunctionResult.bSuccess && BadFunctionResult.ErrorCode == TEXT("FunctionNotFound");
 	return TestTrue(TEXT("Reflection invalid target errors are reported"), bMissingObject && bMissingProperty && bMissingFunction);
+}
+
+bool FBATResponseExportWritesFileTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("responseOutputPath"), TEXT("tests/response-export-check"));
+
+	TUniquePtr<FHttpServerResponse> Response = BAT::Http::MakeJsonOk(MakeShared<FJsonValueString>(TEXT("ok")), 200, TEXT("response-export-test"));
+	FString OutputPath;
+	FString OutputError;
+	if (!TestTrue(TEXT("Response export succeeds for safe relative path"), BAT::Http::TryWriteResponseToDisk(Body, TEXT("response-export-test"), *Response, OutputPath, OutputError)))
+	{
+		AddError(OutputError);
+		return false;
+	}
+
+	FString Contents;
+	const bool bLoaded = FFileHelper::LoadFileToString(Contents, *OutputPath);
+	if (!TestTrue(TEXT("Exported response file exists"), bLoaded))
+	{
+		return false;
+	}
+
+	TSharedPtr<FJsonObject> Root;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Contents);
+	if (!TestTrue(TEXT("Exported response parses as JSON"), FJsonSerializer::Deserialize(Reader, Root) && Root.IsValid()))
+	{
+		return false;
+	}
+
+	bool bOk = false;
+	FString DataValue;
+	TestTrue(TEXT("Exported response includes ok=true"), Root->TryGetBoolField(TEXT("ok"), bOk) && bOk);
+	TestTrue(TEXT("Exported response includes string payload"), Root->TryGetStringField(TEXT("data"), DataValue) && DataValue == TEXT("ok"));
+
+	IFileManager::Get().Delete(*OutputPath, false, true, true);
+	return true;
 }
 
 #endif

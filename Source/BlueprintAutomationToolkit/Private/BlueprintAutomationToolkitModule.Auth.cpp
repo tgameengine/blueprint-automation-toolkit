@@ -466,6 +466,11 @@ bool FBlueprintAutomationToolkitModule::IsPieSessionRunning() const
 uint32 FBlueprintAutomationToolkitModule::GetRequestRequiredPermissions(const FString& Endpoint, const TSharedPtr<FJsonObject>& BodyObj) const
 {
 	uint32 RequiredPermissions = GetRouteRequiredPermissions(Endpoint);
+	if (BAT::Http::HasResponseOutputPath(BodyObj))
+	{
+		RequiredPermissions |= static_cast<uint32>(EBATPermission::Filesystem);
+	}
+
 	if ((Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/exec"), ESearchCase::CaseSensitive)) && BodyObj.IsValid())
 	{
 		FString PythonCode;

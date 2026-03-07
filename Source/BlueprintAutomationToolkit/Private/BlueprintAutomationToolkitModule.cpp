@@ -2447,31 +2447,50 @@ bool FBlueprintAutomationToolkitModule::DispatchAutomationCommandRoute(const FSt
 	Context.Module = this;
 	Context.bReturnRawObject = bReturnRawObject;
 
+	auto CompleteWithOptionalResponseExport = [&](TUniquePtr<FHttpServerResponse> Response)
+	{
+		if (!Response)
+		{
+			OnComplete(MakeErrorResponse(500, Context.RequestId, TEXT("internal_error"), TEXT("No HTTP response was produced.")));
+			return;
+		}
+
+		FString OutputPath;
+		FString OutputError;
+		if (!BAT::Http::TryWriteResponseToDisk(BodyObj, Context.RequestId, *Response, OutputPath, OutputError))
+		{
+			OnComplete(MakeErrorResponse(500, Context.RequestId, TEXT("response_export_failed"), OutputError.IsEmpty() ? TEXT("Failed to export response to disk.") : OutputError));
+			return;
+		}
+
+		OnComplete(MoveTemp(Response));
+	};
+
 	const FAutomationResult Result = CommandDispatcher->Dispatch(Endpoint, Context);
 	if (!Result.bSuccess)
 	{
 		if (bReturnRawObject && Result.ErrorData.IsValid() && Result.ErrorData->Type == EJson::Object)
 		{
-			OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.ErrorData->AsObject().ToSharedRef(), Context.RequestId));
+			CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.ErrorData->AsObject().ToSharedRef(), Context.RequestId));
 		}
 		else if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
 		{
-			OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
+			CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
 		}
 		else
 		{
-			OnComplete(MakeErrorResponse(Result.StatusCode, Context.RequestId, Result.ErrorCode, Result.ErrorMessage));
+			CompleteWithOptionalResponseExport(MakeErrorResponse(Result.StatusCode, Context.RequestId, Result.ErrorCode, Result.ErrorMessage));
 		}
 		return true;
 	}
 
 	if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
 	{
-		OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
+		CompleteWithOptionalResponseExport(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
 	}
 	else
 	{
-		BAT::Http::JsonOk(OnComplete, Result.Data, Result.StatusCode, Context.RequestId);
+		CompleteWithOptionalResponseExport(BAT::Http::MakeJsonOk(Result.Data, Result.StatusCode, Context.RequestId));
 	}
 
 	return true;

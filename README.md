@@ -172,6 +172,13 @@ Every request must include:
 
 `Authorization: Bearer <AuthToken>`
 
+Optional response export:
+
+- JSON POST requests may include `responseOutputPath` to save the HTTP response body to disk.
+- The path must be relative. It is resolved under the toolkit response export directory in `Saved/BlueprintAutomationToolkit/Responses`.
+- Requests that set `responseOutputPath` also require filesystem permission.
+- If the path has no extension, `.json` is appended automatically.
+
 ## Runtime behavior (important)
 
 - The server exists only while the **Editor process is running**.

@@ -970,6 +970,9 @@ components:
           enum: [Editor, PIE, editor, pie]
         pieIndex:
           type: integer
+        responseOutputPath:
+          type: string
+          description: Optional relative file path under the toolkit response export directory. When set, the HTTP response body is also written to disk and the request requires filesystem permission.
       description: Provide at least one object resolution field.
     ReflectionResolveRequest:
       allOf:
