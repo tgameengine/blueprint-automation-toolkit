@@ -99,7 +99,7 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 		{
 			ExpandConnectedBatNodeIds(Target.Graph, NodeById, NodeIdsToArrange);
 		}
-		FBlueprintGraphLayoutService::AutoArrangeNodes(Target.Graph, NodeById, NodeIdsToArrange);
+		FBlueprintGraphLayoutService::AutoArrangeNodes(Target.Graph, NodeById, NodeIdsToArrange, Request.Options.bPreserveFeederLanes);
 	}
 	if (bWillMutate)
 	{

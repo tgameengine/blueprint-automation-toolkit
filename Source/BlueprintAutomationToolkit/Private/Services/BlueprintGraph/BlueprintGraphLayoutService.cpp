@@ -43,6 +43,44 @@ namespace
 		Anchor.X = AnchorNode->NodePosX;
 		Anchor.Y = AnchorNode->NodePosY;
 	}
+
+	static TMap<FString, int32> PlaceNodesByDesiredLane(const TArray<FString>& NodesAtDepth, const TMap<FString, double>& DesiredYById)
+	{
+		TMap<FString, int32> FinalYById;
+		if (NodesAtDepth.Num() == 0)
+		{
+			return FinalYById;
+		}
+
+		TArray<int32> PositionedYs;
+		PositionedYs.Reserve(NodesAtDepth.Num());
+		for (const FString& NodeId : NodesAtDepth)
+		{
+			PositionedYs.Add(SnapToGrid(FMath::RoundToInt(DesiredYById.FindRef(NodeId))));
+		}
+
+		for (int32 Index = 1; Index < PositionedYs.Num(); ++Index)
+		{
+			PositionedYs[Index] = FMath::Max(PositionedYs[Index], PositionedYs[Index - 1] + BatLayoutVerticalSpacing);
+		}
+
+		for (int32 Index = PositionedYs.Num() - 2; Index >= 0; --Index)
+		{
+			PositionedYs[Index] = FMath::Min(PositionedYs[Index], PositionedYs[Index + 1] - BatLayoutVerticalSpacing);
+		}
+
+		for (int32 Index = 1; Index < PositionedYs.Num(); ++Index)
+		{
+			PositionedYs[Index] = FMath::Max(PositionedYs[Index], PositionedYs[Index - 1] + BatLayoutVerticalSpacing);
+		}
+
+		for (int32 Index = 0; Index < NodesAtDepth.Num(); ++Index)
+		{
+			FinalYById.Add(NodesAtDepth[Index], SnapToGrid(PositionedYs[Index]));
+		}
+
+		return FinalYById;
+	}
 }
 
 void FBlueprintGraphLayoutService::ApplyNodeLayout(UEdGraphNode* Node, const FBlueprintGraphApplyNodeSpec& NodeSpec)
@@ -62,7 +100,7 @@ void FBlueprintGraphLayoutService::ApplyNodeLayout(UEdGraphNode* Node, const FBl
 	}
 }
 
-void FBlueprintGraphLayoutService::AutoArrangeNodes(UEdGraph* Graph, const TMap<FString, UEdGraphNode*>& NodeById, const TSet<FString>& NodeIdsToArrange)
+void FBlueprintGraphLayoutService::AutoArrangeNodes(UEdGraph* Graph, const TMap<FString, UEdGraphNode*>& NodeById, const TSet<FString>& NodeIdsToArrange, const bool bPreserveFeederLanes)
 {
 	if (!Graph || NodeIdsToArrange.Num() == 0)
 	{
@@ -197,137 +235,149 @@ void FBlueprintGraphLayoutService::AutoArrangeNodes(UEdGraph* Graph, const TMap<
 		}
 	}
 
+	for (const FString& NodeId : NodeIdsToArrange)
+	{
+		if (!DepthByNode.Contains(NodeId))
+		{
+			DepthByNode.Add(NodeId, 0);
+		}
+	}
+
+	int32 MaxDepth = 0;
+	for (const TPair<FString, int32>& Pair : DepthByNode)
+	{
+		MaxDepth = FMath::Max(MaxDepth, Pair.Value);
+	}
+
+	bool bHasIncomingExternalAnchor = false;
+	double IncomingExternalOriginX = 0.0;
+	int32 IncomingExternalCount = 0;
+	for (const FString& NodeId : NodeIdsToArrange)
+	{
+		for (const FNodeAnchor& Anchor : ExternalIncomingAnchors.FindRef(NodeId))
+		{
+			IncomingExternalOriginX += Anchor.X;
+			++IncomingExternalCount;
+			bHasIncomingExternalAnchor = true;
+		}
+	}
+
+	bool bHasOutgoingExternalAnchor = false;
+	double OutgoingExternalOriginX = 0.0;
+	int32 OutgoingExternalCount = 0;
+	for (const FString& NodeId : NodeIdsToArrange)
+	{
+		for (const FNodeAnchor& Anchor : ExternalOutgoingAnchors.FindRef(NodeId))
+		{
+			OutgoingExternalOriginX += Anchor.X;
+			++OutgoingExternalCount;
+			bHasOutgoingExternalAnchor = true;
+		}
+	}
+
+	int32 OriginX = 0;
+	if (bHasIncomingExternalAnchor && IncomingExternalCount > 0)
+	{
+		OriginX = SnapToGrid(FMath::RoundToInt(IncomingExternalOriginX / IncomingExternalCount) + BatLayoutHorizontalSpacing);
+	}
+	else if (bHasOutgoingExternalAnchor && OutgoingExternalCount > 0)
+	{
+		OriginX = SnapToGrid(FMath::RoundToInt(OutgoingExternalOriginX / OutgoingExternalCount) - ((MaxDepth + 1) * BatLayoutHorizontalSpacing));
+	}
+	else
+	{
+		int32 MinCurrentX = TNumericLimits<int32>::Max();
 		for (const FString& NodeId : NodeIdsToArrange)
 		{
-			if (!DepthByNode.Contains(NodeId))
+			MinCurrentX = FMath::Min(MinCurrentX, CurrentXById.FindRef(NodeId));
+		}
+		OriginX = SnapToGrid(MinCurrentX == TNumericLimits<int32>::Max() ? 0 : MinCurrentX);
+	}
+
+	TMap<int32, TArray<FString>> NodesByDepth;
+	for (const FString& NodeId : NodeIdsToArrange)
+	{
+		NodesByDepth.FindOrAdd(DepthByNode.FindRef(NodeId)).Add(NodeId);
+	}
+
+	TMap<FString, int32> FinalYById;
+	for (int32 Depth = 0; Depth <= MaxDepth; ++Depth)
+	{
+		TArray<FString>& NodesAtDepth = NodesByDepth.FindOrAdd(Depth);
+		if (NodesAtDepth.Num() == 0)
+		{
+			continue;
+		}
+
+		TMap<FString, double> DesiredYById;
+		for (const FString& NodeId : NodesAtDepth)
+		{
+			double SumY = 0.0;
+			int32 Count = 0;
+			for (const FString& IncomingId : IncomingByNode.FindRef(NodeId))
 			{
-				DepthByNode.Add(NodeId, 0);
-			}
-		}
-
-		int32 MaxDepth = 0;
-		for (const TPair<FString, int32>& Pair : DepthByNode)
-		{
-			MaxDepth = FMath::Max(MaxDepth, Pair.Value);
-		}
-
-		bool bHasIncomingExternalAnchor = false;
-		double IncomingExternalOriginX = 0.0;
-		int32 IncomingExternalCount = 0;
-		for (const FString& NodeId : NodeIdsToArrange)
-		{
-			for (const FNodeAnchor& Anchor : ExternalIncomingAnchors.FindRef(NodeId))
-			{
-				IncomingExternalOriginX += Anchor.X;
-				++IncomingExternalCount;
-				bHasIncomingExternalAnchor = true;
-			}
-		}
-
-		bool bHasOutgoingExternalAnchor = false;
-		double OutgoingExternalOriginX = 0.0;
-		int32 OutgoingExternalCount = 0;
-		for (const FString& NodeId : NodeIdsToArrange)
-		{
-			for (const FNodeAnchor& Anchor : ExternalOutgoingAnchors.FindRef(NodeId))
-			{
-				OutgoingExternalOriginX += Anchor.X;
-				++OutgoingExternalCount;
-				bHasOutgoingExternalAnchor = true;
-			}
-		}
-
-		int32 OriginX = 0;
-		if (bHasIncomingExternalAnchor && IncomingExternalCount > 0)
-		{
-			OriginX = SnapToGrid(FMath::RoundToInt(IncomingExternalOriginX / IncomingExternalCount) + BatLayoutHorizontalSpacing);
-		}
-		else if (bHasOutgoingExternalAnchor && OutgoingExternalCount > 0)
-		{
-			OriginX = SnapToGrid(FMath::RoundToInt(OutgoingExternalOriginX / OutgoingExternalCount) - ((MaxDepth + 1) * BatLayoutHorizontalSpacing));
-		}
-		else
-		{
-			int32 MinCurrentX = TNumericLimits<int32>::Max();
-			for (const FString& NodeId : NodeIdsToArrange)
-			{
-				MinCurrentX = FMath::Min(MinCurrentX, CurrentXById.FindRef(NodeId));
-			}
-			OriginX = SnapToGrid(MinCurrentX == TNumericLimits<int32>::Max() ? 0 : MinCurrentX);
-		}
-
-		TMap<int32, TArray<FString>> NodesByDepth;
-		for (const FString& NodeId : NodeIdsToArrange)
-		{
-			NodesByDepth.FindOrAdd(DepthByNode.FindRef(NodeId)).Add(NodeId);
-		}
-
-		TMap<FString, int32> FinalYById;
-		for (int32 Depth = 0; Depth <= MaxDepth; ++Depth)
-		{
-			TArray<FString>& NodesAtDepth = NodesByDepth.FindOrAdd(Depth);
-			if (NodesAtDepth.Num() == 0)
-			{
-				continue;
-			}
-
-			TMap<FString, double> DesiredYById;
-			for (const FString& NodeId : NodesAtDepth)
-			{
-				double SumY = 0.0;
-				int32 Count = 0;
-				for (const FString& IncomingId : IncomingByNode.FindRef(NodeId))
+				if (FinalYById.Contains(IncomingId))
 				{
-					if (FinalYById.Contains(IncomingId))
-					{
-						SumY += FinalYById.FindRef(IncomingId);
-						++Count;
-					}
+					SumY += FinalYById.FindRef(IncomingId);
+					++Count;
 				}
-				if (Count == 0)
-				{
-					for (const FNodeAnchor& Anchor : ExternalIncomingAnchors.FindRef(NodeId))
-					{
-						SumY += Anchor.Y;
-						++Count;
-					}
-				}
-				if (Count == 0)
-				{
-					for (const FNodeAnchor& Anchor : ExternalOutgoingAnchors.FindRef(NodeId))
-					{
-						SumY += Anchor.Y;
-						++Count;
-					}
-				}
-				DesiredYById.Add(NodeId, Count > 0 ? (SumY / Count) : CurrentYById.FindRef(NodeId));
 			}
-
-			Algo::Sort(NodesAtDepth, [&DesiredYById](const FString& A, const FString& B)
+			if (Count == 0)
 			{
-				return DesiredYById.FindRef(A) < DesiredYById.FindRef(B);
-			});
-
-			double MeanDesiredY = 0.0;
-			for (const FString& NodeId : NodesAtDepth)
-			{
-				MeanDesiredY += DesiredYById.FindRef(NodeId);
-			}
-			MeanDesiredY /= NodesAtDepth.Num();
-			const double StartY = MeanDesiredY - ((NodesAtDepth.Num() - 1) * BatLayoutVerticalSpacing * 0.5);
-
-			for (int32 Index = 0; Index < NodesAtDepth.Num(); ++Index)
-			{
-				const FString& NodeId = NodesAtDepth[Index];
-				if (UEdGraphNode* const* NodePtr = NodeById.Find(NodeId))
+				for (const FNodeAnchor& Anchor : ExternalIncomingAnchors.FindRef(NodeId))
 				{
-					if (*NodePtr)
-					{
-						(*NodePtr)->NodePosX = OriginX + (Depth * BatLayoutHorizontalSpacing);
-						(*NodePtr)->NodePosY = SnapToGrid(FMath::RoundToInt(StartY + (Index * BatLayoutVerticalSpacing)));
-						FinalYById.Add(NodeId, (*NodePtr)->NodePosY);
-					}
+					SumY += Anchor.Y;
+					++Count;
+				}
+			}
+			if (Count == 0)
+			{
+				for (const FNodeAnchor& Anchor : ExternalOutgoingAnchors.FindRef(NodeId))
+				{
+					SumY += Anchor.Y;
+					++Count;
+				}
+			}
+			DesiredYById.Add(NodeId, Count > 0 ? (SumY / Count) : CurrentYById.FindRef(NodeId));
+		}
+
+		Algo::Sort(NodesAtDepth, [&DesiredYById](const FString& A, const FString& B)
+		{
+			return DesiredYById.FindRef(A) < DesiredYById.FindRef(B);
+		});
+
+		const TMap<FString, int32> ColumnYById = bPreserveFeederLanes
+			? PlaceNodesByDesiredLane(NodesAtDepth, DesiredYById)
+			: [&NodesAtDepth, &DesiredYById]()
+			{
+				TMap<FString, int32> PackedYById;
+				double MeanDesiredY = 0.0;
+				for (const FString& NodeId : NodesAtDepth)
+				{
+					MeanDesiredY += DesiredYById.FindRef(NodeId);
+				}
+				MeanDesiredY /= NodesAtDepth.Num();
+				const double StartY = MeanDesiredY - ((NodesAtDepth.Num() - 1) * BatLayoutVerticalSpacing * 0.5);
+
+				for (int32 Index = 0; Index < NodesAtDepth.Num(); ++Index)
+				{
+					PackedYById.Add(NodesAtDepth[Index], SnapToGrid(FMath::RoundToInt(StartY + (Index * BatLayoutVerticalSpacing))));
+				}
+
+				return PackedYById;
+			}();
+
+		for (const FString& NodeId : NodesAtDepth)
+		{
+			if (UEdGraphNode* const* NodePtr = NodeById.Find(NodeId))
+			{
+				if (*NodePtr)
+				{
+					(*NodePtr)->NodePosX = OriginX + (Depth * BatLayoutHorizontalSpacing);
+					(*NodePtr)->NodePosY = ColumnYById.FindRef(NodeId);
+					FinalYById.Add(NodeId, (*NodePtr)->NodePosY);
 				}
 			}
 		}
+	}
 }

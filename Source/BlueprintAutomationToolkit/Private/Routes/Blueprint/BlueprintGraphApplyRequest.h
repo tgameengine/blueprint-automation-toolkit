@@ -13,6 +13,7 @@ struct FBlueprintGraphApplyOptions
 	bool bCreateMissingNodes = true;
 	bool bAutoArrangeExistingNodes = false;
 	bool bAutoArrangeConnectedNodes = false;
+	bool bPreserveFeederLanes = false;
 };
 
 struct FBlueprintGraphApplyNodeSpec

@@ -11,5 +11,5 @@ class FBlueprintGraphLayoutService
 {
 public:
 	static void ApplyNodeLayout(UEdGraphNode* Node, const FBlueprintGraphApplyNodeSpec& NodeSpec);
-	static void AutoArrangeNodes(UEdGraph* Graph, const TMap<FString, UEdGraphNode*>& NodeById, const TSet<FString>& NodeIdsToArrange);
+	static void AutoArrangeNodes(UEdGraph* Graph, const TMap<FString, UEdGraphNode*>& NodeById, const TSet<FString>& NodeIdsToArrange, bool bPreserveFeederLanes = false);
 };

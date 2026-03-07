@@ -64,9 +64,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForw
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsUpdateOnlyNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeExistingNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeExistingNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeConnectedNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeConnectedNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsPreserveFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsPreserveFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyResultIncludesNodeValidationTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyResultIncludesNodeValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -886,6 +888,40 @@ bool FBATBlueprintGraphApplyRequestSupportsAutoArrangeConnectedNodesTest::RunTes
 	return TestTrue(TEXT("Graph apply request should preserve autoArrangeConnectedNodes=true"), Request.Options.bAutoArrangeConnectedNodes);
 }
 
+bool FBATBlueprintGraphApplyRequestSupportsPreserveFeederLanesTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), TEXT("/Game/Test/BP_Test"));
+	Body->SetStringField(TEXT("graph"), TEXT("AnimGraph"));
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("preserveFeederLanes"), true);
+	Body->SetObjectField(TEXT("options"), Options);
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("id"), TEXT("bat_pose_node"));
+	Node->SetBoolField(TEXT("updateOnly"), true);
+
+	TArray<TSharedPtr<FJsonValue>> Nodes;
+	Nodes.Add(MakeShared<FJsonValueObject>(Node));
+	Body->SetArrayField(TEXT("nodes"), Nodes);
+	Body->SetArrayField(TEXT("links"), TArray<TSharedPtr<FJsonValue>>());
+
+	FBlueprintGraphApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::BlueprintGraphApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("Graph apply request should accept preserveFeederLanes option"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	return TestTrue(TEXT("Graph apply request should preserve preserveFeederLanes=true"), Request.Options.bPreserveFeederLanes);
+}
+
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)
 {
 	UEdGraphNode* Node = NewObject<UEdGraphNode>(GetTransientPackage(), NAME_None, RF_Transient);
@@ -1001,6 +1037,84 @@ bool FBATBlueprintGraphLayoutCentersFanInNodeTest::RunTest(const FString& Parame
 
 	TestEqual(TEXT("Fan-in node should be placed one column after its sources"), BlendNode->NodePosX, 320);
 	return TestEqual(TEXT("Fan-in node should be vertically centered between its sources"), BlendNode->NodePosY, 256);
+}
+
+bool FBATBlueprintGraphLayoutPreservesFeederLanesTest::RunTest(const FString& Parameters)
+{
+	UEdGraph* Graph = NewObject<UEdGraph>(GetTransientPackage(), NAME_None, RF_Transient);
+	if (!TestNotNull(TEXT("Transient graph should be created for feeder lane test"), Graph))
+	{
+		return false;
+	}
+
+	UEdGraphNode* SourceTop = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(SourceTop, false, false);
+	SourceTop->NodePosX = 0;
+	SourceTop->NodePosY = 0;
+	FBlueprintGraphNodeService::SetNodeUasId(SourceTop, TEXT("source_top"));
+	UEdGraphPin* SourceTopOut = SourceTop->CreatePin(EGPD_Output, TEXT("struct"), FName(TEXT("Pose")));
+
+	UEdGraphNode* SourceBottom = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(SourceBottom, false, false);
+	SourceBottom->NodePosX = 0;
+	SourceBottom->NodePosY = 512;
+	FBlueprintGraphNodeService::SetNodeUasId(SourceBottom, TEXT("source_bottom"));
+	UEdGraphPin* SourceBottomOut = SourceBottom->CreatePin(EGPD_Output, TEXT("struct"), FName(TEXT("Pose")));
+
+	UEdGraphNode* TopLaneNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(TopLaneNode, false, false);
+	TopLaneNode->NodePosX = 0;
+	TopLaneNode->NodePosY = 0;
+	FBlueprintGraphNodeService::SetNodeUasId(TopLaneNode, TEXT("top_lane"));
+	UEdGraphPin* TopLaneIn = TopLaneNode->CreatePin(EGPD_Input, TEXT("struct"), FName(TEXT("BasePose")));
+
+	UEdGraphNode* BlendNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(BlendNode, false, false);
+	BlendNode->NodePosX = 0;
+	BlendNode->NodePosY = 0;
+	FBlueprintGraphNodeService::SetNodeUasId(BlendNode, TEXT("blend_node"));
+	UEdGraphPin* BlendInA = BlendNode->CreatePin(EGPD_Input, TEXT("struct"), FName(TEXT("BasePose")));
+	UEdGraphPin* BlendInB = BlendNode->CreatePin(EGPD_Input, TEXT("struct"), FName(TEXT("BlendPoses_0")));
+
+	UEdGraphNode* BottomLaneNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(BottomLaneNode, false, false);
+	BottomLaneNode->NodePosX = 0;
+	BottomLaneNode->NodePosY = 0;
+	FBlueprintGraphNodeService::SetNodeUasId(BottomLaneNode, TEXT("bottom_lane"));
+	UEdGraphPin* BottomLaneIn = BottomLaneNode->CreatePin(EGPD_Input, TEXT("struct"), FName(TEXT("BasePose")));
+
+	if (!TestNotNull(TEXT("Top source output pin should exist for feeder lane test"), SourceTopOut)
+		|| !TestNotNull(TEXT("Bottom source output pin should exist for feeder lane test"), SourceBottomOut)
+		|| !TestNotNull(TEXT("Top lane input pin should exist"), TopLaneIn)
+		|| !TestNotNull(TEXT("Blend base pin should exist for feeder lane test"), BlendInA)
+		|| !TestNotNull(TEXT("Blend overlay pin should exist for feeder lane test"), BlendInB)
+		|| !TestNotNull(TEXT("Bottom lane input pin should exist"), BottomLaneIn))
+	{
+		return false;
+	}
+
+	SourceTopOut->MakeLinkTo(TopLaneIn);
+	SourceTopOut->MakeLinkTo(BlendInA);
+	SourceBottomOut->MakeLinkTo(BlendInB);
+	SourceBottomOut->MakeLinkTo(BottomLaneIn);
+
+	TMap<FString, UEdGraphNode*> NodeById;
+	NodeById.Add(TEXT("source_top"), SourceTop);
+	NodeById.Add(TEXT("source_bottom"), SourceBottom);
+	NodeById.Add(TEXT("top_lane"), TopLaneNode);
+	NodeById.Add(TEXT("blend_node"), BlendNode);
+	NodeById.Add(TEXT("bottom_lane"), BottomLaneNode);
+
+	TSet<FString> NodeIdsToArrange;
+	NodeIdsToArrange.Add(TEXT("top_lane"));
+	NodeIdsToArrange.Add(TEXT("blend_node"));
+	NodeIdsToArrange.Add(TEXT("bottom_lane"));
+
+	FBlueprintGraphLayoutService::AutoArrangeNodes(Graph, NodeById, NodeIdsToArrange, true);
+
+	TestEqual(TEXT("Top feeder lane should stay aligned to its source"), TopLaneNode->NodePosY, 0);
+	TestEqual(TEXT("Fan-in node should stay centered between feeder lanes"), BlendNode->NodePosY, 256);
+	return TestEqual(TEXT("Bottom feeder lane should stay aligned to its source"), BottomLaneNode->NodePosY, 512);
 }
 
 bool FBATBlueprintGraphApplyResultIncludesNodeValidationTest::RunTest(const FString& Parameters)

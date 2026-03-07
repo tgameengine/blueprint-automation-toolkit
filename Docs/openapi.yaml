@@ -787,6 +787,9 @@ paths:
                     autoArrangeConnectedNodes:
                       type: boolean
                       description: When true, BAT expands auto-arrangement from the referenced nodes to connected BAT-owned neighbors and lays out the whole connected subgraph by flow.
+                    preserveFeederLanes:
+                      type: boolean
+                      description: When true, BAT preserves distinct feeder lanes during auto-arrangement and only separates nodes when lanes would overlap, while still centering fan-in nodes from their incoming lanes.
                 nodes:
                   type: array
                   items:
