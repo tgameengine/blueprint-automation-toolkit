@@ -771,7 +771,7 @@ paths:
   /blueprint/compile_save:
     post:
       summary: Preferred Blueprint compile and save endpoint
-      description: Compiles a Blueprint and optionally saves it in one request. Returns 409 pie_edit_blocked while PIE is running.
+      description: Compiles a Blueprint and optionally saves it in one request. Returns normalized compiler diagnostics under compileDiagnostics plus top-level errors and warnings. Returns 409 pie_edit_blocked while PIE is running.
       requestBody:
         required: true
         content:
@@ -883,7 +883,7 @@ paths:
   /blueprint/graph/apply:
     post:
       summary: Canonically apply Blueprint graph edits
-      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts plus compile/save status. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
+      description: Main high-level Blueprint graph editing route for agents. Returns explicit node/link counts, compile/save status, and structured compiler diagnostics under compileDiagnostics when compile is requested. Returns 409 pie_edit_blocked while PIE is running. AnimGraph nodes can provide `forward_axis` to remap vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before import.
       requestBody:
         required: true
         content:

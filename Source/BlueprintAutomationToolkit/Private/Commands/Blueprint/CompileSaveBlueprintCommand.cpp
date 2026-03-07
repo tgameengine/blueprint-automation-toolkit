@@ -7,6 +7,7 @@
 #include "FileHelpers.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
+#include "Services/BlueprintCompileDiagnosticsService.h"
 #include "Services/Reflection/ReflectionTypes.h"
 
 namespace
@@ -32,26 +33,6 @@ namespace
 		return Path;
 	}
 
-	static FString BlueprintStatusToString(EBlueprintStatus Status)
-	{
-		switch (Status)
-		{
-		case BS_Unknown:
-			return TEXT("unknown");
-		case BS_Dirty:
-			return TEXT("dirty");
-		case BS_Error:
-			return TEXT("error");
-		case BS_UpToDate:
-			return TEXT("up_to_date");
-		case BS_BeingCreated:
-			return TEXT("being_created");
-		case BS_UpToDateWithWarnings:
-			return TEXT("up_to_date_with_warnings");
-		default:
-			return TEXT("unknown");
-		}
-	}
 }
 
 FAutomationResult FCompileSaveBlueprintCommand::Execute(FAutomationContext& Context)
@@ -83,34 +64,39 @@ FAutomationResult FCompileSaveBlueprintCommand::Execute(FAutomationContext& Cont
 			return;
 		}
 
+		BAT::BlueprintCompileDiagnostics::FDiagnostics Diagnostics;
 		if (bCompile)
 		{
-			FKismetEditorUtilities::CompileBlueprint(Blueprint);
+			Diagnostics = BAT::BlueprintCompileDiagnostics::Compile(Blueprint);
+		}
+		else
+		{
+			Diagnostics.CompileStatus = TEXT("not_requested");
+			Diagnostics.bCompileSucceeded = true;
 		}
 
-		const FString CompileStatus = BlueprintStatusToString(Blueprint->Status);
-		const bool bCompileSucceeded = !bCompile || Blueprint->Status != BS_Error;
+		const bool bCompileSucceeded = !bCompile || Diagnostics.bCompileSucceeded;
 
 		bool bSaved = false;
+		FString SaveStatus = TEXT("not_requested");
 		if (bSave && bCompileSucceeded)
 		{
 			TArray<UPackage*> Packages;
 			Packages.Add(Blueprint->GetOutermost());
 			bSaved = UEditorLoadingAndSavingUtils::SavePackages(Packages, false);
+			SaveStatus = bSaved ? TEXT("saved") : TEXT("save_failed");
+		}
+		else if (bSave)
+		{
+			SaveStatus = TEXT("skipped_compile_failed");
 		}
 
-		TArray<TSharedPtr<FJsonValue>> Errors;
-		if (!bCompileSucceeded)
-		{
-			TSharedRef<FJsonObject> Issue = MakeShared<FJsonObject>();
-			Issue->SetStringField(TEXT("code"), TEXT("compile_failed"));
-			Issue->SetStringField(TEXT("message"), TEXT("Blueprint compile completed with an error status."));
-			Errors.Add(MakeShared<FJsonValueObject>(Issue));
-		}
+		TArray<TSharedPtr<FJsonValue>> Errors = Diagnostics.Errors;
 		if (bSave && bCompileSucceeded && !bSaved)
 		{
 			TSharedRef<FJsonObject> Issue = MakeShared<FJsonObject>();
 			Issue->SetStringField(TEXT("code"), TEXT("save_failed"));
+			Issue->SetStringField(TEXT("severity"), TEXT("error"));
 			Issue->SetStringField(TEXT("message"), TEXT("Blueprint save failed."));
 			Errors.Add(MakeShared<FJsonValueObject>(Issue));
 		}
@@ -120,30 +106,32 @@ FAutomationResult FCompileSaveBlueprintCommand::Execute(FAutomationContext& Cont
 		Data->SetStringField(TEXT("target"), ObjectPath);
 		Data->SetBoolField(TEXT("compiled"), bCompile && bCompileSucceeded);
 		Data->SetBoolField(TEXT("saved"), bSave && bSaved);
-		Data->SetStringField(TEXT("compileStatus"), bCompile ? CompileStatus : TEXT("not_requested"));
-		Data->SetStringField(TEXT("saveStatus"), bSave ? (bSaved ? TEXT("saved") : (bCompileSucceeded ? TEXT("save_failed") : TEXT("skipped_compile_failed"))) : TEXT("not_requested"));
+		Data->SetStringField(TEXT("compileStatus"), Diagnostics.CompileStatus);
+		Data->SetStringField(TEXT("saveStatus"), SaveStatus);
+		Data->SetObjectField(TEXT("compileDiagnostics"), BAT::BlueprintCompileDiagnostics::MakeDiagnosticsObject(Diagnostics));
 		Data->SetArrayField(TEXT("errors"), Errors);
+		Data->SetArrayField(TEXT("warnings"), Diagnostics.Warnings);
+
+		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetBoolField(TEXT("success"), bCompileSucceeded && (!bSave || bSaved));
+		Root->SetStringField(TEXT("requestId"), Context.RequestId);
+		Root->SetObjectField(TEXT("data"), Data);
+		Root->SetArrayField(TEXT("warnings"), Diagnostics.Warnings);
+		Root->SetArrayField(TEXT("errors"), Errors);
 
 		if (!bCompileSucceeded)
 		{
-			TSharedPtr<FJsonObject> Details = MakeShared<FJsonObject>();
-			Details->SetStringField(TEXT("blueprint"), ObjectPath);
-			Details->SetStringField(TEXT("compileStatus"), CompileStatus);
-			Details->SetArrayField(TEXT("errors"), Errors);
-			Result = BAT::Reflection::MakeStructuredError(Context.RequestId, TEXT("compile_failed"), TEXT("Blueprint compile failed."), 409, Details);
+			Result = FAutomationResult::ErrorWithData(TEXT("compile_failed"), TEXT("Blueprint compile failed."), 409, MakeShared<FJsonValueObject>(Root));
 			return;
 		}
 
 		if (bSave && !bSaved)
 		{
-			TSharedPtr<FJsonObject> Details = MakeShared<FJsonObject>();
-			Details->SetStringField(TEXT("blueprint"), ObjectPath);
-			Details->SetArrayField(TEXT("errors"), Errors);
-			Result = BAT::Reflection::MakeStructuredError(Context.RequestId, TEXT("save_failed"), TEXT("Blueprint save failed."), 500, Details);
+			Result = FAutomationResult::ErrorWithData(TEXT("save_failed"), TEXT("Blueprint save failed."), 500, MakeShared<FJsonValueObject>(Root));
 			return;
 		}
 
-		Result = BAT::Reflection::MakeStructuredSuccess(Context.RequestId, Data);
+		Result = FAutomationResult::Ok(MakeShared<FJsonValueObject>(Root));
 	}, 10.0f);
 
 	return (bCompleted && Result.IsSet()) ? Result.GetValue() : BAT::Reflection::MakeStructuredError(Context.RequestId, TEXT("game_thread_timeout"), TEXT("Timed out waiting for game thread execution."), 504);

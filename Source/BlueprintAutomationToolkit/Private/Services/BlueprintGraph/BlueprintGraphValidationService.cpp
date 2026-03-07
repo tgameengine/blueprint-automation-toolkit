@@ -234,18 +234,30 @@ TSharedPtr<FJsonValue> FBlueprintGraphValidationService::MakeApplyResultData(con
 	}
 	Data->SetArrayField(TEXT("updatedNodes"), UpdatedNodeValues);
 	Data->SetNumberField(TEXT("createdLinks"), Result.CreatedLinks);
+	Data->SetStringField(TEXT("compileStatus"), Result.CompileStatus);
+	Data->SetStringField(TEXT("saveStatus"), Result.SaveStatus);
+
+	TSharedRef<FJsonObject> CompileDiagnostics = MakeShared<FJsonObject>();
+	CompileDiagnostics->SetStringField(TEXT("compileStatus"), Result.CompileStatus);
+	CompileDiagnostics->SetNumberField(TEXT("errorCount"), Result.CompileErrorCount);
+	CompileDiagnostics->SetNumberField(TEXT("warningCount"), Result.CompileWarningCount);
+	CompileDiagnostics->SetArrayField(TEXT("errors"), Result.CompileErrors);
+	CompileDiagnostics->SetArrayField(TEXT("warnings"), Result.CompileWarnings);
+	Data->SetObjectField(TEXT("compileDiagnostics"), CompileDiagnostics);
 
 	TArray<TSharedPtr<FJsonValue>> WarningValues;
 	for (const FString& Warning : Result.Warnings)
 	{
 		WarningValues.Add(BuildIssueObject(Warning));
 	}
+	WarningValues.Append(Result.CompileWarnings);
 
 	TArray<TSharedPtr<FJsonValue>> ErrorValues;
 	for (const FString& Error : Result.Errors)
 	{
 		ErrorValues.Add(BuildIssueObject(Error));
 	}
+	ErrorValues.Append(Result.CompileErrors);
 
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetBoolField(TEXT("ok"), Result.bOk);

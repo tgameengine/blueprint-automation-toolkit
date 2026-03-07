@@ -38,6 +38,6 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 		FBlueprintGraphFinalizeService::Finalize(Target.Blueprint, Request.Options, ApplyResult);
 	}
 
-	ApplyResult.bOk = ApplyResult.Errors.Num() == 0;
+	ApplyResult.bOk = ApplyResult.Errors.Num() == 0 && ApplyResult.CompileErrors.Num() == 0;
 	return FAutomationResult::Ok(FBlueprintGraphValidationService::MakeApplyResultData(Target.BlueprintObjectPath, Request.GraphName, ApplyResult));
 }

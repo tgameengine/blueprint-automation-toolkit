@@ -14,6 +14,8 @@ The preferred workflow is:
 6. Persist Blueprint changes with `POST /blueprint/compile_save`
 7. Drive editor selection or PIE with `POST /editor/select`, `POST /editor/focus`, `POST /pie/start`, and `POST /pie/stop`
 
+Compile-related routes now return structured compiler diagnostics with `compileDiagnostics.errorCount`, `compileDiagnostics.warningCount`, and normalized `errors` and `warnings` entries built from Unreal's compiler log.
+
 The internal services stay layered, but the public API is intentionally small and reflective so the platform scales by data, not by adding endless one-off routes.
 
 ## Core API
@@ -160,11 +162,18 @@ Typical success response:
 	"data": {
 		"blueprint": "/Game/BP_Spawner.BP_Spawner",
 		"graph": "EventGraph",
-		"nodesCreated": ["begin_play", "print_message"],
-		"nodesUpdated": [],
-		"linksCreated": 1,
+		"createdNodes": ["begin_play", "print_message"],
+		"updatedNodes": [],
+		"createdLinks": 1,
 		"compileStatus": "up_to_date",
 		"saveStatus": "not_requested",
+		"compileDiagnostics": {
+			"compileStatus": "up_to_date",
+			"errorCount": 0,
+			"warningCount": 0,
+			"errors": [],
+			"warnings": []
+		},
 		"warnings": [],
 		"errors": []
 	}
