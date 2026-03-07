@@ -2427,15 +2427,6 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		false
 	});
 	RegisterBuiltInAutomationCommand({
-		TEXT("/object/get"),
-		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FGetObjectCommand>(); },
-		EBATAutomationPermissionTier::Read,
-		EBATAutomationPermission::Editor,
-		false,
-		false,
-		false
-	});
-	RegisterBuiltInAutomationCommand({
 		TEXT("/object/get_property"),
 		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FGetObjectCommand>(); },
 		EBATAutomationPermissionTier::Read,
@@ -2454,30 +2445,12 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		false
 	});
 	RegisterBuiltInAutomationCommand({
-		TEXT("/object/set-property"),
-		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FSetPropertyCommand>(); },
-		EBATAutomationPermissionTier::Edit,
-		EBATAutomationPermission::Editor,
-		false,
-		true,
-		false
-	});
-	RegisterBuiltInAutomationCommand({
 		TEXT("/object/set_property"),
 		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FSetPropertyCommand>(); },
 		EBATAutomationPermissionTier::Edit,
 		EBATAutomationPermission::Editor,
 		false,
 		true,
-		false
-	});
-	RegisterBuiltInAutomationCommand({
-		TEXT("/object/call-function"),
-		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FCallFunctionCommand>(); },
-		EBATAutomationPermissionTier::Admin,
-		EBATAutomationPermission::Editor,
-		false,
-		false,
 		false
 	});
 	RegisterBuiltInAutomationCommand({

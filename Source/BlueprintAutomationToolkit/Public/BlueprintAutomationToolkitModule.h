@@ -115,13 +115,9 @@ private:
 	void BindEditorRoutes();
 	void BindExecRoute();
 	void BindPieControlRoutes();
-	void BindPlayerWanderRoute();
-	void BindPlayerTeleportRoute();
-	void BindActorShootRoute();
 	void BindActorInfoRoutes();
 	void BindBlueprintRoutes();
 	void BindUObjectRoutes();
-	void BindReflectionRoutes();
 	void BindAutomationCoreRoutes();
 	void BindRegisteredAutomationRoutes();
 	bool BindRegisteredAutomationRoute(const FString& Endpoint);
@@ -131,7 +127,6 @@ private:
 	void BindBlueprintAssetsRoutes();
 	void BindBlueprintGraphRoutes();
 	void BindBlueprintComponentsRoutes();
-	void BindBlueprintCompileRoutes();
 	void BindBlueprintAssetsRoutesInternal();
 	void BindBlueprintGraphRoutesInternal();
 	void RegisterAutomationCommands();
@@ -352,7 +347,6 @@ private:
 	TSharedPtr<IHttpRouter> Router;
 	bool bServerRunning = false;
 	FHttpRouteHandle HealthRoute;
-	FHttpRouteHandle LegacyHealthRoute;
 	FHttpRouteHandle EditorMapRoute;
 	FHttpRouteHandle EditorQuitRoute;
 	FHttpRouteHandle EditorLayoutApplyRoute;
@@ -369,11 +363,6 @@ private:
 	FHttpRouteHandle ExecAliasRoute;
 	FHttpRouteHandle PieStartRoute;
 	FHttpRouteHandle PieStopRoute;
-	FHttpRouteHandle LegacyPieStartRoute;
-	FHttpRouteHandle LegacyPieStopRoute;
-	FHttpRouteHandle PlayerWanderRoute;
-	FHttpRouteHandle PlayerTeleportToActorRoute;
-	FHttpRouteHandle ActorShootRoute;
 	FHttpRouteHandle ActorIntrospectRoute;
 	FHttpRouteHandle ActorPropertiesRoute;
 	FHttpRouteHandle BlueprintCreateRoute;
@@ -384,7 +373,6 @@ private:
 	FHttpRouteHandle BlueprintComponentsInstancesAddRoute;
 	FHttpRouteHandle BlueprintComponentsRemoveRoute;
 	FHttpRouteHandle BlueprintComponentsReplaceRoute;
-	FHttpRouteHandle BlueprintCompileRoute;
 	FHttpRouteHandle BlueprintSchemaRoute;
 	FHttpRouteHandle BlueprintGraphsRoute;
 	FHttpRouteHandle BlueprintGraphNodesRoute;
@@ -398,13 +386,9 @@ private:
 	FHttpRouteHandle BlueprintNodeDeleteRoute;
 	FHttpRouteHandle BlueprintNodeDescribeRoute;
 	FHttpRouteHandle ObjectResolveRoute;
-	FHttpRouteHandle ObjectDescribeRoute;
 	FHttpRouteHandle ObjectDescribeGetRoute;
-	FHttpRouteHandle ObjectGetRoute;
 	FHttpRouteHandle ObjectGetPropertyRoute;
-	FHttpRouteHandle ObjectSetPropertyRoute;
 	FHttpRouteHandle ObjectSetPropertyAliasRoute;
-	FHttpRouteHandle ObjectCallFunctionRoute;
 	FHttpRouteHandle ObjectCallFunctionAliasRoute;
 	FHttpRouteHandle ActorSpawnRoute;
 	FHttpRouteHandle ActorDestroyRoute;

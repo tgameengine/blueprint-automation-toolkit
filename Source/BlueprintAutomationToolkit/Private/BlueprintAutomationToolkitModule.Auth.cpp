@@ -796,6 +796,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	TArray<TSharedPtr<FJsonValue>> Routes;
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/engine/discover")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/health")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/resolve")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/describe")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/get_property")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/set_property")));
@@ -872,17 +873,6 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
 	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
 	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
-
-	TArray<TSharedPtr<FJsonValue>> DeprecatedRoutes;
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/object/get")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/object/set-property")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/object/call-function")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/asset/save")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/ai/player/wander")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/ai/player/teleport_to_actor")));
-	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/ai/actor/shoot")));
-	Data->SetArrayField(TEXT("deprecatedRoutes"), DeprecatedRoutes);
 
 	TSharedPtr<FJsonObject> Capabilities;
 	if (const TSharedPtr<FJsonObject>* CapabilitiesPtr = nullptr; Data->TryGetObjectField(TEXT("capabilities"), CapabilitiesPtr) && CapabilitiesPtr && CapabilitiesPtr->IsValid())
@@ -1092,14 +1082,12 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/set-defaults"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/graph/apply"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/remove"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/replace"), ESearchCase::CaseSensitive)
@@ -1168,11 +1156,8 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	}
 	if (Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/describe"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/get"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/get_property"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/call_function"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/editor/select"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/editor/focus"), ESearchCase::CaseSensitive))
@@ -1202,7 +1187,7 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	{
 		return PM(EBATPermission::Editor);
 	}
-	if (Endpoint.StartsWith(TEXT("/pie/")) || Endpoint.StartsWith(TEXT("/ai/pie/")) || Endpoint.StartsWith(TEXT("/ai/player/")) || Endpoint.StartsWith(TEXT("/ai/actor/")))
+	if (Endpoint.StartsWith(TEXT("/pie/")))
 	{
 		return PM(EBATPermission::Pie);
 	}
@@ -1345,25 +1330,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 		return false;
 	}
 
-	if (Endpoint.Equals(TEXT("/ai/player/wander"), ESearchCase::CaseSensitive))
-	{
-		double Seconds = 10.0;
-		if (BodyObj->TryGetNumberField(TEXT("seconds"), Seconds) && (Seconds < 0.1 || Seconds > 300.0))
-		{
-			OutError = TEXT("'seconds' out of range [0.1, 300]");
-			return false;
-		}
-	}
-	else if (Endpoint.Equals(TEXT("/ai/player/teleport_to_actor"), ESearchCase::CaseSensitive))
-	{
-		FString Target;
-		if (!BodyObj->TryGetStringField(TEXT("target"), Target) || Target.TrimStartAndEnd().IsEmpty())
-		{
-			OutError = TEXT("'target' is required");
-			return false;
-		}
-	}
-	else if (Endpoint.Equals(TEXT("/ai/editor/layout/apply"), ESearchCase::CaseSensitive))
+	if (Endpoint.Equals(TEXT("/ai/editor/layout/apply"), ESearchCase::CaseSensitive))
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Actors = nullptr;
 		if (!BodyObj->TryGetArrayField(TEXT("actors"), Actors))
@@ -1424,8 +1391,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive))
 	{
 		FString Blueprint;
 		if (!BodyObj->TryGetStringField(TEXT("blueprint"), Blueprint) || Blueprint.TrimStartAndEnd().IsEmpty())
@@ -1482,7 +1448,6 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			TEXT("editor.layout.apply"),
 			TEXT("plan.apply"),
 			TEXT("blueprint.create"),
-			TEXT("blueprint.compile"),
 			TEXT("blueprint.save")
 		};
 		if (!AllowedKinds.Contains(Kind))
@@ -1505,8 +1470,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
 		FString ObjectPath;
@@ -1526,8 +1490,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/call_function"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/object/call_function"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
 		FString ObjectPath;
@@ -2437,53 +2400,6 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::ExecuteJobByKind(cons
 			Response->SetBoolField(TEXT("ok"), true);
 			Response->SetStringField(TEXT("package"), PackageName);
 			Response->SetStringField(TEXT("object_path"), ExistingObjectPath);
-		});
-
-		if (!bRan)
-		{
-			OutCode = TEXT("game_thread_timeout");
-			OutMessage = TEXT("Timed out waiting for GameThread");
-			return nullptr;
-		}
-		if (!LocalCode.IsEmpty())
-		{
-			OutCode = LocalCode;
-			OutMessage = LocalMessage;
-			return nullptr;
-		}
-		return Response;
-	}
-
-	if (Kind.Equals(TEXT("blueprint.compile"), ESearchCase::CaseSensitive))
-	{
-		FString BlueprintPath;
-		if (!Payload->TryGetStringField(TEXT("blueprint"), BlueprintPath) || BlueprintPath.TrimStartAndEnd().IsEmpty())
-		{
-			OutCode = TEXT("missing_blueprint");
-			OutMessage = TEXT("payload.blueprint is required");
-			return nullptr;
-		}
-
-		TSharedPtr<FJsonObject> Response;
-		FString LocalCode;
-		FString LocalMessage;
-		const bool bRan = RunOnGameThreadWait([&]()
-		{
-			UBlueprint* Blueprint = nullptr;
-			FString ObjectPath;
-			if (!TryLoadBlueprintByPath(BlueprintPath, Blueprint, ObjectPath))
-			{
-				LocalCode = TEXT("not_found");
-				LocalMessage = TEXT("Blueprint not found");
-				return;
-			}
-
-			FKismetEditorUtilities::CompileBlueprint(Blueprint);
-
-			Response = MakeShared<FJsonObject>();
-			Response->SetBoolField(TEXT("ok"), true);
-			Response->SetStringField(TEXT("blueprint"), ObjectPath);
-			Response->SetStringField(TEXT("status"), UEnum::GetValueAsString(Blueprint->Status));
 		});
 
 		if (!bRan)

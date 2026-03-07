@@ -17,11 +17,6 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(HealthRoute);
 		HealthRoute.Reset();
 	}
-	if (LegacyHealthRoute.IsValid())
-	{
-		Router->UnbindRoute(LegacyHealthRoute);
-		LegacyHealthRoute.Reset();
-	}
 	if (EditorMapRoute.IsValid())
 	{
 		Router->UnbindRoute(EditorMapRoute);
@@ -97,35 +92,10 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(PieStartRoute);
 		PieStartRoute.Reset();
 	}
-	if (LegacyPieStartRoute.IsValid())
-	{
-		Router->UnbindRoute(LegacyPieStartRoute);
-		LegacyPieStartRoute.Reset();
-	}
 	if (PieStopRoute.IsValid())
 	{
 		Router->UnbindRoute(PieStopRoute);
 		PieStopRoute.Reset();
-	}
-	if (LegacyPieStopRoute.IsValid())
-	{
-		Router->UnbindRoute(LegacyPieStopRoute);
-		LegacyPieStopRoute.Reset();
-	}
-	if (PlayerWanderRoute.IsValid())
-	{
-		Router->UnbindRoute(PlayerWanderRoute);
-		PlayerWanderRoute.Reset();
-	}
-	if (PlayerTeleportToActorRoute.IsValid())
-	{
-		Router->UnbindRoute(PlayerTeleportToActorRoute);
-		PlayerTeleportToActorRoute.Reset();
-	}
-	if (ActorShootRoute.IsValid())
-	{
-		Router->UnbindRoute(ActorShootRoute);
-		ActorShootRoute.Reset();
 	}
 	if (ActorIntrospectRoute.IsValid())
 	{
@@ -176,11 +146,6 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 	{
 		Router->UnbindRoute(BlueprintComponentsReplaceRoute);
 		BlueprintComponentsReplaceRoute.Reset();
-	}
-	if (BlueprintCompileRoute.IsValid())
-	{
-		Router->UnbindRoute(BlueprintCompileRoute);
-		BlueprintCompileRoute.Reset();
 	}
 	if (BlueprintSchemaRoute.IsValid())
 	{
@@ -247,40 +212,20 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(ObjectResolveRoute);
 		ObjectResolveRoute.Reset();
 	}
-	if (ObjectDescribeRoute.IsValid())
-	{
-		Router->UnbindRoute(ObjectDescribeRoute);
-		ObjectDescribeRoute.Reset();
-	}
 	if (ObjectDescribeGetRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectDescribeGetRoute);
 		ObjectDescribeGetRoute.Reset();
-	}
-	if (ObjectGetRoute.IsValid())
-	{
-		Router->UnbindRoute(ObjectGetRoute);
-		ObjectGetRoute.Reset();
 	}
 	if (ObjectGetPropertyRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectGetPropertyRoute);
 		ObjectGetPropertyRoute.Reset();
 	}
-	if (ObjectSetPropertyRoute.IsValid())
-	{
-		Router->UnbindRoute(ObjectSetPropertyRoute);
-		ObjectSetPropertyRoute.Reset();
-	}
 	if (ObjectSetPropertyAliasRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectSetPropertyAliasRoute);
 		ObjectSetPropertyAliasRoute.Reset();
-	}
-	if (ObjectCallFunctionRoute.IsValid())
-	{
-		Router->UnbindRoute(ObjectCallFunctionRoute);
-		ObjectCallFunctionRoute.Reset();
 	}
 	if (ObjectCallFunctionAliasRoute.IsValid())
 	{

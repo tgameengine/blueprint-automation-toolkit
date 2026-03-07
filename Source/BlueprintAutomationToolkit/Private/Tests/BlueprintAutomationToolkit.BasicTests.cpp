@@ -209,6 +209,13 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /object/get_property"), Spec.Contains(TEXT("/object/get_property:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/set_property"), Spec.Contains(TEXT("/object/set_property:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/call_function"), Spec.Contains(TEXT("/object/call_function:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /ai/health"), Spec.Contains(TEXT("/ai/health:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /object/get"), Spec.Contains(TEXT("/object/get:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /object/set-property"), Spec.Contains(TEXT("/object/set-property:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /object/call-function"), Spec.Contains(TEXT("/object/call-function:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /ai/pie/start"), Spec.Contains(TEXT("/ai/pie/start:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /ai/pie/stop"), Spec.Contains(TEXT("/ai/pie/stop:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /blueprint/compile"), Spec.Contains(TEXT("/blueprint/compile:"), ESearchCase::CaseSensitive));
 	TestFalse(TEXT("OpenAPI removes /uobject/get"), Spec.Contains(TEXT("/uobject/get:"), ESearchCase::CaseSensitive));
 	TestFalse(TEXT("OpenAPI removes /uobject/set"), Spec.Contains(TEXT("/uobject/set:"), ESearchCase::CaseSensitive));
 	TestFalse(TEXT("OpenAPI removes /uobject/call"), Spec.Contains(TEXT("/uobject/call:"), ESearchCase::CaseSensitive));
@@ -290,7 +297,7 @@ bool FBATResponseExportAddsFilesystemPermissionTest::RunTest(const FString& Para
 	BodyObj->SetStringField(TEXT("objectPath"), TEXT("/Engine/Transient.Dummy"));
 	BodyObj->SetStringField(TEXT("responseOutputPath"), TEXT("tests/permission-check"));
 
-	TestEqual(TEXT("/object/get with response export requires Editor and Filesystem permissions"), Module.Test_GetRequestRequiredPermissions(TEXT("/object/get"), BodyObj), ExpectedMask);
+	TestEqual(TEXT("/object/get_property with response export requires Editor and Filesystem permissions"), Module.Test_GetRequestRequiredPermissions(TEXT("/object/get_property"), BodyObj), ExpectedMask);
 	return true;
 }
 
@@ -641,7 +648,7 @@ bool FBATReflectionSetPropertyCommandTest::RunTest(const FString& Parameters)
 
 	FAutomationContext Context;
 	Context.RequestId = TEXT("set-property-command-test");
-	Context.Endpoint = TEXT("/object/set-property");
+	Context.Endpoint = TEXT("/object/set_property");
 	Context.Module = &Module;
 	Context.Body = MakeObjectRequest(Object.Get());
 	Context.Body->SetStringField(TEXT("property"), TEXT("bCanAttack"));
@@ -670,7 +677,7 @@ bool FBATReflectionCallFunctionCommandTest::RunTest(const FString& Parameters)
 
 	FAutomationContext Context;
 	Context.RequestId = TEXT("call-function-command-test");
-	Context.Endpoint = TEXT("/object/call-function");
+	Context.Endpoint = TEXT("/object/call_function");
 	Context.Module = &Module;
 	Context.Body = MakeObjectRequest(Object.Get());
 	Context.Body->SetStringField(TEXT("function"), TEXT("SetSpawnOffset"));

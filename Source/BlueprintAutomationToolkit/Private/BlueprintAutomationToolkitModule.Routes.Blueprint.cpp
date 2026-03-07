@@ -2910,7 +2910,6 @@ void FBlueprintAutomationToolkitModule::BindBlueprintRoutes()
 {
 BindBlueprintAssetsRoutes();
 BindBlueprintComponentsRoutes();
-BindBlueprintCompileRoutes();
 BindBlueprintGraphRoutes();
 }
 

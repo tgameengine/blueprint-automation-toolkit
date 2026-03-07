@@ -146,6 +146,7 @@ void FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes()
 			}));
 	};
 
+	BindPostCommandRoute(ObjectResolveRoute, TEXT("/object/resolve"), TEXT("/object/resolve"), true);
 	BindGetCommandRoute(ObjectDescribeGetRoute, TEXT("/object/describe"), TEXT("/object/describe"), BuildObjectQueryBody, true);
 	BindGetCommandRoute(ObjectGetPropertyRoute, TEXT("/object/get_property"), TEXT("/object/get_property"), BuildObjectQueryBody, true);
 	BindPostCommandRoute(ObjectSetPropertyAliasRoute, TEXT("/object/set_property"), TEXT("/object/set_property"), true);

@@ -17,13 +17,6 @@ paths:
       responses:
         '200':
           description: OK
-  /ai/health:
-    get:
-      summary: Canonical health check for agents
-      description: Returns the current server state in the canonical success/data envelope.
-      responses:
-        '200':
-          description: OK
   /ai/capabilities:
     get:
       summary: Canonical capability summary for agents
@@ -113,39 +106,6 @@ paths:
       responses:
         '200':
           description: Reflection describe result
-    post:
-      summary: Canonically describe an automation target
-      description: One-round-trip inspection route for agents. Returns resolved identity, class information, concise editable property summaries, callable function summaries, selected readable values, and relevant object flags.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReflectionDescribeRequest'
-      responses:
-        '200':
-          description: Reflection describe result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReflectionStructuredResponse'
-  /object/get:
-    post:
-      summary: Canonically read reflected property values
-      description: Reads selected properties, or all supported safe-readable properties, from a resolved automation target.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReflectionGetRequest'
-      responses:
-        '200':
-          description: Reflection get result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/get_property:
     get:
       summary: Preferred reflected property read endpoint
@@ -174,23 +134,6 @@ paths:
       responses:
         '200':
           description: Property read result
-  /object/set-property:
-    post:
-      summary: Canonically set reflected properties
-      description: Supports target or objectPath addressing, primitive values, enums, object references, common structs, and arrays of supported scalar or object reference types. Returns 409 pie_edit_blocked while PIE is running.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReflectionSetPropertyRequest'
-      responses:
-        '200':
-          description: Property update result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/set_property:
     post:
       summary: Preferred reflected property write endpoint
@@ -203,23 +146,6 @@ paths:
       responses:
         '200':
           description: Property update result
-  /object/call-function:
-    post:
-      summary: Canonically call a reflected UFunction
-      description: Maps JSON arguments into reflected parameters, rejects unsupported signatures, and returns return value plus output parameters in the canonical success/data envelope.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReflectionCallFunctionRequest'
-      responses:
-        '200':
-          description: Function call result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/call_function:
     post:
       summary: Preferred reflected function call endpoint
@@ -647,21 +573,9 @@ paths:
       responses:
         '200':
           description: Recent logs
-  /ai/pie/start:
-    post:
-      summary: Submit PIE start job
-      responses:
-        '202':
-          description: Job created
   /pie/start:
     post:
       summary: Preferred PIE start endpoint
-      responses:
-        '202':
-          description: Job created
-  /ai/pie/stop:
-    post:
-      summary: Submit PIE stop job
       responses:
         '202':
           description: Job created
@@ -749,25 +663,6 @@ paths:
       responses:
         '202':
           description: Job created
-  /blueprint/compile:
-    post:
-      summary: Canonically compile a Blueprint
-      description: Returns 409 pie_edit_blocked while PIE is running.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [blueprint]
-              properties:
-                blueprint:
-                  type: string
-                  minLength: 1
-                  maxLength: 512
-      responses:
-        '200':
-          description: Blueprint compile result
   /blueprint/compile_save:
     post:
       summary: Preferred Blueprint compile and save endpoint

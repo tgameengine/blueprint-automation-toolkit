@@ -36,8 +36,6 @@ Preferred endpoints:
 - `POST /pie/start`
 - `POST /pie/stop`
 
-Legacy narrow gameplay endpoints such as `ActorShoot`, `PlayerTeleport`, and `PlayerWander` remain in the codebase only for backward compatibility work. They are no longer part of the default automation contract and are not bound by the default route registry.
-
 ## Extending It
 
 Other editor plugins can register additional automation commands at startup without editing this plugin's dispatcher.
@@ -348,9 +346,7 @@ Optional response export:
 ## Runtime behavior (important)
 
 - The server exists only while the **Editor process is running**.
-- Some endpoints require **PIE**:
-	- `POST /ai/player/wander` requires PIE.
-	- `POST /ai/actor/shoot` requires PIE.
+- `POST /pie/start` and `POST /pie/stop` require PIE permission.
 - `POST /ai/exec` can be used with PIE **on or off**:
 	- With PIE off, the command executes against the editor world context.
 	- With PIE on, it executes against the PIE world context.
@@ -394,17 +390,16 @@ Plan-centric generic endpoints are documented in `Resources/Docs/PlanApi.md`.
 
 OpenAPI spec:
 
-- `GET /openapi` (source file: `Resources/Docs/openapi.yaml`)
+- `GET /openapi` (source file: `Docs/openapi.yaml`)
 
 Canonical agent workflow:
 
 1. `GET /engine/discover`
-2. `GET /ai/health`
-3. `POST /object/resolve` or `POST /object/describe`
-4. `POST /object/set-property` or `POST /object/call-function`
+2. `GET /health`
+3. `POST /object/resolve` or `GET /object/describe`
+4. `POST /object/set_property` or `POST /object/call_function`
 5. `POST /blueprint/graph/apply`
-6. `POST /blueprint/compile`
-7. `POST /asset/save`
+6. `POST /blueprint/compile_save`
 
 Base URL:
 
@@ -417,37 +412,31 @@ All responses are JSON.
 Recommended capability-first flow for agents:
 
 1. `GET /engine/discover`
-2. `GET /ai/health`
-3. `POST /object/describe`
-4. `POST /object/set-property` or `POST /object/call-function`
+2. `GET /health`
+3. `POST /object/resolve` or `GET /object/describe`
+4. `POST /object/set_property` or `POST /object/call_function`
 5. `POST /blueprint/graph/apply`
-6. `POST /blueprint/compile`
-7. `POST /asset/save`
+6. `POST /blueprint/compile_save`
 
 Canonical routes:
 
 - `GET /engine/discover`
-- `GET /ai/health`
+- `GET /health`
 - `GET /ai/capabilities`
 - `POST /object/resolve`
-- `POST /object/describe`
-- `POST /object/get`
-- `POST /object/set-property`
-- `POST /object/call-function`
+- `GET /object/describe`
+- `GET /object/get_property`
+- `POST /object/set_property`
+- `POST /object/call_function`
 - `POST /blueprint/graph/apply`
-- `POST /blueprint/compile`
-- `POST /asset/save`
-
-Auxiliary routes:
-
-- Gameplay/demo routes such as wander, teleport, and actor shoot remain supported as optional auxiliary routes. They are not the core agent protocol.
+- `POST /blueprint/compile_save`
 
 Example agent flow:
 
 1. Call `GET /engine/discover` to confirm the editor is reachable, safe mode state, and the recommended route flow.
 2. Call `POST /object/resolve` with an object path, soft object path, or actor name to obtain a stable object reference.
-3. Call `POST /object/describe` on that resolved object to inspect writable/readable fields and callable functions.
-4. Use the appropriate action endpoint, such as `POST /object/set-property`, `POST /object/call-function`, or a Blueprint/editor route, based on the discovered capabilities.
+3. Call `GET /object/describe` on that resolved object to inspect writable/readable fields and callable functions.
+4. Use the appropriate action endpoint, such as `POST /object/set_property`, `POST /object/call_function`, or a Blueprint/editor route, based on the discovered capabilities.
 
 Animation authoring and AnimGraph edits are Unreal forward-axis aware.
 
@@ -518,7 +507,7 @@ Async jobs:
 - `POST /jobs/{jobId}/cancel`
 - `GET /logs/tail?n=200`
 
-### `GET /ai/health`
+### `GET /health`
 
 Use this to verify the server is running.
 
@@ -705,7 +694,7 @@ Content-Type: application/json
 {"command":"stat fps"}
 ```
 
-### `POST /ai/pie/start`
+### `POST /pie/start`
 
 Starts PIE (active viewport).
 
@@ -715,7 +704,7 @@ Response:
 { "ok": true, "pie": true }
 ```
 
-### `POST /ai/pie/stop`
+### `POST /pie/stop`
 
 Stops PIE.
 
@@ -723,51 +712,6 @@ Response:
 
 ```json
 { "ok": true, "pie": false }
-```
-
-### `POST /ai/player/wander`
-
-Makes the current player pawn wander randomly during PIE.
-
-Request body:
-
-```json
-{ "seconds": 5, "strength": 1.0 }
-```
-
-Response:
-
-```json
-{ "ok": true }
-```
-
-### `POST /ai/actor/shoot`
-
-Interacts with an actor during PIE.
-
-Actor lookup:
-
-- `target` matches either the **Actor Label** (editor-facing) or the **Object Name**.
-
-Scripted damage mode (default):
-
-```json
-{ "target": "MyTargetActor", "damage": 25 }
-```
-
-Optional input mode:
-
-- `method: "input"` attempts to aim at the target and simulate a player "fire" input (project-dependent).
-- This is inherently project-dependent (input mappings, focus, pawn/controller).
-
-```json
-{ "target": "MyTargetActor", "method": "input" }
-```
-
-Response:
-
-```json
-{ "ok": true }
 ```
 
 ### Blueprint endpoints (Editor asset automation)
@@ -1067,11 +1011,14 @@ Notes:
 #### `POST /blueprint/graphs`
 
 Lists graphs contained in a Blueprint.
+#### `POST /blueprint/compile_save`
+
+Compiles a Blueprint and optionally saves it in one request.
 
 ```json
 { "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor" }
 ```
-
+{ "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor", "compile": true, "save": true }
 #### `POST /blueprint/graph/nodes`
 
 Lists normalized node metadata for a specific Blueprint graph.
@@ -1079,7 +1026,7 @@ Lists normalized node metadata for a specific Blueprint graph.
 ```json
 { "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor", "graph": "EventGraph" }
 ```
-
+2. `POST /blueprint/compile_save`
 #### `POST /blueprint/node/add-custom-event`
 
 ```json
@@ -1130,14 +1077,14 @@ Returns node metadata + pins (useful to discover pin names for connecting).
 { "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor", "node_guid": "..." }
 ```
 
-#### `POST /blueprint/compile`
+#### `POST /blueprint/compile_save`
 
-Compiles a Blueprint.
+Compiles a Blueprint and optionally saves it in one request.
 
 Request body:
 
 ```json
-{ "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor" }
+{ "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor", "compile": true, "save": true }
 ```
 
 ## API-First Graph Flow
@@ -1145,9 +1092,8 @@ Request body:
 Primary sequence (no external scripts):
 
 1. `POST /blueprint/graph/apply`
-2. `POST /blueprint/compile`
-3. `POST /asset/save`
-4. `GET /blueprint/graph/links?blueprint=<path>&graph=<name>`
+2. `POST /blueprint/compile_save`
+3. `GET /blueprint/graph/links?blueprint=<path>&graph=<name>`
 
 Raw HTTP example for graph apply:
 
@@ -1189,15 +1135,11 @@ print(r.json())
 
 ## Troubleshooting
 
-- `GET /ai/health` fails:
+- `GET /health` fails:
 	- Ensure Unreal Editor itself is running and the project is fully loaded.
 	- Ensure the server was started from the `Blueprint Automation Toolkit` panel (or set `bServerEnabled=true` and restart).
 	- Verify port/config in `DefaultEditor.ini` under `[BlueprintAutomationToolkit]`.
 	- If `AuthToken` is set, ensure the Authorization header is present.
-- `POST /ai/player/wander` or `POST /ai/actor/shoot` returns not-ok / does nothing:
-	- Ensure PIE is running.
-	- Ensure a player pawn exists and is possessed.
-	- For `method: "input"`, ensure the PIE viewport has focus and your project has a usable fire input binding.
 - Actor not found:
 	- Confirm the Actor Label (in editor) or Object Name.
 	- Prefer stable labels for automation.

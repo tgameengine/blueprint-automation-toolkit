@@ -80,27 +80,11 @@ void FBlueprintAutomationToolkitModule::BindPieControlRoutes()
 			return HandlePieStart(Request, OnComplete, TEXT("/pie/start"));
 		}));
 
-	LegacyPieStartRoute = Router->BindRoute(
-		FHttpPath(TEXT("/ai/pie/start")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this, HandlePieStart](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			return HandlePieStart(Request, OnComplete, TEXT("/ai/pie/start"));
-		}));
-
 	PieStopRoute = Router->BindRoute(
 		FHttpPath(TEXT("/pie/stop")),
 		EHttpServerRequestVerbs::VERB_POST,
 		FHttpRequestHandler::CreateLambda([this, HandlePieStop](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 		{
 			return HandlePieStop(Request, OnComplete, TEXT("/pie/stop"));
-		}));
-
-	LegacyPieStopRoute = Router->BindRoute(
-		FHttpPath(TEXT("/ai/pie/stop")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this, HandlePieStop](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			return HandlePieStop(Request, OnComplete, TEXT("/ai/pie/stop"));
 		}));
 }

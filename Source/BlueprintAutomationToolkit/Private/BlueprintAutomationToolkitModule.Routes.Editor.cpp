@@ -840,27 +840,6 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 			return true;
 		}));
 
-	LegacyHealthRoute = Router->BindRoute(
-		FHttpPath(TEXT("/ai/health")),
-		EHttpServerRequestVerbs::VERB_GET,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/ai/health")))
-			{
-				return true;
-			}
-
-			const FString RequestId = ResolveOrCreateRequestId(Request);
-			TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
-			Data->SetStringField(TEXT("status"), TEXT("ok"));
-			Data->SetNumberField(TEXT("port"), Port);
-			Data->SetBoolField(TEXT("safeMode"), bSafeModeEnabled);
-			Data->SetBoolField(TEXT("pieRunning"), IsPieSessionRunning());
-			Data->SetBoolField(TEXT("tokenAuthRequired"), bRequireAuthToken);
-			OnComplete(MakeCanonicalSuccessResponse(200, RequestId, Data));
-			return true;
-		}));
-
 	EditorMapRoute = Router->BindRoute(
 		FHttpPath(TEXT("/ai/editor/map")),
 		EHttpServerRequestVerbs::VERB_GET,
