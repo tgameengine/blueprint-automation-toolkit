@@ -16,9 +16,9 @@ void FBlueprintAutomationToolkitModule::BindRoutes()
 		{&FBlueprintAutomationToolkitModule::BindPieControlRoutes},
 		{&FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes},
 		{&FBlueprintAutomationToolkitModule::BindRegisteredAutomationRoutes},
+		{&FBlueprintAutomationToolkitModule::BindActorRoutes},
 		{&FBlueprintAutomationToolkitModule::BindActorInfoRoutes},
 		{&FBlueprintAutomationToolkitModule::BindBlueprintRoutes},
-		{&FBlueprintAutomationToolkitModule::BindUObjectRoutes},
 		{&FBlueprintAutomationToolkitModule::BindAssetRoutes},
 		{&FBlueprintAutomationToolkitModule::BindActionsRoutes},
 	};

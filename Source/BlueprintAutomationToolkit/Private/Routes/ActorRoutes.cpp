@@ -27,6 +27,12 @@ namespace
 	}
 }
 
+void FBlueprintAutomationToolkitModule::BindActorRoutes()
+{
+	BindActorSpawnRoute();
+	BindActorFindRoute();
+}
+
 void FBlueprintAutomationToolkitModule::BindActorSpawnRoute()
 {
 	ActorSpawnRoute = Router->BindRoute(

@@ -121,11 +121,11 @@ private:
 	void BindEditorRoutes();
 	void BindExecRoute();
 	void BindPieControlRoutes();
+	void BindActorRoutes();
 	void BindActorInfoRoutes();
 	void BindActorFindRoute();
 	void BindActorSpawnRoute();
 	void BindBlueprintRoutes();
-	void BindUObjectRoutes();
 	void BindAutomationCoreRoutes();
 	void BindRegisteredAutomationRoutes();
 	bool BindRegisteredAutomationRoute(const FString& Endpoint);
