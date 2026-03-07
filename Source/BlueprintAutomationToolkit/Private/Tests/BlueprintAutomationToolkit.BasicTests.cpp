@@ -5,12 +5,14 @@
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/SetPropertyCommand.h"
 #include "Commands/AutomationCommand.h"
+#include "Domain/Requests/AssetSaveRequest.h"
 #include "Dom/JsonObject.h"
 #include "Misc/AutomationTest.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Http/HttpRequestUtils.h"
+#include "Services/AssetService.h"
 #include "Transport/RequestParsing.h"
 #include "Services/Reflection/ReflectionFunctionService.h"
 #include "Services/Reflection/ReflectionObjectResolver.h"
@@ -43,6 +45,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATJsonOkEnvelopeIncludesCanonicalFieldsTest, 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthFailureUsesCanonicalErrorArrayTest, "BlueprintAutomationToolkit.Transport.AuthFailureUsesCanonicalErrorArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATObjectQueryParsingBuildsPropertiesArrayTest, "BlueprintAutomationToolkit.Transport.ObjectQueryParsingBuildsPropertiesArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingBuildsBodyTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingBuildsBody", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListPropertiesTest, "BlueprintAutomationToolkit.Reflection.ListProperties", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -586,6 +589,19 @@ bool FBATGraphReadQueryParsingBuildsBodyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Graph read query parsing copies graph"), Body->TryGetStringField(TEXT("graph"), Graph));
 	TestEqual(TEXT("Graph read query parsing preserves blueprint value"), Blueprint, FString(TEXT("/Game/BP_Spawner")));
 	TestEqual(TEXT("Graph read query parsing preserves graph value"), Graph, FString(TEXT("EventGraph")));
+	return true;
+}
+
+bool FBATAssetSaveServiceRejectsEmptyRequestTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	FAssetService Service;
+	FBATAssetSaveRequest Request;
+
+	const FAutomationResult Result = Service.SaveAssets(Module, Request);
+	TestFalse(TEXT("Asset save service should reject an empty request"), Result.bSuccess);
+	TestEqual(TEXT("Asset save service should report bad_args for an empty request"), Result.ErrorCode, FString(TEXT("bad_args")));
+	TestEqual(TEXT("Asset save service should use HTTP 400 for an empty request"), Result.StatusCode, 400);
 	return true;
 }
 
