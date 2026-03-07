@@ -906,6 +906,10 @@ paths:
       responses:
         '200':
           description: Blueprint graph read result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlueprintGraphReadResponse'
   /blueprint/graph/nodes:
     post:
       summary: Read normalized graph node metadata for a Blueprint graph
@@ -965,6 +969,129 @@ components:
         details:
           type: object
           additionalProperties: true
+    BlueprintGraphReadResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                graph:
+                  $ref: '#/components/schemas/BlueprintGraphSnapshot'
+    BlueprintGraphSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        nodeCount:
+          type: integer
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlueprintGraphNode'
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlueprintGraphLink'
+        analysis:
+          $ref: '#/components/schemas/BlueprintGraphAnalysis'
+    BlueprintGraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        position:
+          type: object
+          properties:
+            x:
+              type: number
+            y:
+              type: number
+        properties:
+          type: object
+          additionalProperties:
+            type: string
+        propertyWarnings:
+          type: array
+          items:
+            type: string
+        nodeValidation:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlueprintGraphNodeValidationIssue'
+        analysis:
+          $ref: '#/components/schemas/BlueprintGraphNodeAnalysis'
+    BlueprintGraphLink:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+    BlueprintGraphNodeValidationIssue:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        code:
+          type: string
+        severity:
+          type: string
+        message:
+          type: string
+        propertyPath:
+          type: string
+    BlueprintGraphAnalysis:
+      type: object
+      properties:
+        rootNodeIds:
+          type: array
+          items:
+            type: string
+        blendNodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlueprintGraphBlendNodeSummary'
+    BlueprintGraphBlendNodeSummary:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        basePoseSourceNodeId:
+          type: string
+        overlaySources:
+          type: array
+          items:
+            type: object
+            properties:
+              inputPin:
+                type: string
+              sourceNodeId:
+                type: string
+    BlueprintGraphNodeAnalysis:
+      type: object
+      properties:
+        reachesRoot:
+          type: boolean
+        rootDistance:
+          type: integer
+        stage:
+          type: string
+        nearestBlendNodeId:
+          type: string
+        nearestBlendInputPin:
+          type: string
+        primaryInputPoseSpace:
+          type: string
+        primaryOutputPoseSpace:
+          type: string
     ApiEnvelope:
       type: object
       required: [ok, requestId, data, warnings, errors]

@@ -231,6 +231,9 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI documents nodeValidation"), Spec.Contains(TEXT("nodeValidation"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents includeNodeProperties"), Spec.Contains(TEXT("includeNodeProperties"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents includeGraphAnalysis"), Spec.Contains(TEXT("includeGraphAnalysis"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents blendNodes"), Spec.Contains(TEXT("blendNodes"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents nearestBlendNodeId"), Spec.Contains(TEXT("nearestBlendNodeId"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents primaryOutputPoseSpace"), Spec.Contains(TEXT("primaryOutputPoseSpace"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents updateOnly"), Spec.Contains(TEXT("updateOnly"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /actor/destroy"), Spec.Contains(TEXT("/actor/destroy:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/select"), Spec.Contains(TEXT("/editor/select:"), ESearchCase::CaseSensitive));
