@@ -794,6 +794,12 @@ paths:
                       updateOnly:
                         type: boolean
                         description: When true, the request updates an existing node in place and fails if the node is missing.
+                      x:
+                        type: number
+                        description: Optional explicit node X position. When omitted for newly created nodes, BAT auto-aligns the node from linked neighbors.
+                      y:
+                        type: number
+                        description: Optional explicit node Y position. When omitted for newly created nodes, BAT auto-aligns the node from linked neighbors.
                       forward_axis:
                         type: string
                         description: Canonical values `X`, `-X`, `Y`, `-Y`, `Z`, and `-Z`; aliases like `+Y`, `right`, `left`, `forward`, `backward`, `up`, and `down` are also accepted.

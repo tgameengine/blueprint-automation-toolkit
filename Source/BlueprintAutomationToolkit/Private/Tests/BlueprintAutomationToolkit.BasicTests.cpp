@@ -13,6 +13,8 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
+#include "Services/BlueprintGraph/BlueprintGraphLayoutService.h"
+#include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 #include "Services/BlueprintGraphService.h"
 #include "Services/BlueprintGraph/BlueprintGraphValidationService.h"
 #include "Http/HttpRequestUtils.h"
@@ -27,6 +29,8 @@
 #include "Serialization/JsonSerializer.h"
 
 #include "Engine/EngineTypes.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraph/EdGraphNode.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "HAL/FileManager.h"
@@ -57,6 +61,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "B
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsUpdateOnlyNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyResultIncludesNodeValidationTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyResultIncludesNodeValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -235,6 +241,7 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI documents nearestBlendNodeId"), Spec.Contains(TEXT("nearestBlendNodeId"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents primaryOutputPoseSpace"), Spec.Contains(TEXT("primaryOutputPoseSpace"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents updateOnly"), Spec.Contains(TEXT("updateOnly"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents auto-aligned node placement"), Spec.Contains(TEXT("auto-aligns the node from linked neighbors"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /actor/destroy"), Spec.Contains(TEXT("/actor/destroy:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/select"), Spec.Contains(TEXT("/editor/select:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /editor/focus"), Spec.Contains(TEXT("/editor/focus:"), ESearchCase::CaseSensitive));
@@ -803,6 +810,64 @@ bool FBATBlueprintGraphApplyRequestSupportsUpdateOnlyNodeTest::RunTest(const FSt
 
 	TestTrue(TEXT("Graph apply request should preserve updateOnly=true"), Request.Nodes[0].bUpdateOnly);
 	return TestTrue(TEXT("Graph apply request should preserve Rotation pin override"), Request.Nodes[0].Pins.Contains(TEXT("Rotation")));
+}
+
+bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)
+{
+	UEdGraphNode* Node = NewObject<UEdGraphNode>(GetTransientPackage(), NAME_None, RF_Transient);
+	Node->NodePosX = 448;
+	Node->NodePosY = 224;
+
+	FBlueprintGraphApplyNodeSpec NodeSpec;
+	NodeSpec.X = 0;
+	NodeSpec.Y = 0;
+	NodeSpec.bHasExplicitX = false;
+	NodeSpec.bHasExplicitY = false;
+
+	FBlueprintGraphLayoutService::ApplyNodeLayout(Node, NodeSpec);
+
+	TestEqual(TEXT("Implicit x should preserve existing node x position"), Node->NodePosX, 448);
+	return TestEqual(TEXT("Implicit y should preserve existing node y position"), Node->NodePosY, 224);
+}
+
+bool FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest::RunTest(const FString& Parameters)
+{
+	UEdGraph* Graph = NewObject<UEdGraph>(GetTransientPackage(), NAME_None, RF_Transient);
+	if (!TestNotNull(TEXT("Transient graph should be created"), Graph))
+	{
+		return false;
+	}
+
+	UEdGraphNode* TargetNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(TargetNode, false, false);
+	TargetNode->NodePosX = 960;
+	TargetNode->NodePosY = 384;
+	FBlueprintGraphNodeService::SetNodeUasId(TargetNode, TEXT("target_node"));
+
+	UEdGraphNode* CreatedNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(CreatedNode, false, false);
+	CreatedNode->NodePosX = 0;
+	CreatedNode->NodePosY = 0;
+	FBlueprintGraphNodeService::SetNodeUasId(CreatedNode, TEXT("created_node"));
+
+	FBlueprintGraphApplyNodeSpec CreatedNodeSpec;
+	CreatedNodeSpec.Id = TEXT("created_node");
+
+	FBlueprintGraphApplyLinkSpec LinkSpec;
+	LinkSpec.From = TEXT("created_node.Pose");
+	LinkSpec.To = TEXT("target_node.ComponentPose");
+
+	TMap<FString, UEdGraphNode*> NodeById;
+	NodeById.Add(TEXT("created_node"), CreatedNode);
+	NodeById.Add(TEXT("target_node"), TargetNode);
+
+	TSet<FString> CreatedNodeIds;
+	CreatedNodeIds.Add(TEXT("created_node"));
+
+	FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(Graph, { CreatedNodeSpec }, { LinkSpec }, NodeById, CreatedNodeIds);
+
+	TestEqual(TEXT("Auto-arranged node should be placed one lane before its target"), CreatedNode->NodePosX, 640);
+	return TestEqual(TEXT("Auto-arranged node should align vertically with its target"), CreatedNode->NodePosY, 384);
 }
 
 bool FBATBlueprintGraphApplyResultIncludesNodeValidationTest::RunTest(const FString& Parameters)

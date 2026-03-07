@@ -1121,7 +1121,7 @@ UEdGraphNode* FBlueprintGraphNodeService::ResolveNodeReferenceInGraph(UEdGraph* 
 	return FindNodeByUasId(Graph, NodeId);
 }
 
-void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Graph, const TArray<FBlueprintGraphApplyNodeSpec>& NodeSpecs, bool bWillMutate, bool bCreateMissingNodes, FBlueprintGraphApplyResult& InOutResult, TMap<FString, UEdGraphNode*>& OutNodeById)
+void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Graph, const TArray<FBlueprintGraphApplyNodeSpec>& NodeSpecs, bool bWillMutate, bool bCreateMissingNodes, FBlueprintGraphApplyResult& InOutResult, TMap<FString, UEdGraphNode*>& OutNodeById, TSet<FString>& OutCreatedNodeIds)
 {
 	if (!Blueprint || !Graph)
 	{
@@ -1130,6 +1130,7 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 
 	OutNodeById.Reset();
 	OutNodeById.Reserve(NodeSpecs.Num());
+	OutCreatedNodeIds.Reset();
 
 	for (const FBlueprintGraphApplyNodeSpec& NodeSpec : NodeSpecs)
 	{
@@ -1160,6 +1161,7 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 				continue;
 			}
 			InOutResult.CreatedNodes.Add(NodeSpec.Id);
+			OutCreatedNodeIds.Add(NodeSpec.Id);
 		}
 		else if (Node)
 		{
@@ -1173,6 +1175,7 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 				if (!(NodeSpec.bUpdateOnly || !bCreateMissingNodes))
 				{
 					InOutResult.CreatedNodes.Add(NodeSpec.Id);
+					OutCreatedNodeIds.Add(NodeSpec.Id);
 				}
 				else
 				{

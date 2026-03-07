@@ -101,8 +101,8 @@ namespace BAT::BlueprintGraphApplyRequest
 				NodeObj->TryGetStringField(TEXT("message"), NodeSpec.Message);
 				NodeObj->TryGetStringField(TEXT("variable"), NodeSpec.Variable);
 				NodeObj->TryGetStringField(TEXT("macro"), NodeSpec.Macro);
-				NodeObj->TryGetNumberField(TEXT("x"), NodeSpec.X);
-				NodeObj->TryGetNumberField(TEXT("y"), NodeSpec.Y);
+				NodeSpec.bHasExplicitX = NodeObj->TryGetNumberField(TEXT("x"), NodeSpec.X);
+				NodeSpec.bHasExplicitY = NodeObj->TryGetNumberField(TEXT("y"), NodeSpec.Y);
 				NodeObj->TryGetNumberField(TEXT("outputs"), NodeSpec.Outputs);
 
 				if (NodeSpec.Type.TrimStartAndEnd().IsEmpty() && !NodeSpec.bUpdateOnly)

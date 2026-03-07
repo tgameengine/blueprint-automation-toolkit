@@ -4,6 +4,7 @@
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "ScopedTransaction.h"
 #include "Services/BlueprintGraph/BlueprintGraphFinalizeService.h"
+#include "Services/BlueprintGraph/BlueprintGraphLayoutService.h"
 #include "Services/BlueprintGraph/BlueprintGraphLinkService.h"
 #include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 #include "Services/BlueprintGraph/BlueprintGraphValidationService.h"
@@ -31,8 +32,13 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 	}
 
 	TMap<FString, UEdGraphNode*> NodeById;
-	FBlueprintGraphNodeService::ApplyNodes(Target.Blueprint, Target.Graph, Request.Nodes, bWillMutate, Request.Options.bCreateMissingNodes, ApplyResult, NodeById);
+	TSet<FString> CreatedNodeIds;
+	FBlueprintGraphNodeService::ApplyNodes(Target.Blueprint, Target.Graph, Request.Nodes, bWillMutate, Request.Options.bCreateMissingNodes, ApplyResult, NodeById, CreatedNodeIds);
 	FBlueprintGraphLinkService::ApplyLinks(Target.Graph, Request.Links, NodeById, Request.Options.bDryRun, ApplyResult);
+	if (bWillMutate)
+	{
+		FBlueprintGraphLayoutService::AutoArrangeCreatedNodes(Target.Graph, Request.Nodes, Request.Links, NodeById, CreatedNodeIds);
+	}
 	if (bWillMutate)
 	{
 		FBlueprintGraphFinalizeService::Finalize(Target.Blueprint, Request.Options, ApplyResult);
