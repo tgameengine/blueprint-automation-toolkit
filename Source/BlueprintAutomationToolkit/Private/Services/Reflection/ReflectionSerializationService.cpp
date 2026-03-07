@@ -7,9 +7,8 @@
 #include "Dom/JsonValue.h"
 #include "GameFramework/Actor.h"
 #include "Misc/DefaultValueHelper.h"
+#include "UObject/UObjectGlobals.h"
 #include "UObject/EnumProperty.h"
-#include "UObject/SoftObjectPtr.h"
-#include "UObject/SoftObjectPath.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -163,12 +162,35 @@ namespace
 			return EnumProperty->GetEnum();
 		}
 
-		if (const FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
+		return nullptr;
+	}
+
+	static bool IsSupportedArrayInnerType(const FProperty* Property)
+	{
+		return Property
+			&& (CastField<FBoolProperty>(Property)
+				|| CastField<FIntProperty>(Property)
+				|| CastField<FFloatProperty>(Property)
+				|| CastField<FStrProperty>(Property)
+				|| CastField<FNameProperty>(Property)
+				|| CastField<FEnumProperty>(Property)
+				|| CastField<FObjectProperty>(Property));
+	}
+
+	static UObject* LoadObjectReference(const FObjectProperty* ObjectProperty, const FString& ReferencePath)
+	{
+		if (!ObjectProperty)
 		{
-			return ByteProperty->Enum;
+			return nullptr;
 		}
 
-		return nullptr;
+		const FString TrimmedPath = ReferencePath.TrimStartAndEnd();
+		if (TrimmedPath.IsEmpty())
+		{
+			return nullptr;
+		}
+
+		return StaticLoadObject(ObjectProperty->PropertyClass, nullptr, *TrimmedPath);
 	}
 }
 
@@ -180,22 +202,19 @@ bool FReflectionSerializationService::IsSupportedPropertyType(const FProperty* P
 	}
 
 	if (CastField<FBoolProperty>(Property)
-		|| CastField<FNumericProperty>(Property)
+		|| CastField<FIntProperty>(Property)
+		|| CastField<FFloatProperty>(Property)
 		|| CastField<FStrProperty>(Property)
 		|| CastField<FNameProperty>(Property)
-		|| CastField<FTextProperty>(Property)
-		|| CastField<FObjectPropertyBase>(Property)
-		|| CastField<FClassProperty>(Property)
-		|| CastField<FSoftObjectProperty>(Property)
-		|| CastField<FSoftClassProperty>(Property)
-		|| ResolveEnum(Property) != nullptr)
+		|| CastField<FObjectProperty>(Property)
+		|| CastField<FEnumProperty>(Property))
 	{
 		return true;
 	}
 
 	if (const FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Property))
 	{
-		return !bForWrite || IsSupportedPropertyType(ArrayProperty->Inner, true);
+		return IsSupportedArrayInnerType(ArrayProperty->Inner);
 	}
 
 	if (const FStructProperty* StructProperty = CastField<FStructProperty>(Property))
@@ -261,7 +280,7 @@ TSharedRef<FJsonObject> FReflectionSerializationService::DescribeProperty(const 
 	Result->SetBoolField(TEXT("isArray"), Property && CastField<FArrayProperty>(Property) != nullptr);
 	Result->SetBoolField(TEXT("isMap"), Property && CastField<FMapProperty>(Property) != nullptr);
 	Result->SetBoolField(TEXT("isSet"), Property && CastField<FSetProperty>(Property) != nullptr);
-	Result->SetBoolField(TEXT("isObjectReference"), Property && (CastField<FObjectPropertyBase>(Property) != nullptr || CastField<FSoftObjectProperty>(Property) != nullptr || CastField<FClassProperty>(Property) != nullptr || CastField<FSoftClassProperty>(Property) != nullptr));
+	Result->SetBoolField(TEXT("isObjectReference"), Property && CastField<FObjectProperty>(Property) != nullptr);
 	Result->SetBoolField(TEXT("isEnum"), Property && ResolveEnum(Property) != nullptr);
 	Result->SetBoolField(TEXT("isStruct"), Property && CastField<FStructProperty>(Property) != nullptr);
 	Result->SetBoolField(TEXT("supported"), IsSupportedPropertyType(Property, false));
@@ -326,29 +345,23 @@ TSharedPtr<FJsonValue> FReflectionSerializationService::SerializeValue(const FPr
 		return MakeShared<FJsonValueBoolean>(BoolProperty->GetPropertyValue(ValuePtr));
 	}
 
-	if (const FNumericProperty* NumericProperty = CastField<FNumericProperty>(Property))
+	if (const FIntProperty* IntProperty = CastField<FIntProperty>(Property))
 	{
-		if (NumericProperty->IsInteger())
-		{
-			return MakeNumber(static_cast<double>(NumericProperty->GetSignedIntPropertyValue(ValuePtr)));
-		}
-		return MakeNumber(NumericProperty->GetFloatingPointPropertyValue(ValuePtr));
+		return MakeNumber(static_cast<double>(IntProperty->GetPropertyValue(ValuePtr)));
 	}
 
-	if (const UEnum* Enum = ResolveEnum(Property))
+	if (const FFloatProperty* FloatProperty = CastField<FFloatProperty>(Property))
 	{
-		int64 EnumValue = 0;
-		if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
-		{
-			EnumValue = EnumProperty->GetUnderlyingProperty()->GetSignedIntPropertyValue(ValuePtr);
-		}
-		else if (const FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
-		{
-			EnumValue = ByteProperty->GetUnsignedIntPropertyValue(ValuePtr);
-		}
+		return MakeNumber(FloatProperty->GetPropertyValue(ValuePtr));
+	}
+
+	if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
+	{
+		const UEnum* Enum = EnumProperty->GetEnum();
+		const int64 EnumValue = EnumProperty->GetUnderlyingProperty()->GetSignedIntPropertyValue(ValuePtr);
 
 		TSharedRef<FJsonObject> EnumObject = MakeShared<FJsonObject>();
-		EnumObject->SetStringField(TEXT("name"), Enum->GetNameStringByValue(EnumValue));
+		EnumObject->SetStringField(TEXT("name"), Enum ? Enum->GetNameStringByValue(EnumValue) : TEXT(""));
 		EnumObject->SetNumberField(TEXT("value"), static_cast<double>(EnumValue));
 		return MakeShared<FJsonValueObject>(EnumObject);
 	}
@@ -363,33 +376,7 @@ TSharedPtr<FJsonValue> FReflectionSerializationService::SerializeValue(const FPr
 		return MakeString(NameProperty->GetPropertyValue(ValuePtr).ToString());
 	}
 
-	if (const FTextProperty* TextProperty = CastField<FTextProperty>(Property))
-	{
-		return MakeString(TextProperty->GetPropertyValue(ValuePtr).ToString());
-	}
-
-	if (const FClassProperty* ClassProperty = CastField<FClassProperty>(Property))
-	{
-		return MakeShared<FJsonValueObject>(SerializeObjectReference(ClassProperty->GetPropertyValue(ValuePtr)));
-	}
-
-	if (const FSoftClassProperty* SoftClassProperty = CastField<FSoftClassProperty>(Property))
-	{
-		const FSoftObjectPtr* SoftPtr = static_cast<const FSoftObjectPtr*>(ValuePtr);
-		return MakeShared<FJsonValueObject>(SerializeObjectReference(SoftPtr ? SoftPtr->Get() : nullptr));
-	}
-
-	if (const FSoftObjectProperty* SoftObjectProperty = CastField<FSoftObjectProperty>(Property))
-	{
-		const FSoftObjectPtr* SoftPtr = SoftObjectProperty->GetPropertyValuePtr(ValuePtr);
-		TSharedRef<FJsonObject> Reference = MakeShared<FJsonObject>();
-		Reference->SetStringField(TEXT("objectPath"), SoftPtr ? SoftPtr->ToSoftObjectPath().ToString() : TEXT(""));
-		Reference->SetStringField(TEXT("className"), TEXT(""));
-		Reference->SetStringField(TEXT("classPath"), TEXT(""));
-		return MakeShared<FJsonValueObject>(Reference);
-	}
-
-	if (const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
+	if (const FObjectProperty* ObjectProperty = CastField<FObjectProperty>(Property))
 	{
 		return MakeShared<FJsonValueObject>(SerializeObjectReference(ObjectProperty->GetObjectPropertyValue(ValuePtr)));
 	}
@@ -436,11 +423,13 @@ TSharedPtr<FJsonValue> FReflectionSerializationService::SerializeValue(const FPr
 
 bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void* ValuePtr, const TSharedPtr<FJsonValue>& JsonValue, const FReflectionObjectResolver& Resolver, FString& OutCode, FString& OutMessage) const
 {
-	OutCode = TEXT("unsupported_type");
+	(void)Resolver;
+
+	OutCode = TEXT("InvalidType");
 	OutMessage = TEXT("Unsupported reflected type.");
 	if (!Property || !ValuePtr || !JsonValue.IsValid())
 	{
-		OutCode = TEXT("bad_args");
+		OutCode = TEXT("InvalidArguments");
 		OutMessage = TEXT("Invalid reflected value payload.");
 		return false;
 	}
@@ -449,7 +438,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 	{
 		if (JsonValue->Type != EJson::Boolean)
 		{
-			OutCode = TEXT("type_mismatch");
+			OutCode = TEXT("InvalidType");
 			OutMessage = TEXT("Boolean property requires a JSON boolean.");
 			return false;
 		}
@@ -457,16 +446,17 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 		return true;
 	}
 
-	if (UEnum* Enum = ResolveEnum(Property))
+	if (FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
 	{
+		UEnum* Enum = EnumProperty->GetEnum();
 		int64 EnumValue = INDEX_NONE;
 		if (JsonValue->Type == EJson::String)
 		{
 			const FString EnumString = JsonValue->AsString();
-			EnumValue = Enum->GetValueByNameString(EnumString, EGetByNameFlags::None);
+			EnumValue = Enum ? Enum->GetValueByNameString(EnumString, EGetByNameFlags::None) : INDEX_NONE;
 			if (EnumValue == INDEX_NONE)
 			{
-				EnumValue = Enum->GetValueByName(FName(*EnumString));
+				EnumValue = Enum ? Enum->GetValueByName(FName(*EnumString)) : INDEX_NONE;
 			}
 		}
 		else if (JsonValue->Type == EJson::Number)
@@ -476,47 +466,54 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 
 		if (EnumValue == INDEX_NONE)
 		{
-			OutCode = TEXT("type_mismatch");
+			OutCode = TEXT("InvalidType");
 			OutMessage = TEXT("Enum value must be a valid enum name or numeric value.");
 			return false;
 		}
 
-		if (FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
-		{
-			EnumProperty->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
-		}
-		else if (FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
-		{
-			ByteProperty->SetIntPropertyValue(ValuePtr, EnumValue);
-		}
+		EnumProperty->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, EnumValue);
 		return true;
 	}
 
-	if (FNumericProperty* NumericProperty = CastField<FNumericProperty>(Property))
+	if (FIntProperty* IntProperty = CastField<FIntProperty>(Property))
 	{
-		double NumericValue = 0.0;
+		int32 IntValue = 0;
 		if (JsonValue->Type == EJson::Number)
 		{
-			NumericValue = JsonValue->AsNumber();
+			IntValue = static_cast<int32>(JsonValue->AsNumber());
 		}
-		else if (JsonValue->Type == EJson::String && FDefaultValueHelper::ParseDouble(JsonValue->AsString(), NumericValue))
+		else if (JsonValue->Type == EJson::String && FDefaultValueHelper::ParseInt(JsonValue->AsString(), IntValue))
 		{
 		}
 		else
 		{
-			OutCode = TEXT("type_mismatch");
-			OutMessage = TEXT("Numeric property requires a number.");
+			OutCode = TEXT("InvalidType");
+			OutMessage = TEXT("Integer property requires an integer value.");
 			return false;
 		}
 
-		if (NumericProperty->IsInteger())
+		IntProperty->SetPropertyValue(ValuePtr, IntValue);
+		return true;
+	}
+
+	if (FFloatProperty* FloatProperty = CastField<FFloatProperty>(Property))
+	{
+		float FloatValue = 0.0f;
+		if (JsonValue->Type == EJson::Number)
 		{
-			NumericProperty->SetIntPropertyValue(ValuePtr, static_cast<int64>(NumericValue));
+			FloatValue = static_cast<float>(JsonValue->AsNumber());
+		}
+		else if (JsonValue->Type == EJson::String && FDefaultValueHelper::ParseFloat(JsonValue->AsString(), FloatValue))
+		{
 		}
 		else
 		{
-			NumericProperty->SetFloatingPointPropertyValue(ValuePtr, NumericValue);
+			OutCode = TEXT("InvalidType");
+			OutMessage = TEXT("Float property requires a numeric value.");
+			return false;
 		}
+
+		FloatProperty->SetPropertyValue(ValuePtr, FloatValue);
 		return true;
 	}
 
@@ -524,7 +521,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 	{
 		if (JsonValue->Type != EJson::String)
 		{
-			OutCode = TEXT("type_mismatch");
+			OutCode = TEXT("InvalidType");
 			OutMessage = TEXT("String property requires a JSON string.");
 			return false;
 		}
@@ -536,7 +533,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 	{
 		if (JsonValue->Type != EJson::String)
 		{
-			OutCode = TEXT("type_mismatch");
+			OutCode = TEXT("InvalidType");
 			OutMessage = TEXT("Name property requires a JSON string.");
 			return false;
 		}
@@ -544,110 +541,31 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 		return true;
 	}
 
-	if (FTextProperty* TextProperty = CastField<FTextProperty>(Property))
-	{
-		if (JsonValue->Type != EJson::String)
-		{
-			OutCode = TEXT("type_mismatch");
-			OutMessage = TEXT("Text property requires a JSON string.");
-			return false;
-		}
-		TextProperty->SetPropertyValue(ValuePtr, FText::FromString(JsonValue->AsString()));
-		return true;
-	}
-
-	if (FClassProperty* ClassProperty = CastField<FClassProperty>(Property))
+	if (FObjectProperty* ObjectProperty = CastField<FObjectProperty>(Property))
 	{
 		const FString Path = GetReferencePath(JsonValue);
 		if (Path.IsEmpty())
 		{
-			OutCode = TEXT("type_mismatch");
-			OutMessage = TEXT("Class property requires an object path string or object with objectPath.");
-			return false;
-		}
-
-		UClass* ResolvedClass = nullptr;
-		if (!Resolver.ResolveClassReference(Path, ResolvedClass))
-		{
-			OutCode = TEXT("not_found");
-			OutMessage = TEXT("Referenced class could not be resolved.");
-			return false;
-		}
-		if (ClassProperty->MetaClass && !ResolvedClass->IsChildOf(ClassProperty->MetaClass))
-		{
-			OutCode = TEXT("invalid_type");
-			OutMessage = FString::Printf(TEXT("Class must derive from '%s'."), *ClassProperty->MetaClass->GetPathName());
-			return false;
-		}
-		ClassProperty->SetPropertyValue(ValuePtr, ResolvedClass);
-		return true;
-	}
-
-	if (FSoftClassProperty* SoftClassProperty = CastField<FSoftClassProperty>(Property))
-	{
-		const FString Path = GetReferencePath(JsonValue);
-		if (Path.IsEmpty())
-		{
-			OutCode = TEXT("type_mismatch");
-			OutMessage = TEXT("Soft class property requires an object path string or object with objectPath.");
-			return false;
-		}
-
-		UClass* ResolvedClass = nullptr;
-		if (!Resolver.ResolveClassReference(Path, ResolvedClass))
-		{
-			OutCode = TEXT("not_found");
-			OutMessage = TEXT("Referenced soft class could not be resolved.");
-			return false;
-		}
-		if (SoftClassProperty->MetaClass && !ResolvedClass->IsChildOf(SoftClassProperty->MetaClass))
-		{
-			OutCode = TEXT("invalid_type");
-			OutMessage = FString::Printf(TEXT("Class must derive from '%s'."), *SoftClassProperty->MetaClass->GetPathName());
-			return false;
-		}
-		*static_cast<FSoftObjectPtr*>(ValuePtr) = FSoftObjectPtr(ResolvedClass);
-		return true;
-	}
-
-	if (FSoftObjectProperty* SoftObjectProperty = CastField<FSoftObjectProperty>(Property))
-	{
-		const FString Path = GetReferencePath(JsonValue);
-		if (Path.IsEmpty())
-		{
-			OutCode = TEXT("type_mismatch");
-			OutMessage = TEXT("Soft object property requires an object path string or object with objectPath.");
-			return false;
-		}
-
-		UObject* ResolvedObject = nullptr;
-		if (!Resolver.ResolveObjectReference(Path, SoftObjectProperty->PropertyClass, ResolvedObject))
-		{
-			OutCode = TEXT("not_found");
-			OutMessage = TEXT("Referenced soft object could not be resolved.");
-			return false;
-		}
-		SoftObjectProperty->SetPropertyValue(ValuePtr, FSoftObjectPtr(ResolvedObject));
-		return true;
-	}
-
-	if (FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
-	{
-		const FString Path = GetReferencePath(JsonValue);
-		if (Path.IsEmpty())
-		{
-			OutCode = TEXT("type_mismatch");
+			OutCode = TEXT("InvalidArguments");
 			OutMessage = TEXT("Object property requires an object path string or object with objectPath.");
 			return false;
 		}
 
-		UObject* ResolvedObject = nullptr;
-		if (!Resolver.ResolveObjectReference(Path, ObjectProperty->PropertyClass, ResolvedObject))
+		UObject* ResolvedObject = LoadObjectReference(ObjectProperty, Path);
+		if (!ResolvedObject)
 		{
-			OutCode = TEXT("not_found");
+			OutCode = TEXT("ObjectNotFound");
 			OutMessage = TEXT("Referenced object could not be resolved.");
 			return false;
 		}
+
+		if (!ResolvedObject->IsA(ObjectProperty->PropertyClass))
+		{
+			OutCode = TEXT("InvalidType");
+			OutMessage = FString::Printf(TEXT("Referenced object must be of type '%s'."), *ObjectProperty->PropertyClass->GetPathName());
+			return false;
+		}
+
 		ObjectProperty->SetObjectPropertyValue(ValuePtr, ResolvedObject);
 		return true;
 	}
@@ -656,8 +574,15 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 	{
 		if (JsonValue->Type != EJson::Array)
 		{
-			OutCode = TEXT("type_mismatch");
+			OutCode = TEXT("InvalidType");
 			OutMessage = TEXT("Array property requires a JSON array.");
+			return false;
+		}
+
+		if (!IsSupportedArrayInnerType(ArrayProperty->Inner))
+		{
+			OutCode = TEXT("InvalidType");
+			OutMessage = TEXT("Only arrays of bool, int32, float, FString, FName, enums, or UObject references are supported.");
 			return false;
 		}
 
@@ -684,7 +609,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 			FVector VectorValue = FVector::ZeroVector;
 			if (!TryReadVector(JsonValue, VectorValue))
 			{
-				OutCode = TEXT("type_mismatch");
+				OutCode = TEXT("InvalidType");
 				OutMessage = TEXT("FVector requires {x,y,z} or [x,y,z].");
 				return false;
 			}
@@ -697,7 +622,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 			FRotator RotatorValue = FRotator::ZeroRotator;
 			if (!TryReadRotator(JsonValue, RotatorValue))
 			{
-				OutCode = TEXT("type_mismatch");
+				OutCode = TEXT("InvalidType");
 				OutMessage = TEXT("FRotator requires {pitch,yaw,roll} or [pitch,yaw,roll].");
 				return false;
 			}
@@ -710,7 +635,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 			FLinearColor ColorValue = FLinearColor::White;
 			if (!TryReadLinearColor(JsonValue, ColorValue))
 			{
-				OutCode = TEXT("type_mismatch");
+				OutCode = TEXT("InvalidType");
 				OutMessage = TEXT("FLinearColor requires {r,g,b,a}.");
 				return false;
 			}
@@ -722,7 +647,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 		{
 			if (JsonValue->Type != EJson::Object)
 			{
-				OutCode = TEXT("type_mismatch");
+				OutCode = TEXT("InvalidType");
 				OutMessage = TEXT("FTransform requires an object with location, rotation, and scale.");
 				return false;
 			}
@@ -730,7 +655,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 			const TSharedPtr<FJsonObject> ObjectValue = JsonValue->AsObject();
 			if (!ObjectValue.IsValid())
 			{
-				OutCode = TEXT("bad_args");
+				OutCode = TEXT("InvalidArguments");
 				OutMessage = TEXT("Invalid FTransform payload.");
 				return false;
 			}
@@ -745,7 +670,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 				FVector Location = FVector::ZeroVector;
 				if (!TryReadVector(*LocationValue, Location))
 				{
-					OutCode = TEXT("type_mismatch");
+					OutCode = TEXT("InvalidType");
 					OutMessage = TEXT("FTransform.location requires {x,y,z} or [x,y,z].");
 					return false;
 				}
@@ -757,7 +682,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 				FRotator Rotation = FRotator::ZeroRotator;
 				if (!TryReadRotator(*RotationValue, Rotation))
 				{
-					OutCode = TEXT("type_mismatch");
+					OutCode = TEXT("InvalidType");
 					OutMessage = TEXT("FTransform.rotation requires {pitch,yaw,roll} or [pitch,yaw,roll].");
 					return false;
 				}
@@ -769,7 +694,7 @@ bool FReflectionSerializationService::DeserializeValue(FProperty* Property, void
 				FVector Scale = FVector::OneVector;
 				if (!TryReadVector(*ScaleValue, Scale))
 				{
-					OutCode = TEXT("type_mismatch");
+					OutCode = TEXT("InvalidType");
 					OutMessage = TEXT("FTransform.scale requires {x,y,z} or [x,y,z].");
 					return false;
 				}

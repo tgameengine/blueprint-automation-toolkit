@@ -82,7 +82,18 @@ FAutomationResult FReflectionPropertyService::GetObject(FBlueprintAutomationTool
 		FAutomationResult Failure;
 		if (!Resolver.Resolve(Module, BodyObj, RequestId, ResolvedObject, Failure))
 		{
-			Result = Failure;
+			if (Failure.ErrorCode == TEXT("not_found"))
+			{
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("ObjectNotFound"), Failure.ErrorMessage, Failure.StatusCode);
+			}
+			else if (Failure.ErrorCode == TEXT("bad_args"))
+			{
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), Failure.ErrorMessage, Failure.StatusCode);
+			}
+			else
+			{
+				Result = Failure;
+			}
 			return;
 		}
 
@@ -226,7 +237,7 @@ FAutomationResult FReflectionPropertyService::SetProperty(FBlueprintAutomationTo
 			const TSharedPtr<FJsonValue>* ValueField = BodyObj->Values.Find(TEXT("value"));
 			if (PropertyName.TrimStartAndEnd().IsEmpty() || !ValueField)
 			{
-				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("Body must include either 'values' object or 'property' plus 'value'."), 400);
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), TEXT("Body must include either 'values' object or 'property' plus 'value'."), 400);
 				return;
 			}
 			Assignments.Add(PropertyName.TrimStartAndEnd(), *ValueField);
@@ -234,7 +245,7 @@ FAutomationResult FReflectionPropertyService::SetProperty(FBlueprintAutomationTo
 
 		if (Assignments.Num() == 0)
 		{
-			Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("No property assignments were provided."), 400);
+			Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), TEXT("No property assignments were provided."), 400);
 			return;
 		}
 
@@ -253,7 +264,7 @@ FAutomationResult FReflectionPropertyService::SetProperty(FBlueprintAutomationTo
 
 			if (!Serialization.IsSupportedPropertyType(ResolvedProperty.Property, true))
 			{
-				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("unsupported_type"), FString::Printf(TEXT("Property '%s' uses an unsupported reflected type."), *Assignment.Key), 400);
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidType"), FString::Printf(TEXT("Property '%s' uses an unsupported reflected type."), *Assignment.Key), 400);
 				return;
 			}
 

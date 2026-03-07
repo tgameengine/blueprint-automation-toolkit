@@ -44,7 +44,7 @@ bool FReflectionValidationService::ValidateObject(UObject* Object, const FString
 		return true;
 	}
 
-	OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("not_found"), TEXT("Resolved object is null."), 404);
+	OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("ObjectNotFound"), TEXT("Resolved object is null."), 404);
 	return false;
 }
 
@@ -60,7 +60,7 @@ bool FReflectionValidationService::ResolveProperty(UObject* RootObject, const FS
 	PropertyPath.ParseIntoArray(Segments, TEXT("."), true);
 	if (Segments.Num() == 0)
 	{
-		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("Property path must be non-empty."), 400);
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), TEXT("Property path must be non-empty."), 400);
 		return false;
 	}
 
@@ -73,11 +73,11 @@ bool FReflectionValidationService::ResolveProperty(UObject* RootObject, const FS
 		const FString Segment = Segments[Index].TrimStartAndEnd();
 		if (Segment.IsEmpty())
 		{
-			OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("Property path contains an empty segment."), 400);
+			OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), TEXT("Property path contains an empty segment."), 400);
 			return false;
 		}
 
-		FProperty* Property = ContainerStruct ? ContainerStruct->FindPropertyByName(FName(*Segment)) : nullptr;
+		FProperty* Property = ContainerStruct ? FindFProperty<FProperty>(ContainerStruct, FName(*Segment)) : nullptr;
 		if (!Property)
 		{
 			OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("PropertyNotFound"), FString::Printf(TEXT("Property '%s' does not exist on object '%s'."), *PropertyPath, *RootObject->GetPathName()), 404);
@@ -101,12 +101,12 @@ bool FReflectionValidationService::ResolveProperty(UObject* RootObject, const FS
 			continue;
 		}
 
-		if (FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
+		if (FObjectProperty* ObjectProperty = CastField<FObjectProperty>(Property))
 		{
 			UObject* NextObject = ObjectProperty->GetObjectPropertyValue_InContainer(ContainerPtr);
 			if (!NextObject)
 			{
-				OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("not_found"), FString::Printf(TEXT("Property '%s' resolves through a null object reference."), *PropertyPath), 404);
+				OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("ObjectNotFound"), FString::Printf(TEXT("Property '%s' resolves through a null object reference."), *PropertyPath), 404);
 				return false;
 			}
 			ContainerPtr = NextObject;
@@ -115,7 +115,7 @@ bool FReflectionValidationService::ResolveProperty(UObject* RootObject, const FS
 			continue;
 		}
 
-		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("unsupported_type"), FString::Printf(TEXT("Property path '%s' traverses through unsupported type '%s'."), *PropertyPath, *Property->GetCPPType()), 400);
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidType"), FString::Printf(TEXT("Property path '%s' traverses through unsupported type '%s'."), *PropertyPath, *Property->GetCPPType()), 400);
 		return false;
 	}
 
@@ -134,7 +134,7 @@ bool FReflectionValidationService::ResolveFunction(UObject* RootObject, const FS
 	const FString TrimmedName = FunctionName.TrimStartAndEnd();
 	if (TrimmedName.IsEmpty())
 	{
-		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("Function name must be non-empty."), 400);
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), TEXT("Function name must be non-empty."), 400);
 		return false;
 	}
 
@@ -150,7 +150,7 @@ bool FReflectionValidationService::ResolveFunction(UObject* RootObject, const FS
 
 bool FReflectionValidationService::ValidateValueTypeCompatibility(FProperty* Property, const TSharedPtr<FJsonValue>& JsonValue, const FReflectionObjectResolver& Resolver, FString& OutErrorCode, FString& OutErrorMessage) const
 {
-	OutErrorCode = TEXT("unsupported_type");
+	OutErrorCode = TEXT("InvalidType");
 	OutErrorMessage = TEXT("Unsupported reflected value type.");
 
 	if (!Property)

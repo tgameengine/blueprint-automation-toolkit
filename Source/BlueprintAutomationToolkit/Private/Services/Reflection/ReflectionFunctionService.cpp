@@ -10,8 +10,8 @@
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Misc/ScopeExit.h"
 #include "UObject/Package.h"
-#include "UObject/StructOnScope.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -76,7 +76,18 @@ FAutomationResult FReflectionFunctionService::ListFunctions(FBlueprintAutomation
 		FAutomationResult Failure;
 		if (!Resolver.Resolve(Module, BodyObj, RequestId, ResolvedObject, Failure))
 		{
-			Result = Failure;
+			if (Failure.ErrorCode == TEXT("not_found"))
+			{
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("ObjectNotFound"), Failure.ErrorMessage, Failure.StatusCode);
+			}
+			else if (Failure.ErrorCode == TEXT("bad_args"))
+			{
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), Failure.ErrorMessage, Failure.StatusCode);
+			}
+			else
+			{
+				Result = Failure;
+			}
 			return;
 		}
 
@@ -122,7 +133,7 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 		BodyObj->TryGetStringField(TEXT("function"), FunctionName);
 		if (FunctionName.TrimStartAndEnd().IsEmpty())
 		{
-			Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("bad_args"), TEXT("Body must include non-empty 'function'."), 400);
+			Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), TEXT("Body must include non-empty 'function'."), 400);
 			return;
 		}
 
@@ -147,8 +158,9 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 		}
 		const TSharedPtr<FJsonObject> Arguments = (ArgumentsObject && ArgumentsObject->IsValid()) ? *ArgumentsObject : MakeShared<FJsonObject>();
 
-		FStructOnScope Parameters(Function);
-		FMemory::Memzero(Parameters.GetStructMemory(), Function->GetStructureSize());
+		uint8* Params = static_cast<uint8*>(FMemory::Malloc(Function->ParmsSize));
+		FMemory::Memzero(Params, Function->ParmsSize);
+		TArray<FProperty*> ParameterProperties;
 		for (TFieldIterator<FProperty> It(Function); It && (It->PropertyFlags & CPF_Parm); ++It)
 		{
 			FProperty* Parameter = *It;
@@ -157,9 +169,32 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 				continue;
 			}
 
+			ParameterProperties.Add(Parameter);
+			Parameter->InitializeValue_InContainer(Params);
+		}
+
+		ON_SCOPE_EXIT
+		{
+			for (FProperty* Parameter : ParameterProperties)
+			{
+				if (Parameter)
+				{
+					Parameter->DestroyValue_InContainer(Params);
+				}
+			}
+			FMemory::Free(Params);
+		};
+
+		for (FProperty* Parameter : ParameterProperties)
+		{
+			if (!Parameter)
+			{
+				continue;
+			}
+
 			if (!Serialization.IsSupportedPropertyType(Parameter, true))
 			{
-				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("unsupported_signature"), FString::Printf(TEXT("Function '%s' contains unsupported parameter '%s'."), *Function->GetName(), *Parameter->GetName()), 400);
+				Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidType"), FString::Printf(TEXT("Function '%s' contains unsupported parameter '%s'."), *Function->GetName(), *Parameter->GetName()), 400);
 				return;
 			}
 
@@ -177,7 +212,7 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 			{
 				if (!ArgumentValue)
 				{
-					Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("missing_argument"), FString::Printf(TEXT("Function '%s' requires argument '%s'."), *Function->GetName(), *Parameter->GetName()), 400);
+					Result = BAT::Reflection::MakeStructuredError(RequestId, TEXT("InvalidArguments"), FString::Printf(TEXT("Function '%s' requires argument '%s'."), *Function->GetName(), *Parameter->GetName()), 400);
 					return;
 				}
 
@@ -189,7 +224,7 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 					return;
 				}
 
-				void* ParameterPtr = Parameter->ContainerPtrToValuePtr<void>(Parameters.GetStructMemory());
+				void* ParameterPtr = Parameter->ContainerPtrToValuePtr<void>(Params);
 				FString ErrorCode;
 				FString ErrorMessage;
 				if (!Serialization.DeserializeValue(Parameter, ParameterPtr, *ArgumentValue, Resolver, ErrorCode, ErrorMessage))
@@ -207,7 +242,7 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 			ResolvedObject.Object->Modify();
 		}
 
-		ResolvedObject.Object->ProcessEvent(Function, Parameters.GetStructMemory());
+		ResolvedObject.Object->ProcessEvent(Function, Params);
 		if (!Function->HasAnyFunctionFlags(FUNC_Const))
 		{
 			MarkDirtyIfPersistent(ResolvedObject.Object);
@@ -215,15 +250,14 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 
 		TSharedRef<FJsonObject> OutputValues = MakeShared<FJsonObject>();
 		TSharedPtr<FJsonValue> ReturnValue = MakeShared<FJsonValueNull>();
-		for (TFieldIterator<FProperty> It(Function); It && (It->PropertyFlags & CPF_Parm); ++It)
+		for (FProperty* Parameter : ParameterProperties)
 		{
-			FProperty* Parameter = *It;
 			if (!Parameter)
 			{
 				continue;
 			}
 
-			void* ParameterPtr = Parameter->ContainerPtrToValuePtr<void>(Parameters.GetStructMemory());
+			void* ParameterPtr = Parameter->ContainerPtrToValuePtr<void>(Params);
 			if (Parameter->HasAnyPropertyFlags(CPF_ReturnParm))
 			{
 				ReturnValue = Serialization.SerializeValue(Parameter, ParameterPtr);
