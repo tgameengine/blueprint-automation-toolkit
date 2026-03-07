@@ -46,6 +46,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAuthFailureUsesCanonicalErrorArrayTest, "Bl
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATObjectQueryParsingBuildsPropertiesArrayTest, "BlueprintAutomationToolkit.Transport.ObjectQueryParsingBuildsPropertiesArray", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingBuildsBodyTest, "BlueprintAutomationToolkit.Transport.GraphReadQueryParsingBuildsBody", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetDuplicateServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.DuplicateServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, "BlueprintAutomationToolkit.Assets.CreateServiceRejectsInvalidClass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -603,6 +604,22 @@ bool FBATAssetDuplicateServiceRejectsEmptyRequestTest::RunTest(const FString& Pa
 	TestFalse(TEXT("Asset duplicate service should reject an empty request"), Result.bSuccess);
 	TestEqual(TEXT("Asset duplicate service should report bad_args for an empty request"), Result.ErrorCode, FString(TEXT("bad_args")));
 	TestEqual(TEXT("Asset duplicate service should use HTTP 400 for an empty request"), Result.StatusCode, 400);
+	return true;
+}
+
+bool FBATAssetCreateServiceRejectsInvalidClassTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	FAssetService Service;
+	FBATAssetCreateRequest Request;
+	Request.ClassPath = TEXT("/Script/Engine.DoesNotExist");
+	Request.AssetPath = TEXT("/Game/BAT_Invalid");
+	Request.Body = MakeShared<FJsonObject>();
+
+	const FAutomationResult Result = Service.CreateAsset(Module, Request);
+	TestFalse(TEXT("Asset create service should reject an invalid class"), Result.bSuccess);
+	TestEqual(TEXT("Asset create service should report bad_args for an invalid class"), Result.ErrorCode, FString(TEXT("bad_args")));
+	TestEqual(TEXT("Asset create service should use HTTP 400 for an invalid class"), Result.StatusCode, 400);
 	return true;
 }
 

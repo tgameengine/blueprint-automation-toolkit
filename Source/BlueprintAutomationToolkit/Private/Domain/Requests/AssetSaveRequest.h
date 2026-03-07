@@ -18,3 +18,12 @@ struct FBATAssetDuplicateRequest
 	TArray<FBATAssetDuplicateEntry> Entries;
 	bool bSave = false;
 };
+
+struct FBATAssetCreateRequest
+{
+	FString ClassPath;
+	FString AssetPath;
+	FString OuterPath;
+	bool bSave = false;
+	TSharedPtr<class FJsonObject> Body;
+};

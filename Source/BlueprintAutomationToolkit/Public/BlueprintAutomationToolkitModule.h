@@ -129,6 +129,7 @@ private:
 	bool BindRegisteredAutomationRoute(const FString& Endpoint);
 	void UnbindRegisteredAutomationRoutes();
 	void BindAssetRoutes();
+	void BindAssetCreateRoute();
 	void BindAssetDuplicateRoute();
 	void BindAssetSaveRoute();
 	void BindActionsRoutes();

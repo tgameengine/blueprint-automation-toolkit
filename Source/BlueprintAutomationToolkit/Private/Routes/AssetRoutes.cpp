@@ -74,6 +74,25 @@ namespace
 		return OutRequest.Entries.Num() > 0;
 	}
 
+	static bool TryBuildAssetCreateRequest(const TSharedPtr<FJsonObject>& BodyObj, FBATAssetCreateRequest& OutRequest)
+	{
+		OutRequest = FBATAssetCreateRequest();
+		if (!BodyObj.IsValid())
+		{
+			return false;
+		}
+
+		BodyObj->TryGetStringField(TEXT("class"), OutRequest.ClassPath);
+		BodyObj->TryGetStringField(TEXT("path"), OutRequest.AssetPath);
+		BodyObj->TryGetStringField(TEXT("outer"), OutRequest.OuterPath);
+		BodyObj->TryGetBoolField(TEXT("save"), OutRequest.bSave);
+		OutRequest.Body = BodyObj;
+		OutRequest.ClassPath.TrimStartAndEndInline();
+		OutRequest.AssetPath.TrimStartAndEndInline();
+		OutRequest.OuterPath.TrimStartAndEndInline();
+		return !OutRequest.ClassPath.IsEmpty();
+	}
+
 	static bool TryBuildAssetSaveRequest(const TSharedPtr<FJsonObject>& BodyObj, FBATAssetSaveRequest& OutRequest)
 	{
 		OutRequest.Paths.Reset();
@@ -151,6 +170,43 @@ void FBlueprintAutomationToolkitModule::BindAssetDuplicateRoute()
 			{
 				const FAssetService Service;
 				const FAutomationResult Result = Service.DuplicateAssets(*this, DuplicateRequest);
+				OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			});
+			return true;
+		}));
+}
+
+void FBlueprintAutomationToolkitModule::BindAssetCreateRoute()
+{
+	AssetCreateRoute = Router->BindRoute(
+		FHttpPath(TEXT("/asset/create")),
+		EHttpServerRequestVerbs::VERB_POST,
+		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			if (!BAT::Transport::ValidateAndHandleRequest(*this, Request, OnComplete, TEXT("/asset/create")))
+			{
+				return true;
+			}
+
+			TSharedPtr<FJsonObject> BodyObj;
+			if (!BAT::Transport::TryParseJsonObjectBody(Request, BodyObj))
+			{
+				OnComplete(MakeCanonicalErrorResponse(400, ResolveOrCreateRequestId(Request), TEXT("bad_json"), TEXT("Invalid JSON body.")));
+				return true;
+			}
+
+			FBATAssetCreateRequest CreateRequest;
+			if (!TryBuildAssetCreateRequest(BodyObj, CreateRequest))
+			{
+				OnComplete(MakeCanonicalErrorResponse(400, ResolveOrCreateRequestId(Request), TEXT("bad_args"), TEXT("Asset creation requires a non-empty 'class' field.")));
+				return true;
+			}
+
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			AsyncTask(ENamedThreads::GameThread, [this, CreateRequest, RequestId, OnComplete]()
+			{
+				const FAssetService Service;
+				const FAutomationResult Result = Service.CreateAsset(*this, CreateRequest);
 				OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
 			});
 			return true;
