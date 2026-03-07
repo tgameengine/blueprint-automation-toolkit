@@ -15,6 +15,65 @@
 
 namespace
 {
+	static bool TryBuildAssetDuplicateRequest(const TSharedPtr<FJsonObject>& BodyObj, FBATAssetDuplicateRequest& OutRequest)
+	{
+		OutRequest.Entries.Reset();
+		OutRequest.bSave = BodyObj.IsValid() && BodyObj->HasTypedField<EJson::Boolean>(TEXT("save")) ? BodyObj->GetBoolField(TEXT("save")) : false;
+		if (!BodyObj.IsValid())
+		{
+			return false;
+		}
+
+		FString SourcePath;
+		FString DestinationPath;
+		if (BodyObj->TryGetStringField(TEXT("src"), SourcePath) && BodyObj->TryGetStringField(TEXT("dst"), DestinationPath))
+		{
+			SourcePath.TrimStartAndEndInline();
+			DestinationPath.TrimStartAndEndInline();
+			if (!SourcePath.IsEmpty() && !DestinationPath.IsEmpty())
+			{
+				FBATAssetDuplicateEntry& Entry = OutRequest.Entries.AddDefaulted_GetRef();
+				Entry.SourcePath = SourcePath;
+				Entry.DestinationPath = DestinationPath;
+			}
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* DuplicatesField = nullptr;
+		if (BodyObj->TryGetArrayField(TEXT("duplicates"), DuplicatesField) && DuplicatesField)
+		{
+			for (const TSharedPtr<FJsonValue>& EntryValue : *DuplicatesField)
+			{
+				if (!EntryValue.IsValid() || EntryValue->Type != EJson::Object)
+				{
+					continue;
+				}
+
+				const TSharedPtr<FJsonObject> EntryObject = EntryValue->AsObject();
+				FString EntrySourcePath;
+				FString EntryDestinationPath;
+				if (!EntryObject.IsValid()
+					|| !EntryObject->TryGetStringField(TEXT("src"), EntrySourcePath)
+					|| !EntryObject->TryGetStringField(TEXT("dst"), EntryDestinationPath))
+				{
+					continue;
+				}
+
+				EntrySourcePath.TrimStartAndEndInline();
+				EntryDestinationPath.TrimStartAndEndInline();
+				if (EntrySourcePath.IsEmpty() || EntryDestinationPath.IsEmpty())
+				{
+					continue;
+				}
+
+				FBATAssetDuplicateEntry& Entry = OutRequest.Entries.AddDefaulted_GetRef();
+				Entry.SourcePath = EntrySourcePath;
+				Entry.DestinationPath = EntryDestinationPath;
+			}
+		}
+
+		return OutRequest.Entries.Num() > 0;
+	}
+
 	static bool TryBuildAssetSaveRequest(const TSharedPtr<FJsonObject>& BodyObj, FBATAssetSaveRequest& OutRequest)
 	{
 		OutRequest.Paths.Reset();
@@ -59,6 +118,43 @@ namespace
 
 		return OutRequest.Paths.Num() > 0;
 	}
+}
+
+void FBlueprintAutomationToolkitModule::BindAssetDuplicateRoute()
+{
+	AssetDuplicateRoute = Router->BindRoute(
+		FHttpPath(TEXT("/asset/duplicate")),
+		EHttpServerRequestVerbs::VERB_POST,
+		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			if (!BAT::Transport::ValidateAndHandleRequest(*this, Request, OnComplete, TEXT("/asset/duplicate")))
+			{
+				return true;
+			}
+
+			TSharedPtr<FJsonObject> BodyObj;
+			if (!BAT::Transport::TryParseJsonObjectBody(Request, BodyObj))
+			{
+				OnComplete(MakeCanonicalErrorResponse(400, ResolveOrCreateRequestId(Request), TEXT("bad_json"), TEXT("Invalid JSON body.")));
+				return true;
+			}
+
+			FBATAssetDuplicateRequest DuplicateRequest;
+			if (!TryBuildAssetDuplicateRequest(BodyObj, DuplicateRequest))
+			{
+				OnComplete(MakeCanonicalErrorResponse(400, ResolveOrCreateRequestId(Request), TEXT("bad_args"), TEXT("Body must include 'src'/'dst' or non-empty 'duplicates' array.")));
+				return true;
+			}
+
+			const FString RequestId = ResolveOrCreateRequestId(Request);
+			AsyncTask(ENamedThreads::GameThread, [this, DuplicateRequest, RequestId, OnComplete]()
+			{
+				const FAssetService Service;
+				const FAutomationResult Result = Service.DuplicateAssets(*this, DuplicateRequest);
+				OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
+			});
+			return true;
+		}));
 }
 
 void FBlueprintAutomationToolkitModule::BindAssetSaveRoute()
