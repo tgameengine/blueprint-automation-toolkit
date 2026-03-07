@@ -1,27 +1,18 @@
-#include "BlueprintAutomationToolkitModule.h"
+#include "Services/ObjectAutomationService.h"
 
-#include "Async/Async.h"
+#include "BlueprintAutomationToolkitModule.h"
+#include "Core/EditorExecution.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/Blueprint.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
-#include "HttpPath.h"
-#include "HttpResultCallback.h"
-#include "Http/HttpRequestUtils.h"
-#include "HttpServerRequest.h"
-#include "HttpServerResponse.h"
-#include "IHttpRouter.h"
 #include "Misc/DefaultValueHelper.h"
 #include "Misc/PackageName.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
 #include "UObject/SoftObjectPath.h"
 #include "UObject/StructOnScope.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/UnrealType.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogBlueprintAutomationToolkitUObject, Log, All);
 
 namespace
 {
@@ -375,11 +366,9 @@ namespace
 		{
 			const FSoftObjectPtr* SoftPtr = static_cast<const FSoftObjectPtr*>(ValuePtr);
 			const FString Path = SoftPtr ? SoftPtr->ToSoftObjectPath().ToString() : FString();
-			if (Path.IsEmpty())
-			{
-				return MakeShared<FJsonValueNull>();
-			}
-			return MakeShared<FJsonValueString>(Path);
+			return Path.IsEmpty()
+				? TSharedPtr<FJsonValue>(MakeShared<FJsonValueNull>())
+				: TSharedPtr<FJsonValue>(MakeShared<FJsonValueString>(Path));
 		}
 		if (const FObjectPropertyBase* ObjectProperty = CastField<FObjectPropertyBase>(Property))
 		{
@@ -612,6 +601,7 @@ namespace
 					OutMessage = TEXT("FTransform requires object with location/rotation/scale");
 					return false;
 				}
+
 				const TSharedPtr<FJsonObject> Obj = JsonValue->AsObject();
 				if (!Obj.IsValid())
 				{
@@ -699,284 +689,327 @@ namespace
 		}
 		return FoundClass;
 	}
-
-	static TSharedPtr<FJsonValue> MakeActorSummary(AActor* Actor)
-	{
-		TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
-		Obj->SetStringField(TEXT("path"), Actor ? Actor->GetPathName() : TEXT(""));
-		Obj->SetStringField(TEXT("class"), (Actor && Actor->GetClass()) ? Actor->GetClass()->GetPathName() : TEXT(""));
-#if WITH_EDITOR
-		Obj->SetStringField(TEXT("label"), Actor ? Actor->GetActorLabel() : TEXT(""));
-#else
-		Obj->SetStringField(TEXT("label"), Actor ? Actor->GetName() : TEXT(""));
-#endif
-		return MakeShared<FJsonValueObject>(Obj);
-	}
 }
 
-void FBlueprintAutomationToolkitModule::BindUObjectRoutes()
+FAutomationResult FObjectAutomationService::SetProperty(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj) const
 {
-	UObjectGetRoute = Router->BindRoute(
-		FHttpPath(TEXT("/uobject/get")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+	if (!BodyObj.IsValid())
+	{
+		return FAutomationResult::Error(TEXT("bad_args"), TEXT("Invalid JSON body"), 400);
+	}
+
+	FString Path;
+	BodyObj->TryGetStringField(TEXT("path"), Path);
+	const TSharedPtr<FJsonObject>* ValuesObj = nullptr;
+	BodyObj->TryGetObjectField(TEXT("values"), ValuesObj);
+	const TSharedPtr<FJsonObject> Values = (ValuesObj && ValuesObj->IsValid()) ? *ValuesObj : nullptr;
+
+	if (Path.TrimStartAndEnd().IsEmpty() || !Values.IsValid())
+	{
+		return FAutomationResult::Error(TEXT("bad_args"), TEXT("Body must include non-empty 'path' and object field 'values'"), 400);
+	}
+
+	TOptional<FAutomationResult> Result;
+	const bool bCompleted = BAT::EditorExecution::RunOnGameThreadAndWaitVoid([&Module, RequestId, Path, Values, &Result]()
+	{
+		UObject* TargetObject = ResolveObjectFromPath(Path);
+		if (!TargetObject)
 		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/uobject/get")))
+			Result = FAutomationResult::Error(TEXT("uobject_not_found"), TEXT("Object path could not be resolved"), 404);
+			return;
+		}
+
+		TargetObject->Modify();
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Values->Values)
+		{
+			const FString PropertyPath = Pair.Key;
+			if (!IsPropertyPathAllowed(Module.GetAllowedUObjectProperties(), PropertyPath))
 			{
-				return true;
+				Result = FAutomationResult::Error(TEXT("call_denied"), FString::Printf(TEXT("Property not allowlisted: %s"), *PropertyPath), 403);
+				return;
 			}
 
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
+			FResolvedPropertyPath Resolved;
+			FString ErrorCode;
+			if (!ResolvePropertyPath(TargetObject, PropertyPath, Resolved, ErrorCode))
 			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
+				Result = FAutomationResult::Error(ErrorCode, FString::Printf(TEXT("Failed to resolve property '%s'"), *PropertyPath), 400);
+				return;
 			}
 
-			FString Path;
-			BodyObj->TryGetStringField(TEXT("path"), Path);
-			const TArray<TSharedPtr<FJsonValue>>* PropertyArray = nullptr;
-			BodyObj->TryGetArrayField(TEXT("properties"), PropertyArray);
-			const FString RequestId = ResolveOrCreateRequestId(Request);
-
-			AsyncTask(ENamedThreads::GameThread, [this, Path, PropertyArrayCopy = PropertyArray ? *PropertyArray : TArray<TSharedPtr<FJsonValue>>(), RequestId, OnComplete]()
+			FString DecodeCode;
+			FString DecodeMessage;
+			if (!DeserializePropertyValue(Resolved.Property, Resolved.ValuePtr, Pair.Value, DecodeCode, DecodeMessage))
 			{
-				UObject* TargetObject = ResolveObjectFromPath(Path);
-				if (!TargetObject)
+				Result = FAutomationResult::Error(DecodeCode, FString::Printf(TEXT("%s (%s)"), *DecodeMessage, *PropertyPath), 400);
+				return;
+			}
+		}
+
+		TargetObject->MarkPackageDirty();
+
+		TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
+		ResponseObj->SetStringField(TEXT("request_id"), RequestId);
+		ResponseObj->SetStringField(TEXT("path"), Path);
+		Result = FAutomationResult::Ok(MakeShared<FJsonValueObject>(ResponseObj));
+	}, 10.0f);
+
+	if (!bCompleted)
+	{
+		return FAutomationResult::Error(TEXT("game_thread_timeout"), TEXT("Timed out waiting for GameThread execution"), 504);
+	}
+	return Result.IsSet() ? Result.GetValue() : FAutomationResult::Error(TEXT("internal_error"), TEXT("No result produced by object set operation"), 500);
+}
+
+FAutomationResult FObjectAutomationService::CallFunction(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj) const
+{
+	if (!BodyObj.IsValid())
+	{
+		return FAutomationResult::Error(TEXT("bad_args"), TEXT("Invalid JSON body"), 400);
+	}
+
+	FString Path;
+	FString FunctionName;
+	BodyObj->TryGetStringField(TEXT("path"), Path);
+	BodyObj->TryGetStringField(TEXT("function"), FunctionName);
+	const TSharedPtr<FJsonObject>* ArgsField = nullptr;
+	BodyObj->TryGetObjectField(TEXT("args"), ArgsField);
+	const TSharedPtr<FJsonObject> ArgsObj = (ArgsField && ArgsField->IsValid()) ? *ArgsField : MakeShared<FJsonObject>();
+
+	if (Path.TrimStartAndEnd().IsEmpty() || FunctionName.TrimStartAndEnd().IsEmpty())
+	{
+		return FAutomationResult::Error(TEXT("bad_args"), TEXT("Body must include non-empty 'path' and 'function'"), 400);
+	}
+
+	TOptional<FAutomationResult> Result;
+	const bool bCompleted = BAT::EditorExecution::RunOnGameThreadAndWaitVoid([&Module, RequestId, Path, FunctionName, ArgsObj, &Result]()
+	{
+		UObject* TargetObject = ResolveObjectFromPath(Path);
+		if (!TargetObject)
+		{
+			Result = FAutomationResult::Error(TEXT("uobject_not_found"), TEXT("Object path could not be resolved"), 404);
+			return;
+		}
+
+		const FName FunctionFName(*FunctionName);
+		if (!Module.GetAllowedUObjectFunctions().Contains(FunctionFName))
+		{
+			Result = FAutomationResult::Error(Module.IsSafeModeEnabled() ? TEXT("safe_mode_denied") : TEXT("call_denied"), TEXT("Function is not allowlisted"), 403);
+			return;
+		}
+
+		UFunction* Function = TargetObject->FindFunction(FunctionFName);
+		if (!Function)
+		{
+			Result = FAutomationResult::Error(TEXT("function_not_found"), TEXT("Function not found on target object"), 404);
+			return;
+		}
+
+		const bool bBlueprintCallable = Function->HasAnyFunctionFlags(FUNC_BlueprintCallable);
+		const bool bDeniedFlags = Function->HasAnyFunctionFlags(FUNC_Exec | FUNC_Net | FUNC_NetClient | FUNC_NetServer | FUNC_NetMulticast);
+		const bool bLatent = Function->HasMetaData(TEXT("Latent"));
+		if (!bBlueprintCallable || bDeniedFlags || bLatent)
+		{
+			Result = FAutomationResult::Error(TEXT("call_denied"), TEXT("Function flags are not allowed"), 403);
+			return;
+		}
+
+		FStructOnScope Params(Function);
+		FMemory::Memzero(Params.GetStructMemory(), Function->GetStructureSize());
+
+		for (TFieldIterator<FProperty> It(Function); It && (It->PropertyFlags & CPF_Parm); ++It)
+		{
+			FProperty* ParamProperty = *It;
+			if (!ParamProperty)
+			{
+				continue;
+			}
+
+			const bool bIsReturn = ParamProperty->HasAnyPropertyFlags(CPF_ReturnParm);
+			const bool bIsOutOnly = ParamProperty->HasAnyPropertyFlags(CPF_OutParm) && !ParamProperty->HasAnyPropertyFlags(CPF_ConstParm | CPF_ReferenceParm);
+			if (bIsReturn || bIsOutOnly)
+			{
+				continue;
+			}
+
+			const TSharedPtr<FJsonValue>* JsonField = ArgsObj->Values.Find(ParamProperty->GetName());
+			if (!JsonField)
+			{
+				Result = FAutomationResult::Error(TEXT("bad_args"), FString::Printf(TEXT("Missing argument '%s'"), *ParamProperty->GetName()), 400);
+				return;
+			}
+
+			void* ParamPtr = ParamProperty->ContainerPtrToValuePtr<void>(Params.GetStructMemory());
+			FString DecodeCode;
+			FString DecodeMessage;
+			if (!DeserializePropertyValue(ParamProperty, ParamPtr, *JsonField, DecodeCode, DecodeMessage))
+			{
+				Result = FAutomationResult::Error(DecodeCode, FString::Printf(TEXT("Invalid argument '%s': %s"), *ParamProperty->GetName(), *DecodeMessage), 400);
+				return;
+			}
+		}
+
+		TargetObject->ProcessEvent(Function, Params.GetStructMemory());
+
+		TSharedRef<FJsonObject> OutObj = MakeShared<FJsonObject>();
+		TSharedPtr<FJsonValue> ReturnValue = MakeShared<FJsonValueNull>();
+		for (TFieldIterator<FProperty> It(Function); It && (It->PropertyFlags & CPF_Parm); ++It)
+		{
+			FProperty* ParamProperty = *It;
+			if (!ParamProperty)
+			{
+				continue;
+			}
+
+			void* ParamPtr = ParamProperty->ContainerPtrToValuePtr<void>(Params.GetStructMemory());
+			if (ParamProperty->HasAnyPropertyFlags(CPF_ReturnParm))
+			{
+				ReturnValue = SerializePropertyValue(ParamProperty, ParamPtr);
+				continue;
+			}
+			if (ParamProperty->HasAnyPropertyFlags(CPF_OutParm))
+			{
+				OutObj->SetField(ParamProperty->GetName(), SerializePropertyValue(ParamProperty, ParamPtr));
+			}
+		}
+
+		TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
+		ResponseObj->SetStringField(TEXT("request_id"), RequestId);
+		ResponseObj->SetField(TEXT("return"), ReturnValue);
+		ResponseObj->SetObjectField(TEXT("out"), OutObj);
+		Result = FAutomationResult::Ok(MakeShared<FJsonValueObject>(ResponseObj));
+	}, 10.0f);
+
+	if (!bCompleted)
+	{
+		return FAutomationResult::Error(TEXT("game_thread_timeout"), TEXT("Timed out waiting for GameThread execution"), 504);
+	}
+	return Result.IsSet() ? Result.GetValue() : FAutomationResult::Error(TEXT("internal_error"), TEXT("No result produced by object call operation"), 500);
+}
+
+FAutomationResult FObjectAutomationService::SpawnActor(FBlueprintAutomationToolkitModule& Module, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj) const
+{
+	if (!BodyObj.IsValid())
+	{
+		return FAutomationResult::Error(TEXT("bad_args"), TEXT("Invalid JSON body"), 400);
+	}
+
+	FString ClassPath;
+	FString Name;
+	BodyObj->TryGetStringField(TEXT("class"), ClassPath);
+	BodyObj->TryGetStringField(TEXT("name"), Name);
+	const TArray<TSharedPtr<FJsonValue>>* LocationField = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* RotationField = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* ScaleField = nullptr;
+	BodyObj->TryGetArrayField(TEXT("location"), LocationField);
+	BodyObj->TryGetArrayField(TEXT("rotation"), RotationField);
+	BodyObj->TryGetArrayField(TEXT("scale"), ScaleField);
+	const TSharedPtr<FJsonObject>* PropertiesField = nullptr;
+	BodyObj->TryGetObjectField(TEXT("properties"), PropertiesField);
+	const TSharedPtr<FJsonObject> PropertiesObj = (PropertiesField && PropertiesField->IsValid()) ? *PropertiesField : nullptr;
+
+	if (ClassPath.TrimStartAndEnd().IsEmpty())
+	{
+		return FAutomationResult::Error(TEXT("bad_args"), TEXT("Body must include non-empty 'class'"), 400);
+	}
+
+	const TArray<TSharedPtr<FJsonValue>> LocationCopy = LocationField ? *LocationField : TArray<TSharedPtr<FJsonValue>>();
+	const TArray<TSharedPtr<FJsonValue>> RotationCopy = RotationField ? *RotationField : TArray<TSharedPtr<FJsonValue>>();
+	const TArray<TSharedPtr<FJsonValue>> ScaleCopy = ScaleField ? *ScaleField : TArray<TSharedPtr<FJsonValue>>();
+
+	TOptional<FAutomationResult> Result;
+	const bool bCompleted = BAT::EditorExecution::RunOnGameThreadAndWaitVoid([&Module, RequestId, ClassPath, Name, LocationCopy, RotationCopy, ScaleCopy, PropertiesObj, &Result]()
+	{
+		UWorld* EditorWorld = Module.GetEditorWorld();
+		if (!EditorWorld)
+		{
+			Result = FAutomationResult::Error(TEXT("not_found"), TEXT("Editor world not available"), 404);
+			return;
+		}
+
+		UClass* ActorClass = ResolveActorClassFromPath(ClassPath);
+		if (!ActorClass || !ActorClass->IsChildOf(AActor::StaticClass()))
+		{
+			Result = FAutomationResult::Error(TEXT("type_unsupported"), TEXT("'class' must resolve to an Actor class"), 400);
+			return;
+		}
+
+		FVector SpawnLocation = FVector::ZeroVector;
+		FRotator SpawnRotation = FRotator::ZeroRotator;
+		FVector SpawnScale = FVector::OneVector;
+		if (LocationCopy.Num() > 0 && !TryParseVec3(MakeShared<FJsonValueArray>(LocationCopy), SpawnLocation))
+		{
+			Result = FAutomationResult::Error(TEXT("bad_args"), TEXT("'location' must be [x,y,z]"), 400);
+			return;
+		}
+		if (RotationCopy.Num() > 0 && !TryParseRotator(MakeShared<FJsonValueArray>(RotationCopy), SpawnRotation))
+		{
+			Result = FAutomationResult::Error(TEXT("bad_args"), TEXT("'rotation' must be [pitch,yaw,roll]"), 400);
+			return;
+		}
+		if (ScaleCopy.Num() > 0 && !TryParseVec3(MakeShared<FJsonValueArray>(ScaleCopy), SpawnScale))
+		{
+			Result = FAutomationResult::Error(TEXT("bad_args"), TEXT("'scale' must be [x,y,z]"), 400);
+			return;
+		}
+
+		FActorSpawnParameters SpawnParams;
+		if (!Name.TrimStartAndEnd().IsEmpty())
+		{
+			SpawnParams.Name = FName(*Name);
+		}
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AActor* SpawnedActor = EditorWorld->SpawnActor<AActor>(ActorClass, SpawnLocation, SpawnRotation, SpawnParams);
+		if (!SpawnedActor)
+		{
+			Result = FAutomationResult::Error(TEXT("spawn_failed"), TEXT("Failed to spawn actor"), 500);
+			return;
+		}
+
+		SpawnedActor->SetActorScale3D(SpawnScale);
+		if (PropertiesObj.IsValid())
+		{
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+			{
+				const FString& PropertyPath = Pair.Key;
+				if (!IsPropertyPathAllowed(Module.GetAllowedUObjectProperties(), PropertyPath))
 				{
-					OnComplete(MakeErrorResponse(EHttpServerResponseCodes::NotFound, RequestId, TEXT("uobject_not_found"), TEXT("Object path could not be resolved")));
+					Result = FAutomationResult::Error(TEXT("call_denied"), FString::Printf(TEXT("Property not allowlisted: %s"), *PropertyPath), 403);
 					return;
 				}
 
-				TSharedRef<FJsonObject> ValuesObj = MakeShared<FJsonObject>();
-				for (const TSharedPtr<FJsonValue>& PropertyValue : PropertyArrayCopy)
+				FResolvedPropertyPath Resolved;
+				FString ErrorCode;
+				if (!ResolvePropertyPath(SpawnedActor, PropertyPath, Resolved, ErrorCode))
 				{
-					if (!PropertyValue.IsValid() || PropertyValue->Type != EJson::String)
-					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, RequestId, TEXT("bad_args"), TEXT("'properties' must contain strings")));
-						return;
-					}
-
-					const FString PropertyPath = PropertyValue->AsString().TrimStartAndEnd();
-					if (!IsPropertyPathAllowed(AllowedUObjectProperties, PropertyPath))
-					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::Denied, RequestId, TEXT("call_denied"), FString::Printf(TEXT("Property not allowlisted: %s"), *PropertyPath)));
-						return;
-					}
-
-					FResolvedPropertyPath Resolved;
-					FString ErrorCode;
-					if (!ResolvePropertyPath(TargetObject, PropertyPath, Resolved, ErrorCode))
-					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, RequestId, ErrorCode, FString::Printf(TEXT("Failed to resolve property '%s'"), *PropertyPath)));
-						return;
-					}
-
-					TSharedPtr<FJsonValue> Serialized = SerializePropertyValue(Resolved.Property, Resolved.ValuePtr);
-					if (!Serialized.IsValid())
-					{
-						OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, RequestId, TEXT("type_unsupported"), FString::Printf(TEXT("Unsupported property type '%s'"), *PropertyPath)));
-						return;
-					}
-					ValuesObj->SetField(PropertyPath, Serialized);
-				}
-
-				TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
-				ResponseObj->SetBoolField(TEXT("ok"), true);
-				ResponseObj->SetStringField(TEXT("request_id"), RequestId);
-				ResponseObj->SetObjectField(TEXT("values"), ValuesObj);
-				OnComplete(BAT::Http::MakeJsonResponse(200, ResponseObj, RequestId));
-			});
-			return true;
-		}));
-
-	UObjectSetRoute = Router->BindRoute(
-		FHttpPath(TEXT("/uobject/set")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/uobject/set")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/uobject/set"), Request, OnComplete, BodyObj);
-		}));
-
-	ObjectSetPropertyRoute = Router->BindRoute(
-		FHttpPath(TEXT("/object/set-property")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/set-property")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/object/set-property"), Request, OnComplete, BodyObj);
-		}));
-
-	UObjectCallRoute = Router->BindRoute(
-		FHttpPath(TEXT("/uobject/call")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/uobject/call")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/uobject/call"), Request, OnComplete, BodyObj);
-		}));
-
-	ObjectCallFunctionRoute = Router->BindRoute(
-		FHttpPath(TEXT("/object/call-function")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/call-function")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/object/call-function"), Request, OnComplete, BodyObj);
-		}));
-
-	ActorSpawnRoute = Router->BindRoute(
-		FHttpPath(TEXT("/actor/spawn")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/actor/spawn")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/actor/spawn"), Request, OnComplete, BodyObj);
-		}));
-
-	ActorFindRoute = Router->BindRoute(
-		FHttpPath(TEXT("/actor/find")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/actor/find")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_args"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			FString By;
-			FString Value;
-			double LimitRaw = 50.0;
-			BodyObj->TryGetStringField(TEXT("by"), By);
-			BodyObj->TryGetStringField(TEXT("value"), Value);
-			BodyObj->TryGetNumberField(TEXT("limit"), LimitRaw);
-			const int32 Limit = FMath::Clamp((int32)LimitRaw, 1, 500);
-			const FString RequestId = ResolveOrCreateRequestId(Request);
-
-			AsyncTask(ENamedThreads::GameThread, [this, By, Value, Limit, RequestId, OnComplete]()
-			{
-				UWorld* EditorWorld = GetEditorWorld();
-				if (!EditorWorld)
-				{
-					OnComplete(MakeErrorResponse(EHttpServerResponseCodes::NotFound, RequestId, TEXT("not_found"), TEXT("Editor world not available")));
+					Result = FAutomationResult::Error(ErrorCode, FString::Printf(TEXT("Failed to resolve property '%s'"), *PropertyPath), 400);
 					return;
 				}
 
-				const FString Mode = By.TrimStartAndEnd().ToLower();
-				if (!(Mode == TEXT("tag") || Mode == TEXT("name") || Mode == TEXT("class")))
+				FString DecodeCode;
+				FString DecodeMessage;
+				if (!DeserializePropertyValue(Resolved.Property, Resolved.ValuePtr, Pair.Value, DecodeCode, DecodeMessage))
 				{
-					OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, RequestId, TEXT("bad_args"), TEXT("'by' must be one of: tag, name, class")));
+					Result = FAutomationResult::Error(DecodeCode, FString::Printf(TEXT("%s (%s)"), *DecodeMessage, *PropertyPath), 400);
 					return;
 				}
+			}
+		}
 
-				TArray<TSharedPtr<FJsonValue>> Actors;
-				for (TActorIterator<AActor> It(EditorWorld); It && Actors.Num() < Limit; ++It)
-				{
-					AActor* Actor = *It;
-					if (!Actor)
-					{
-						continue;
-					}
-
-					bool bMatches = false;
-					if (Mode == TEXT("tag"))
-					{
-						bMatches = Actor->ActorHasTag(FName(*Value));
-					}
-					else if (Mode == TEXT("name"))
-					{
-						bMatches = Actor->GetName().Equals(Value, ESearchCase::IgnoreCase);
+		TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
+		ResponseObj->SetStringField(TEXT("request_id"), RequestId);
+		ResponseObj->SetStringField(TEXT("path"), SpawnedActor->GetPathName());
 #if WITH_EDITOR
-						bMatches = bMatches || Actor->GetActorLabel().Equals(Value, ESearchCase::IgnoreCase);
+		ResponseObj->SetStringField(TEXT("label"), SpawnedActor->GetActorLabel());
 #endif
-					}
-					else if (Mode == TEXT("class"))
-					{
-						const UClass* Class = Actor->GetClass();
-						const FString ClassName = Class ? Class->GetName() : FString();
-						const FString ClassPath = Class ? Class->GetPathName() : FString();
-						const FString ClassScriptPath = Class ? Class->GetClassPathName().ToString() : FString();
-						bMatches = ClassName.Equals(Value, ESearchCase::IgnoreCase)
-							|| ClassPath.Equals(Value, ESearchCase::IgnoreCase)
-							|| ClassScriptPath.Equals(Value, ESearchCase::IgnoreCase);
-					}
+		ResponseObj->SetStringField(TEXT("class"), SpawnedActor->GetClass()->GetPathName());
+		Result = FAutomationResult::Ok(MakeShared<FJsonValueObject>(ResponseObj));
+	}, 10.0f);
 
-					if (bMatches)
-					{
-						Actors.Add(MakeActorSummary(Actor));
-					}
-				}
-
-				TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
-				ResponseObj->SetBoolField(TEXT("ok"), true);
-				ResponseObj->SetStringField(TEXT("request_id"), RequestId);
-				ResponseObj->SetArrayField(TEXT("actors"), Actors);
-				OnComplete(BAT::Http::MakeJsonResponse(200, ResponseObj, RequestId));
-			});
-
-			return true;
-		}));
+	if (!bCompleted)
+	{
+		return FAutomationResult::Error(TEXT("game_thread_timeout"), TEXT("Timed out waiting for GameThread execution"), 504);
+	}
+	return Result.IsSet() ? Result.GetValue() : FAutomationResult::Error(TEXT("internal_error"), TEXT("No result produced by actor spawn operation"), 500);
 }

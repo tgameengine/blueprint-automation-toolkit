@@ -25,14 +25,31 @@ class FJsonObject;
 
 class IHttpRouter;
 class SDockTab;
+class FCommandDispatcher;
+class FTokenAuthMiddleware;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintAutomationToolkit, Log, All);
 
 class FBlueprintAutomationToolkitModule final : public IModuleInterface
 {
 public:
+	~FBlueprintAutomationToolkitModule();
+
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+
+	const TSet<FName>& GetAllowedUObjectFunctions() const { return AllowedUObjectFunctions; }
+	const TSet<FName>& GetAllowedUObjectProperties() const { return AllowedUObjectProperties; }
+	bool IsSafeModeEnabled() const { return bSafeModeEnabled; }
+	bool IsExecRouteEnabled() const { return bEnableExecRoute; }
+	bool IsPythonExecAllowed() const { return bAllowPythonExec; }
+	bool IsAuthTokenRequired() const { return bRequireAuthToken; }
+	bool DispatchAutomationCommandRoute(const FString& Endpoint, const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TSharedPtr<class FJsonObject>& BodyObj, bool bReturnRawObject = false);
+	class UWorld* GetEditorWorld() const;
+	class UWorld* GetPIEWorld(int32 PieIndex = 0) const;
+	class UWorld* ResolveWorld(const FString& Mode, int32 PieIndex, bool& bOutIsPie, int32& OutResolvedPieIndex, FString& OutError) const;
+	bool IsCommandAllowedBySandbox(const FString& Command, FString& OutReason) const;
+	bool TryExecBatCommandDirect(class UWorld* World, const FString& FullCommand, class FStringOutputDevice& Out, bool& bOutOk);
 
 #if WITH_DEV_AUTOMATION_TESTS
 	enum class EAutomationTestPermission : uint32
@@ -74,6 +91,8 @@ public:
 #endif
 
 private:
+	friend class FTokenAuthMiddleware;
+
 	void BindRoutes();
 	void BindEditorRoutes();
 	void BindExecRoute();
@@ -92,11 +111,10 @@ private:
 	void BindBlueprintCompileRoutes();
 	void BindBlueprintAssetsRoutesInternal();
 	void BindBlueprintGraphRoutesInternal();
+	void RegisterAutomationCommands();
 	void UnbindRoutes();
-	bool TryExecBatCommandDirect(class UWorld* World, const FString& FullCommand, class FStringOutputDevice& Out, bool& bOutOk);
 	bool EnsureServerPermissionGranted();
 	void ApplyDefaultSandboxPolicy();
-	bool IsCommandAllowedBySandbox(const FString& Command, FString& OutReason) const;
 	bool StartServer(bool bInteractiveStart);
 	void StopServer();
 	bool RotateAuthToken(bool bRestartIfRunning);
@@ -233,9 +251,6 @@ private:
 	TSharedPtr<FJsonObject> ExecuteJobByKind(const FString& JobId, const FString& Kind, const TSharedPtr<FJsonObject>& Payload, FString& OutCode, FString& OutMessage);
 	TArray<FStructuredLogEntry> GetRecentLogs(int32 MaxCount) const;
 
-	UWorld* GetEditorWorld() const;
-	UWorld* GetPIEWorld(int32 PieIndex = 0) const;
-	UWorld* ResolveWorld(const FString& Mode, int32 PieIndex, bool& bOutIsPie, int32& OutResolvedPieIndex, FString& OutError) const;
 	AActor* ResolveActor(UWorld* World, const FString& NameOrLabelOrPath, const FString& Tag = TEXT("")) const;
 
 	void RecordRequestStat(const FString& Endpoint, bool bAllowed, const FString& Reason);
@@ -276,6 +291,7 @@ private:
 	bool bSaveTokenInProjectSettings = true;
 	bool bServerEnabled = false;
 	bool bPermissionPromptAnswered = false;
+	bool bRequireAuthToken = true;
 	bool bAllowPythonExec = false;
 	bool bEnableExecRoute = false;
 	bool bSafeModeEnabled = true;
@@ -297,6 +313,8 @@ private:
 	TArray<FPlanExecutionEntry> PlanExecutionLog;
 	TMap<FString, FRateLimitState> RateLimitStates;
 	mutable FCriticalSection SecurityStateMutex;
+	FCommandDispatcher* CommandDispatcher = nullptr;
+	FTokenAuthMiddleware* TokenAuthMiddleware = nullptr;
 
 	TSharedPtr<IHttpRouter> Router;
 	bool bServerRunning = false;
@@ -314,6 +332,7 @@ private:
 	FHttpRouteHandle JobCancelRoute;
 	FHttpRouteHandle LogsTailRoute;
 	FHttpRouteHandle ExecRoute;
+	FHttpRouteHandle ExecAliasRoute;
 	FHttpRouteHandle PieStartRoute;
 	FHttpRouteHandle PieStopRoute;
 	FHttpRouteHandle LegacyPieStartRoute;
@@ -349,6 +368,8 @@ private:
 	FHttpRouteHandle UObjectGetRoute;
 	FHttpRouteHandle UObjectSetRoute;
 	FHttpRouteHandle UObjectCallRoute;
+	FHttpRouteHandle ObjectSetPropertyRoute;
+	FHttpRouteHandle ObjectCallFunctionRoute;
 	FHttpRouteHandle ActorSpawnRoute;
 	FHttpRouteHandle ActorFindRoute;
 	FHttpRouteHandle AssetDuplicateRoute;

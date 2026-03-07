@@ -1,5 +1,15 @@
 #include "BlueprintAutomationToolkitModule.h"
 
+#include "Auth/TokenAuthMiddleware.h"
+#include "BlueprintAutomationToolkitSettings.h"
+#include "Commands/Actor/SpawnActorCommand.h"
+#include "Commands/Blueprint/ApplyGraphCommand.h"
+#include "Commands/CommandDispatcher.h"
+#include "Commands/Object/CallObjectFunctionCommand.h"
+#include "Commands/Object/SetObjectPropertyCommand.h"
+#include "Http/HttpRequestUtils.h"
+#include "Services/ObjectAutomationService.h"
+
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
@@ -2047,6 +2057,8 @@ namespace
 	}
 }
 
+FBlueprintAutomationToolkitModule::~FBlueprintAutomationToolkitModule() = default;
+
 bool FBlueprintAutomationToolkitModule::TryExecBatCommandDirect(UWorld* World, const FString& FullCommand, FStringOutputDevice& Out, bool& bOutOk)
 {
 	return ::TryExecBatCommandDirect(World, FullCommand, Out, bOutOk);
@@ -2186,6 +2198,7 @@ void FBlueprintAutomationToolkitModule::PersistSettings(bool bPersistAuthToken) 
 
 	GConfig->SetInt(TEXT("BlueprintAutomationToolkit"), TEXT("Port"), Port, GEditorPerProjectIni);
 	GConfig->SetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bServerEnabled"), bServerEnabled, GEditorPerProjectIni);
+	GConfig->SetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bRequireAuthToken"), bRequireAuthToken, GEditorPerProjectIni);
 	GConfig->SetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bPermissionPromptAnswered"), bPermissionPromptAnswered, GEditorPerProjectIni);
 	GConfig->SetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bAllowPythonExec"), bAllowPythonExec, GEditorPerProjectIni);
 	GConfig->SetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bEnableExecRoute"), bEnableExecRoute, GEditorPerProjectIni);
@@ -2255,6 +2268,14 @@ void FBlueprintAutomationToolkitModule::PersistSettings(bool bPersistAuthToken) 
 	const bool bWroteProjectSettingsToDisk = WriteProjectAuthSettingsToDisk(ProjectDefaultEditorIni, bSaveTokenInProjectSettings, DiskAuthTokenWriteMode, AuthToken);
 	GConfig->Flush(false, ProjectDefaultEditorIni);
 	GConfig->Flush(false, GEditorPerProjectIni);
+	if (UBlueprintAutomationToolkitSettings* Settings = GetMutableDefault<UBlueprintAutomationToolkitSettings>())
+	{
+		Settings->Port = Port;
+		Settings->bEnableServer = bServerEnabled;
+		Settings->bRequireAuthToken = bRequireAuthToken;
+		Settings->bSafeMode = bSafeModeEnabled;
+		Settings->SaveConfig();
+	}
 
 	FString ProjectTokenAfter;
 	bool bProjectSaveFlagAfter = false;
@@ -2337,12 +2358,100 @@ bool FBlueprintAutomationToolkitModule::ConfirmUnsafeOption(const FText& Message
 
 void FBlueprintAutomationToolkitModule::NotifySettingChanged()
 {
+	if (const UBlueprintAutomationToolkitSettings* Settings = GetDefault<UBlueprintAutomationToolkitSettings>())
+	{
+		Port = Settings->Port;
+		bServerEnabled = Settings->bEnableServer;
+		bRequireAuthToken = Settings->bRequireAuthToken;
+		bSafeModeEnabled = Settings->bSafeMode;
+	}
+
 	PersistSettings(true);
 	if (bServerRunning)
 	{
 		StopServer();
 		StartServer(false);
 	}
+}
+
+void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
+{
+	delete CommandDispatcher;
+	CommandDispatcher = new FCommandDispatcher();
+
+	CommandDispatcher->Register(TEXT("/blueprint/graph/apply"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FApplyGraphCommand>();
+	});
+
+	CommandDispatcher->Register(TEXT("/uobject/set"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		static const FObjectAutomationService Service;
+		return MakeUnique<FSetObjectPropertyCommand>(Service);
+	});
+	CommandDispatcher->Register(TEXT("/object/set-property"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		static const FObjectAutomationService Service;
+		return MakeUnique<FSetObjectPropertyCommand>(Service);
+	});
+
+	CommandDispatcher->Register(TEXT("/uobject/call"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		static const FObjectAutomationService Service;
+		return MakeUnique<FCallObjectFunctionCommand>(Service);
+	});
+	CommandDispatcher->Register(TEXT("/object/call-function"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		static const FObjectAutomationService Service;
+		return MakeUnique<FCallObjectFunctionCommand>(Service);
+	});
+
+	CommandDispatcher->Register(TEXT("/actor/spawn"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		static const FObjectAutomationService Service;
+		return MakeUnique<FSpawnActorCommand>(Service);
+	});
+}
+
+bool FBlueprintAutomationToolkitModule::DispatchAutomationCommandRoute(const FString& Endpoint, const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject)
+{
+	if (CommandDispatcher == nullptr)
+	{
+		OnComplete(MakeErrorResponse(500, ResolveOrCreateRequestId(Request), TEXT("dispatcher_unavailable"), TEXT("Command dispatcher is not initialized")));
+		return true;
+	}
+
+	FAutomationContext Context;
+	Context.RequestId = ResolveOrCreateRequestId(Request);
+	Context.Endpoint = Endpoint;
+	Context.Body = BodyObj;
+	Context.Module = this;
+	Context.bReturnRawObject = bReturnRawObject;
+
+	const FAutomationResult Result = CommandDispatcher->Dispatch(Endpoint, Context);
+	if (!Result.bSuccess)
+	{
+		if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
+		{
+			OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
+		}
+		else
+		{
+			OnComplete(MakeErrorResponse(Result.StatusCode, Context.RequestId, Result.ErrorCode, Result.ErrorMessage));
+		}
+		return true;
+	}
+
+	if (bReturnRawObject && Result.Data.IsValid() && Result.Data->Type == EJson::Object)
+	{
+		OnComplete(BAT::Http::MakeJsonResponse(Result.StatusCode, Result.Data->AsObject().ToSharedRef(), Context.RequestId));
+	}
+	else
+	{
+		BAT::Http::JsonOk(OnComplete, Result.Data, Result.StatusCode, Context.RequestId);
+	}
+
+	return true;
 }
 
 void FBlueprintAutomationToolkitModule::RegisterControlPanelTab()
@@ -2673,6 +2782,9 @@ TSharedRef<SDockTab> FBlueprintAutomationToolkitModule::SpawnControlPanelTab(con
 void FBlueprintAutomationToolkitModule::StartupModule()
 {
 	RegisterBATConsoleCommands();
+	RegisterAutomationCommands();
+	delete TokenAuthMiddleware;
+	TokenAuthMiddleware = new FTokenAuthMiddleware();
 
 	// In unattended (UAT) automation runs, restoring previously open asset tabs can open Blueprints/etc
 	// and has caused shutdown-time asserts (BlueprintEditor preview world teardown).
@@ -2699,6 +2811,13 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 	GConfig->GetInt(TEXT("BlueprintAutomationToolkit"), TEXT("Port"), Port, GEditorPerProjectIni);
 	const FString ProjectDefaultEditorIni = GetProjectDefaultEditorIniPath();
 	bProjectConfigTokenAvailable = false;
+	if (const UBlueprintAutomationToolkitSettings* Settings = GetDefault<UBlueprintAutomationToolkitSettings>())
+	{
+		Port = Settings->Port;
+		bServerEnabled = Settings->bEnableServer;
+		bRequireAuthToken = Settings->bRequireAuthToken;
+		bSafeModeEnabled = Settings->bSafeMode;
+	}
 
 	GConfig->GetInt(TEXT("BlueprintAutomationToolkit"), TEXT("Port"), Port, GEditorPerProjectIni);
 	if (!GConfig->GetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bSaveTokenInProjectSettings"), bSaveTokenInProjectSettings, ProjectDefaultEditorIni))
@@ -2714,6 +2833,7 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 		bProjectConfigTokenAvailable = true;
 	}
 	GConfig->GetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bServerEnabled"), bServerEnabled, GEditorPerProjectIni);
+	GConfig->GetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bRequireAuthToken"), bRequireAuthToken, GEditorPerProjectIni);
 	GConfig->GetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bPermissionPromptAnswered"), bPermissionPromptAnswered, GEditorPerProjectIni);
 	GConfig->GetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bAllowPythonExec"), bAllowPythonExec, GEditorPerProjectIni);
 	GConfig->GetBool(TEXT("BlueprintAutomationToolkit"), TEXT("bEnableExecRoute"), bEnableExecRoute, GEditorPerProjectIni);
@@ -2889,6 +3009,10 @@ void FBlueprintAutomationToolkitModule::ShutdownModule()
 {
 	UnregisterBATConsoleCommands();
 	UnregisterControlPanelTab();
+	delete CommandDispatcher;
+	CommandDispatcher = nullptr;
+	delete TokenAuthMiddleware;
+	TokenAuthMiddleware = nullptr;
 
 	if (Wander && Wander->Handle.IsValid())
 	{

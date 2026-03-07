@@ -79,6 +79,11 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(ExecRoute);
 		ExecRoute.Reset();
 	}
+	if (ExecAliasRoute.IsValid())
+	{
+		Router->UnbindRoute(ExecAliasRoute);
+		ExecAliasRoute.Reset();
+	}
 	if (PieStartRoute.IsValid())
 	{
 		Router->UnbindRoute(PieStartRoute);
@@ -249,10 +254,20 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(UObjectSetRoute);
 		UObjectSetRoute.Reset();
 	}
+	if (ObjectSetPropertyRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectSetPropertyRoute);
+		ObjectSetPropertyRoute.Reset();
+	}
 	if (UObjectCallRoute.IsValid())
 	{
 		Router->UnbindRoute(UObjectCallRoute);
 		UObjectCallRoute.Reset();
+	}
+	if (ObjectCallFunctionRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectCallFunctionRoute);
+		ObjectCallFunctionRoute.Reset();
 	}
 	if (ActorSpawnRoute.IsValid())
 	{

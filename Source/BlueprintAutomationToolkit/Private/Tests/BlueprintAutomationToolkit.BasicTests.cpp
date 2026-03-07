@@ -32,8 +32,8 @@ bool FBATOpenApiSpecExistsTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Docs"), TEXT("openapi.yaml"));
-	return TestTrue(TEXT("Resources/Docs/openapi.yaml must exist"), FPaths::FileExists(OpenApiPath));
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
+	return TestTrue(TEXT("Docs/openapi.yaml must exist"), FPaths::FileExists(OpenApiPath));
 }
 
 bool FBATOpenApiHasJobsAndLogsTest::RunTest(const FString& Parameters)
@@ -50,7 +50,7 @@ bool FBATOpenApiHasJobsAndLogsTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Docs"), TEXT("openapi.yaml"));
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
 	FString Spec;
 	if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
 	{
@@ -62,6 +62,7 @@ bool FBATOpenApiHasJobsAndLogsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /jobs/{jobId}"), Spec.Contains(TEXT("/jobs/{jobId}:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /logs/tail"), Spec.Contains(TEXT("/logs/tail:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /openapi"), Spec.Contains(TEXT("/openapi:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /ai/exec"), Spec.Contains(TEXT("/ai/exec:"), ESearchCase::CaseSensitive));
 	return true;
 }
 
@@ -79,7 +80,7 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Docs"), TEXT("openapi.yaml"));
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
 	FString Spec;
 	if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
 	{
@@ -89,6 +90,8 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("OpenAPI contains /blueprint/apply"), Spec.Contains(TEXT("/blueprint/apply:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/nodes"), Spec.Contains(TEXT("/blueprint/graph/nodes:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /object/set-property"), Spec.Contains(TEXT("/object/set-property:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /object/call-function"), Spec.Contains(TEXT("/object/call-function:"), ESearchCase::CaseSensitive));
 	return true;
 }
 
@@ -106,7 +109,7 @@ bool FBATOpenApiHasBlueprintSchemaPathTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Docs"), TEXT("openapi.yaml"));
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
 	FString Spec;
 	if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
 	{

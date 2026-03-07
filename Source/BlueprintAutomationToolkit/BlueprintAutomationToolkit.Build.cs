@@ -33,6 +33,7 @@ public class BlueprintAutomationToolkit : ModuleRules
 			"AssetTools",
 			"BlueprintGraph",
 			"CoreUObject",
+			"DeveloperSettings",
 			"DynamicMesh",
 			"Engine",
 			"GeometryCore",

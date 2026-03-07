@@ -4,11 +4,16 @@
 #include "Dom/JsonValue.h"
 #include "Templates/SharedPointer.h"
 
+class FBlueprintAutomationToolkitModule;
+
 struct FAutomationContext
 {
 	FString RequestId;
+	FString Endpoint;
 	TSharedPtr<class FJsonObject> Body;
 	TMap<FString, FString> StringParams;
+	FBlueprintAutomationToolkitModule* Module = nullptr;
+	bool bReturnRawObject = false;
 };
 
 struct FAutomationResult

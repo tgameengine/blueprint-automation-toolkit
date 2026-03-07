@@ -1075,7 +1075,7 @@ void FBlueprintAutomationToolkitModule::BindEditorRoutes()
 				return true;
 			}
 
-			const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Docs"), TEXT("openapi.yaml"));
+			const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
 			FString Spec;
 			if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
 			{

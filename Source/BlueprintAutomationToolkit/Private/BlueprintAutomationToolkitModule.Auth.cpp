@@ -1,5 +1,6 @@
 #include "BlueprintAutomationToolkitModule.h"
 
+#include "Auth/TokenAuthMiddleware.h"
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Dom/JsonObject.h"
@@ -95,142 +96,16 @@ namespace
 
 bool FBlueprintAutomationToolkitModule::IsRequestAllowed(const FHttpServerRequest& Request, FString* OutDenyReason, FString* OutClientKey) const
 {
-	if (OutDenyReason)
-	{
-		OutDenyReason->Reset();
-	}
-
-	if (!Request.PeerAddress.IsValid())
+	if (TokenAuthMiddleware == nullptr)
 	{
 		if (OutDenyReason)
 		{
-			*OutDenyReason = TEXT("peer_address_invalid");
+			*OutDenyReason = TEXT("auth_middleware_unavailable");
 		}
 		return false;
 	}
 
-	const FString Peer = Request.PeerAddress->ToString(false).ToLower();
-	if (OutClientKey)
-	{
-		*OutClientKey = Peer;
-	}
-
-	const bool bIsLoopback =
-		(Peer == TEXT("127.0.0.1")) ||
-		(Peer == TEXT("localhost")) ||
-		(Peer == TEXT("::1")) ||
-		Peer.StartsWith(TEXT("::ffff:127.0.0.1"));
-
-	if (!bIsLoopback)
-	{
-		if (OutDenyReason)
-		{
-			*OutDenyReason = TEXT("not_loopback");
-		}
-		return false;
-	}
-
-	// Defense-in-depth: reject forwarded headers so local reverse proxies cannot spoof remote callers.
-	if (FindHeaderCaseInsensitive(Request.Headers, TEXT("x-forwarded-for")) != nullptr)
-	{
-		if (OutDenyReason)
-		{
-			*OutDenyReason = TEXT("forwarded_header_denied");
-		}
-		return false;
-	}
-
-	const TArray<FString>* HeaderValues = FindHeaderCaseInsensitive(Request.Headers, TEXT("authorization"));
-	if (!HeaderValues || HeaderValues->Num() <= 0)
-	{
-		if (OutDenyReason)
-		{
-			*OutDenyReason = TEXT("auth_missing");
-		}
-		return false;
-	}
-
-	const FString RawToken = ParseBearerToken((*HeaderValues)[0]);
-	if (RawToken.IsEmpty())
-	{
-		if (OutDenyReason)
-		{
-			*OutDenyReason = TEXT("auth_invalid_format");
-		}
-		return false;
-	}
-
-	FTokenRecord Token;
-	if (!TryResolveToken(RawToken, Token))
-	{
-		if (OutDenyReason)
-		{
-			*OutDenyReason = TEXT("auth_invalid");
-		}
-		return false;
-	}
-
-	if (Token.bHasExpiry && FDateTime::UtcNow() > Token.ExpiresUtc)
-	{
-		if (OutDenyReason)
-		{
-			*OutDenyReason = TEXT("auth_expired");
-		}
-		return false;
-	}
-
-	if (bEnableHmacAuth && !Token.Secret.IsEmpty())
-	{
-		const FString Timestamp = ReadHeaderValueCaseInsensitive(Request.Headers, TEXT("x-timestamp"));
-		const FString Signature = ReadHeaderValueCaseInsensitive(Request.Headers, TEXT("x-signature"));
-		if (Timestamp.IsEmpty() || Signature.IsEmpty())
-		{
-			if (OutDenyReason)
-			{
-				*OutDenyReason = TEXT("auth_signature_missing");
-			}
-			return false;
-		}
-
-		FDateTime ParsedTs;
-		if (!FDateTime::ParseIso8601(*Timestamp, ParsedTs))
-		{
-			if (OutDenyReason)
-			{
-				*OutDenyReason = TEXT("auth_signature_bad_timestamp");
-			}
-			return false;
-		}
-
-		const FTimespan Skew = (FDateTime::UtcNow() - ParsedTs).GetDuration();
-		if (Skew.GetTotalSeconds() > (double)MaxClockSkewSeconds)
-		{
-			if (OutDenyReason)
-			{
-				*OutDenyReason = TEXT("auth_signature_replay");
-			}
-			return false;
-		}
-
-		const FString BodyHash = FMD5::HashBytes(Request.Body.GetData(), Request.Body.Num());
-		const FString Canonical = FString::Printf(TEXT("%s:%s:%s"), *Token.Secret, *Timestamp, *BodyHash);
-		const FString Expected = FMD5::HashAnsiString(*Canonical);
-		if (!Expected.Equals(Signature, ESearchCase::CaseSensitive))
-		{
-			if (OutDenyReason)
-			{
-				*OutDenyReason = TEXT("auth_signature_invalid");
-			}
-			return false;
-		}
-	}
-
-	if (OutClientKey)
-	{
-		*OutClientKey = RawToken;
-	}
-
-	return true;
+	return TokenAuthMiddleware->Authorize(*this, Request, OutDenyReason, OutClientKey);
 }
 
 FString FBlueprintAutomationToolkitModule::ReadHeaderValueCaseInsensitive(const TMap<FString, TArray<FString>>& Headers, const TCHAR* Name) const
@@ -559,6 +434,7 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/set-defaults"), ESearchCase::CaseSensitive)
@@ -590,7 +466,7 @@ bool FBlueprintAutomationToolkitModule::IsPieSessionRunning() const
 uint32 FBlueprintAutomationToolkitModule::GetRequestRequiredPermissions(const FString& Endpoint, const TSharedPtr<FJsonObject>& BodyObj) const
 {
 	uint32 RequiredPermissions = GetRouteRequiredPermissions(Endpoint);
-	if (Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive) && BodyObj.IsValid())
+	if ((Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/exec"), ESearchCase::CaseSensitive)) && BodyObj.IsValid())
 	{
 		FString PythonCode;
 		BodyObj->TryGetStringField(TEXT("python"), PythonCode);
@@ -619,7 +495,9 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	}
 	if (Endpoint.Equals(TEXT("/uobject/get"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive))
+		|| Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Editor);
 	}
@@ -645,7 +523,7 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	{
 		return PM(EBATPermission::Pie);
 	}
-	if (Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive))
+	if (Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/exec"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Exec);
 	}
@@ -923,7 +801,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/ai/exec"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/exec"), ESearchCase::CaseSensitive))
 	{
 		FString Command;
 		FString Python;
@@ -952,7 +830,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
 		if (!BodyObj->TryGetStringField(TEXT("path"), Path) || Path.TrimStartAndEnd().IsEmpty())
@@ -967,7 +845,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
 		FString Function;
