@@ -742,19 +742,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("saveAsset"), TEXT("/asset/save"));
 	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
 
-	TArray<TSharedPtr<FJsonValue>> DeprecatedRoutes;
-	for (const TCHAR* Route : {
-		TEXT("/uobject/get"),
-		TEXT("/uobject/set"),
-		TEXT("/uobject/call"),
-		TEXT("/object/list-properties"),
-		TEXT("/object/list-functions"),
-		TEXT("/blueprint/save"),
-		TEXT("/blueprint/compile_save") })
-	{
-		DeprecatedRoutes.Add(MakeShared<FJsonValueString>(Route));
-	}
-	Data->SetArrayField(TEXT("deprecatedRoutes"), DeprecatedRoutes);
+	Data->SetArrayField(TEXT("deprecatedRoutes"), TArray<TSharedPtr<FJsonValue>>());
 
 	TSharedPtr<FJsonObject> Capabilities;
 	if (const TSharedPtr<FJsonObject>* CapabilitiesPtr = nullptr; Data->TryGetObjectField(TEXT("capabilities"), CapabilitiesPtr) && CapabilitiesPtr && CapabilitiesPtr->IsValid())
@@ -964,15 +952,12 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/set-defaults"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/graph/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/blueprint/save"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/remove"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/replace"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/node/delete"), ESearchCase::CaseSensitive))
@@ -1029,14 +1014,9 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 		}
 		return PM(EBATPermission::Blueprint);
 	}
-	if (Endpoint.Equals(TEXT("/uobject/get"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
+	if (Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/describe"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/get"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/list-properties"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/list-functions"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
 	{
@@ -1274,9 +1254,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/blueprint/save"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive))
 	{
 		FString Blueprint;
 		if (!BodyObj->TryGetStringField(TEXT("blueprint"), Blueprint) || Blueprint.TrimStartAndEnd().IsEmpty())
@@ -1356,22 +1334,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/uobject/get"), ESearchCase::CaseSensitive))
-	{
-		FString Path;
-		if (!BodyObj->TryGetStringField(TEXT("path"), Path) || Path.TrimStartAndEnd().IsEmpty())
-		{
-			OutError = TEXT("'path' is required");
-			return false;
-		}
-		const TArray<TSharedPtr<FJsonValue>>* Properties = nullptr;
-		if (!BodyObj->TryGetArrayField(TEXT("properties"), Properties) || !Properties || Properties->Num() <= 0)
-		{
-			OutError = TEXT("'properties' array is required");
-			return false;
-		}
-	}
-	else if (Endpoint.Equals(TEXT("/uobject/set"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
 		if (!BodyObj->TryGetStringField(TEXT("path"), Path) || Path.TrimStartAndEnd().IsEmpty())
@@ -1386,7 +1349,7 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/uobject/call"), ESearchCase::CaseSensitive) || Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
 		FString Function;

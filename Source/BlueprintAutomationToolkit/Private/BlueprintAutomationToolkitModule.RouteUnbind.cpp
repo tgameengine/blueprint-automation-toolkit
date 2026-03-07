@@ -179,16 +179,6 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(BlueprintCompileRoute);
 		BlueprintCompileRoute.Reset();
 	}
-	if (BlueprintSaveRoute.IsValid())
-	{
-		Router->UnbindRoute(BlueprintSaveRoute);
-		BlueprintSaveRoute.Reset();
-	}
-	if (BlueprintCompileSaveRoute.IsValid())
-	{
-		Router->UnbindRoute(BlueprintCompileSaveRoute);
-		BlueprintCompileSaveRoute.Reset();
-	}
 	if (BlueprintSchemaRoute.IsValid())
 	{
 		Router->UnbindRoute(BlueprintSchemaRoute);
@@ -249,16 +239,6 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(BlueprintNodeDescribeRoute);
 		BlueprintNodeDescribeRoute.Reset();
 	}
-	if (UObjectGetRoute.IsValid())
-	{
-		Router->UnbindRoute(UObjectGetRoute);
-		UObjectGetRoute.Reset();
-	}
-	if (UObjectSetRoute.IsValid())
-	{
-		Router->UnbindRoute(UObjectSetRoute);
-		UObjectSetRoute.Reset();
-	}
 	if (ObjectResolveRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectResolveRoute);
@@ -274,25 +254,10 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(ObjectSetPropertyRoute);
 		ObjectSetPropertyRoute.Reset();
 	}
-	if (UObjectCallRoute.IsValid())
-	{
-		Router->UnbindRoute(UObjectCallRoute);
-		UObjectCallRoute.Reset();
-	}
 	if (ObjectCallFunctionRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectCallFunctionRoute);
 		ObjectCallFunctionRoute.Reset();
-	}
-	if (ObjectListPropertiesRoute.IsValid())
-	{
-		Router->UnbindRoute(ObjectListPropertiesRoute);
-		ObjectListPropertiesRoute.Reset();
-	}
-	if (ObjectListFunctionsRoute.IsValid())
-	{
-		Router->UnbindRoute(ObjectListFunctionsRoute);
-		ObjectListFunctionsRoute.Reset();
 	}
 	if (ActorSpawnRoute.IsValid())
 	{

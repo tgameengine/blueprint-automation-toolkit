@@ -374,8 +374,6 @@ private:
 	FHttpRouteHandle BlueprintComponentsRemoveRoute;
 	FHttpRouteHandle BlueprintComponentsReplaceRoute;
 	FHttpRouteHandle BlueprintCompileRoute;
-	FHttpRouteHandle BlueprintSaveRoute;
-	FHttpRouteHandle BlueprintCompileSaveRoute;
 	FHttpRouteHandle BlueprintSchemaRoute;
 	FHttpRouteHandle BlueprintGraphsRoute;
 	FHttpRouteHandle BlueprintGraphNodesRoute;
@@ -388,16 +386,11 @@ private:
 	FHttpRouteHandle BlueprintPinSetDefaultRoute;
 	FHttpRouteHandle BlueprintNodeDeleteRoute;
 	FHttpRouteHandle BlueprintNodeDescribeRoute;
-	FHttpRouteHandle UObjectGetRoute;
-	FHttpRouteHandle UObjectSetRoute;
-	FHttpRouteHandle UObjectCallRoute;
 	FHttpRouteHandle ObjectResolveRoute;
 	FHttpRouteHandle ObjectDescribeRoute;
 	FHttpRouteHandle ObjectGetRoute;
 	FHttpRouteHandle ObjectSetPropertyRoute;
 	FHttpRouteHandle ObjectCallFunctionRoute;
-	FHttpRouteHandle ObjectListPropertiesRoute;
-	FHttpRouteHandle ObjectListFunctionsRoute;
 	FHttpRouteHandle ActorSpawnRoute;
 	FHttpRouteHandle ActorFindRoute;
 	FHttpRouteHandle AssetDuplicateRoute;

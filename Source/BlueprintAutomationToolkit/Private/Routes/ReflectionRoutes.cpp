@@ -125,44 +125,4 @@ void FBlueprintAutomationToolkitModule::BindReflectionRoutes()
 			OnComplete(MakeCanonicalResponseFromAutomationResult(Result, RequestId));
 			return true;
 		}));
-
-	ObjectListPropertiesRoute = Router->BindRoute(
-		FHttpPath(TEXT("/object/list-properties")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/list-properties")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_json"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/object/list-properties"), Request, OnComplete, BodyObj, true);
-		}));
-
-	ObjectListFunctionsRoute = Router->BindRoute(
-		FHttpPath(TEXT("/object/list-functions")),
-		EHttpServerRequestVerbs::VERB_POST,
-		FHttpRequestHandler::CreateLambda([this](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
-		{
-			if (!ValidateAndHandleRequest(Request, OnComplete, TEXT("/object/list-functions")))
-			{
-				return true;
-			}
-
-			TSharedPtr<FJsonObject> BodyObj;
-			if (!BAT::Http::TryParseJsonBody(Request.Body, BodyObj) || !BodyObj.IsValid())
-			{
-				OnComplete(MakeErrorResponse(EHttpServerResponseCodes::BadRequest, TEXT("bad_json"), TEXT("Invalid JSON body")));
-				return true;
-			}
-
-			return DispatchAutomationCommandRoute(TEXT("/object/list-functions"), Request, OnComplete, BodyObj, true);
-		}));
 }

@@ -272,16 +272,15 @@ Canonical routes:
 - `POST /blueprint/compile`
 - `POST /asset/save`
 
-Legacy and auxiliary routes:
+Auxiliary routes:
 
-- Legacy reflection routes such as `POST /uobject/get`, `POST /uobject/set`, `POST /uobject/call`, `POST /object/list-properties`, and `POST /object/list-functions` remain available for compatibility, but new clients should prefer the canonical routes above.
 - Gameplay/demo routes such as wander, teleport, and actor shoot remain supported as optional auxiliary routes. They are not the core agent protocol.
 
 Example agent flow:
 
 1. Call `GET /engine/discover` to confirm the editor is reachable, safe mode state, and the recommended route flow.
 2. Call `POST /object/resolve` with an object path, soft object path, or actor name to obtain a stable object reference.
-3. Call `POST /object/list-properties` on that resolved object to inspect writable/readable fields.
+3. Call `POST /object/describe` on that resolved object to inspect writable/readable fields and callable functions.
 4. Use the appropriate action endpoint, such as `POST /object/set-property`, `POST /object/call-function`, or a Blueprint/editor route, based on the discovered capabilities.
 
 Animation authoring and AnimGraph edits are Unreal forward-axis aware.
@@ -975,23 +974,14 @@ Request body:
 { "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor" }
 ```
 
-#### `POST /blueprint/save`
-
-Saves the Blueprint’s package to disk.
-
-Request body:
-
-```json
-{ "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor" }
-```
-
 ## API-First Graph Flow
 
 Primary sequence (no external scripts):
 
 1. `POST /blueprint/graph/apply`
-2. `POST /blueprint/compile_save`
-3. `GET /blueprint/graph/links?blueprint=<path>&graph=<name>`
+2. `POST /blueprint/compile`
+3. `POST /asset/save`
+4. `GET /blueprint/graph/links?blueprint=<path>&graph=<name>`
 
 Raw HTTP example for graph apply:
 

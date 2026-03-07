@@ -193,10 +193,15 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /object/resolve"), Spec.Contains(TEXT("/object/resolve:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/describe"), Spec.Contains(TEXT("/object/describe:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/get"), Spec.Contains(TEXT("/object/get:"), ESearchCase::CaseSensitive));
-	TestTrue(TEXT("OpenAPI contains /object/list-properties"), Spec.Contains(TEXT("/object/list-properties:"), ESearchCase::CaseSensitive));
-	TestTrue(TEXT("OpenAPI contains /object/list-functions"), Spec.Contains(TEXT("/object/list-functions:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/set-property"), Spec.Contains(TEXT("/object/set-property:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /object/call-function"), Spec.Contains(TEXT("/object/call-function:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /uobject/get"), Spec.Contains(TEXT("/uobject/get:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /uobject/set"), Spec.Contains(TEXT("/uobject/set:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /uobject/call"), Spec.Contains(TEXT("/uobject/call:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /object/list-properties"), Spec.Contains(TEXT("/object/list-properties:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /object/list-functions"), Spec.Contains(TEXT("/object/list-functions:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /blueprint/save"), Spec.Contains(TEXT("/blueprint/save:"), ESearchCase::CaseSensitive));
+	TestFalse(TEXT("OpenAPI removes /blueprint/compile_save"), Spec.Contains(TEXT("/blueprint/compile_save:"), ESearchCase::CaseSensitive));
 	return true;
 }
 
@@ -254,10 +259,10 @@ bool FBATPermissionMapCoversBlueprintCompileSaveTest::RunTest(const FString& Par
 {
 	FBlueprintAutomationToolkitModule Module;
 	const uint32 ExpectedMask =
-		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Blueprint) |
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Editor) |
 		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
 
-	TestEqual(TEXT("/blueprint/compile_save requires Blueprint and Filesystem permissions"), Module.Test_GetRouteRequiredPermissions(TEXT("/blueprint/compile_save")), ExpectedMask);
+	TestEqual(TEXT("/asset/save requires Editor and Filesystem permissions"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/save")), ExpectedMask);
 	return true;
 }
 
@@ -330,16 +335,16 @@ bool FBATPieEditBlockRouteClassificationTest::RunTest(const FString& Parameters)
 	FBlueprintAutomationToolkitModule Module;
 
 	TestTrue(TEXT("/asset/duplicate is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/duplicate")));
-	TestTrue(TEXT("/uobject/set is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/uobject/set")));
+	TestTrue(TEXT("/object/set-property is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/object/set-property")));
 	TestTrue(TEXT("/blueprint/set-defaults is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/set-defaults")));
 	TestTrue(TEXT("/blueprint/pin/connect is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/pin/connect")));
-	TestTrue(TEXT("/blueprint/compile_save is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/compile_save")));
+	TestTrue(TEXT("/blueprint/compile is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/compile")));
 
 	TestFalse(TEXT("/blueprint/schema remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/schema")));
 	TestFalse(TEXT("/blueprint/graph/nodes remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/graph/nodes")));
 	TestFalse(TEXT("/blueprint/node/describe remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/node/describe")));
 	TestFalse(TEXT("/object/describe remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/object/describe")));
-	TestFalse(TEXT("/uobject/get remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/uobject/get")));
+	TestFalse(TEXT("/object/get remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/object/get")));
 	TestFalse(TEXT("/pie/start remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/pie/start")));
 	return true;
 }

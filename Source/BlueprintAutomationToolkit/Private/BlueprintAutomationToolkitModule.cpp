@@ -2389,12 +2389,6 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 	{
 		return MakeUnique<FApplyGraphCommand>();
 	});
-
-	CommandDispatcher->Register(TEXT("/uobject/set"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		static const FObjectAutomationService Service;
-		return MakeUnique<FSetObjectPropertyCommand>(Service);
-	});
 	CommandDispatcher->Register(TEXT("/object/resolve"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FGetObjectCommand>();
@@ -2407,23 +2401,9 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 	{
 		return MakeUnique<FDescribeObjectCommand>();
 	});
-	CommandDispatcher->Register(TEXT("/object/list-properties"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FListPropertiesCommand>();
-	});
 	CommandDispatcher->Register(TEXT("/object/set-property"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FSetPropertyCommand>();
-	});
-
-	CommandDispatcher->Register(TEXT("/uobject/call"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		static const FObjectAutomationService Service;
-		return MakeUnique<FCallObjectFunctionCommand>(Service);
-	});
-	CommandDispatcher->Register(TEXT("/object/list-functions"), []() -> TUniquePtr<FAutomationCommand>
-	{
-		return MakeUnique<FListFunctionsCommand>();
 	});
 	CommandDispatcher->Register(TEXT("/object/call-function"), []() -> TUniquePtr<FAutomationCommand>
 	{
