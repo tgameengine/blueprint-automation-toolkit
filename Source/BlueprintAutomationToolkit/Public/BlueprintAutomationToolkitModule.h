@@ -408,7 +408,6 @@ private:
 	FHttpRouteHandle EditorFocusRoute;
 	FHttpRouteHandle AssetDuplicateRoute;
 	FHttpRouteHandle AssetSaveRoute;
-	FHttpRouteHandle AssetDeleteRoute;
 	FHttpRouteHandle AssetCreateRoute;
 	FHttpRouteHandle PcgSpawnSpheresRoute;
 	FHttpRouteHandle ActionsListRoute;
