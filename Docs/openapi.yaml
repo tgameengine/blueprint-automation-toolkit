@@ -1,11 +1,12 @@
 openapi: 3.0.3
 info:
-  title: Blueprint Automation Toolkit
+  title: Blueprint Automation Toolkit Editor Bridge
   version: 0.3.0
   description: |
-    Editor-only localhost AI automation API for Unreal Editor.
-    The canonical agent flow is discover -> inspect -> mutate -> blueprint graph read/apply -> compile_save.
+    Secure typed localhost automation bridge for Unreal Editor.
+    The canonical agent flow is discover -> inspect -> resolve -> mutate -> compile or validate -> inspect diagnostics -> save or focus.
     Mutating editor-asset routes return 409 pie_edit_blocked while PIE is running; stop PIE before retrying asset or Blueprint edits.
+    Optional advanced surfaces such as exec or jobs are not part of the core bridge workflow and may be policy-gated or disabled.
 servers:
   - url: http://127.0.0.1:9876
 security:
@@ -39,8 +40,8 @@ paths:
           description: OpenAPI YAML
   /ai/exec:
     post:
-      summary: Execute console commands or optional Python inside the editor
-      description: Remote execution endpoint. Requires exec permission and returns 409 pie_edit_blocked for editor mutations that are disallowed during PIE.
+      summary: Optional legacy execution surface
+      description: Optional advanced endpoint. Not part of the core editor bridge workflow. Requires exec permission and may be disabled by policy.
       requestBody:
         required: true
         content:
@@ -339,32 +340,6 @@ paths:
       responses:
         '200':
           description: Save result
-  /asset/delete:
-    post:
-      summary: Delete one or more assets
-      description: Returns 409 pie_edit_blocked while PIE is running.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                path:
-                  type: string
-                paths:
-                  type: array
-                  items:
-                    type: string
-                force:
-                  type: boolean
-                  description: Force delete assets even when Unreal still sees editor-side references.
-              anyOf:
-                - required: [path]
-                - required: [paths]
-      responses:
-        '200':
-          description: Delete result
   /asset/create:
     post:
       summary: Create an asset instance from a UObject class
@@ -923,19 +898,42 @@ components:
       scheme: bearer
       bearerFormat: token
   schemas:
-    Error:
+    Issue:
       type: object
-      required: [code, message, details, requestId]
+      required: [code, message, recoverable]
       properties:
         code:
           type: string
         message:
           type: string
+        recoverable:
+          type: boolean
+        target:
+          type: string
+        suggestedAction:
+          type: string
         details:
           type: object
           additionalProperties: true
+    ApiEnvelope:
+      type: object
+      required: [ok, requestId, data, warnings, errors]
+      properties:
+        ok:
+          type: boolean
         requestId:
           type: string
+        data:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
     ReflectionObjectRequest:
       type: object
       properties:
@@ -1024,34 +1022,8 @@ components:
               type: object
               additionalProperties: true
     ReflectionStructuredResponse:
-      type: object
-      required: [success, warnings]
-      properties:
-        success:
-          type: boolean
-        warnings:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        data:
-          type: object
-          additionalProperties: true
-        error:
-          type: object
-          required: [code, message, retryable]
-          properties:
-            code:
-              type: string
-            message:
-              type: string
-            retryable:
-              type: boolean
-            suggestedAction:
-              type: string
-            details:
-              type: object
-              additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
     JobSubmitRequest:
       type: object
       required: [kind, payload]

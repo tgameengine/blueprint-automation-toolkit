@@ -1,6 +1,12 @@
-# Marketplace Notes: Security and Defaults
+# Marketplace Notes: Secure Editor Bridge
 
 This document summarizes the plugin security posture and safe defaults for marketplace review.
+
+Product framing for review:
+
+- Secure AI control of Unreal Editor assets, Blueprints, animation references, skeleton data, and editor state through a typed localhost API.
+- Editor-only, localhost-only, bearer-token-authenticated, policy-gated automation bridge.
+- Optional advanced capabilities such as exec or Python are disabled by default and are not the core product surface.
 
 ## Security model
 
@@ -38,13 +44,13 @@ Unsafe mode (`bSafeModeEnabled=false`):
 - Command separator/injection patterns are still blocked (for example newlines, `&&`, `;`, pipes).
 - Python execution is still disabled unless `bAllowPythonExec=true`.
 
-## Exec route policy
+## Optional exec route policy
 
 - `/ai/exec` is opt-in via `bEnableExecRoute=true`.
 - When disabled, requests return:
 
 ```json
-{ "ok": false, "error": "exec_route_disabled" }
+{ "ok": false, "requestId": "...", "data": {}, "warnings": [], "errors": [{ "code": "exec_route_disabled", "message": "...", "recoverable": false }] }
 ```
 
 ## Python policy

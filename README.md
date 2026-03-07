@@ -1,8 +1,8 @@
 # Blueprint Automation Toolkit (Editor Plugin)
 
-Blueprint Automation Toolkit is an **Editor-only**, **localhost-only**, token-authenticated HTTP automation platform for Unreal Editor.
+Blueprint Automation Toolkit is an **Editor-only**, **localhost-only**, token-authenticated HTTP implementation bridge for Unreal Editor.
 
-The primary use case is Copilot or another local AI agent driving the editor through a small reflective API instead of feature-specific gameplay commands.
+The primary use case is a local AI agent driving Unreal Editor through a small set of deep, generic primitives across assets, reflected objects, Blueprints, animation references, skeleton data, and editor scene state instead of feature-specific gameplay commands.
 
 The preferred workflow is:
 
@@ -11,12 +11,13 @@ The preferred workflow is:
 3. Resolve or describe targets with `POST /object/resolve` or `GET /object/describe`
 4. Read or mutate reflected state with `GET /object/get_property`, `POST /object/set_property`, and `POST /object/call_function`
 5. Read or apply Blueprint graph data with `GET /blueprint/graph/read` and `POST /blueprint/graph/apply`
-6. Persist Blueprint changes with `POST /blueprint/compile_save`
-7. Drive editor selection or PIE with `POST /editor/select`, `POST /editor/focus`, `POST /pie/start`, and `POST /pie/stop`
+6. Compile or validate changes and inspect diagnostics
+7. Persist assets or Blueprints with `POST /asset/save` or `POST /blueprint/compile_save`
+8. Drive editor selection or focus with `POST /editor/select` and `POST /editor/focus`
 
-Compile-related routes now return structured compiler diagnostics with `compileDiagnostics.errorCount`, `compileDiagnostics.warningCount`, and normalized `errors` and `warnings` entries built from Unreal's compiler log.
+Compile-related routes return structured diagnostics with normalized `warnings` and `errors` entries built from Unreal's compiler log and policy layer.
 
-The internal services stay layered, but the public API is intentionally small and reflective so the platform scales by data, not by adding endless one-off routes.
+The internal services stay layered, and the public API is intentionally small and reflective so the platform scales by data, not by adding endless one-off routes.
 
 ## Core API
 
@@ -96,21 +97,29 @@ All automation endpoints return a structured JSON envelope:
 {
 	"ok": true,
 	"requestId": "2a4b6f4f-0c7a-4a91-b793-8c7d8c65f3a3",
-	"data": {}
+	"data": {},
+	"warnings": [],
+	"errors": []
 }
 ```
 
-Failures use the same top-level shape with a normalized error object:
+Failures use the same top-level shape with structured issue entries:
 
 ```json
 {
 	"ok": false,
 	"requestId": "2a4b6f4f-0c7a-4a91-b793-8c7d8c65f3a3",
-	"error": "compile_failed",
-	"details": {
-		"message": "Blueprint compile failed.",
-		"errors": []
-	}
+	"data": {},
+	"warnings": [],
+	"errors": [
+		{
+			"code": "blueprint_compile_failed",
+			"message": "Blueprint compile failed.",
+			"recoverable": true,
+			"suggestedAction": "inspect_target",
+			"details": {}
+		}
+	]
 }
 ```
 
@@ -157,6 +166,7 @@ Typical success response:
 ```json
 {
 	"ok": true,
+	"requestId": "2a4b6f4f-0c7a-4a91-b793-8c7d8c65f3a3",
 	"data": {
 		"blueprint": "/Game/BP_Spawner.BP_Spawner",
 		"graph": "EventGraph",
@@ -174,7 +184,9 @@ Typical success response:
 		},
 		"warnings": [],
 		"errors": []
-	}
+	},
+	"warnings": [],
+	"errors": []
 }
 ```
 
@@ -185,11 +197,11 @@ Typical success response:
 - Run while the **Unreal Editor is running**.
 - Serve HTTP requests on **loopback only** (`127.0.0.1` / `::1`).
 - Let an external agent discover capabilities, limits, permissions, and preferred routes.
-- Resolve objects, inspect reflected properties/functions, read current values, and mutate safe editor objects.
+- Resolve assets and objects, inspect reflected properties/functions, read current values, and mutate safe editor objects.
 - Create and modify Blueprint assets and Blueprint graphs in the editor.
-- Compile Blueprints explicitly and save assets explicitly.
-- Start/stop PIE and execute carefully gated editor commands when enabled.
-- Keep legacy gameplay/demo endpoints available as optional auxiliary routes.
+- Inspect and update asset references that participate in animation and skeletal workflows where generic editor semantics are exposed.
+- Compile Blueprints explicitly, validate references, and save assets explicitly.
+- Select and focus editor targets, with optional advanced surfaces gated behind explicit policy.
 
 ### What it cannot do (non-goals)
 
@@ -209,12 +221,14 @@ Typical success response:
 - Accepts requests **only from loopback** (`127.0.0.1` / `::1`).
 - Requires bearer token authentication via `Authorization: Bearer <token>`.
 - Shows a permission dialog before starting the HTTP listener.
-- Applies request body limits and per-client rate limits for all `/ai/*` endpoints.
+- Applies request body limits and per-client rate limits to the automation bridge surface.
 - Adds route-level permission gates (`permissions.*`) and optional scoped tokens.
 - Safe mode policy:
 	- Safe mode ON: commands must pass strict allow-list checks and Python is blocked.
 	- Safe mode OFF: broader commands are allowed, but separator/injection blocklist still applies.
 	- Python requires both `bAllowPythonExec=true` and safe mode OFF.
+
+Optional advanced routes such as `/ai/exec` are not part of the core editor bridge workflow and may be disabled or hidden by policy.
 
 Do not change the bind address to `0.0.0.0` unless you also implement stronger authentication and you fully understand the risk.
 

@@ -1,6 +1,6 @@
-# Plan API
+# Editor Bridge API
 
-This document describes the generic, plan-based automation API.
+This document describes the bridge-oriented automation API for Unreal Editor.
 
 All operations are API-first and run inside the plugin. External script files are not required.
 
@@ -18,11 +18,13 @@ All requests are validated by plugin endpoints:
 - Rate limiting
 - Safe mode checks
 
-## Primary Blueprint Graph Flow
+## Primary Agent Loop
 
-1. `POST /blueprint/graph/apply`
-2. `POST /blueprint/compile_save`
-3. `GET /blueprint/graph/links?blueprint=<path>&graph=<name>`
+1. `GET /engine/discover`
+2. `POST /object/resolve` or `GET /object/describe`
+3. `POST /blueprint/graph/apply` or another typed mutation route
+4. `POST /blueprint/compile_save` or another validation/save route
+5. Re-read state to verify the result
 
 ## Raw HTTP Example
 
@@ -84,8 +86,11 @@ All endpoints use this response envelope:
 ```json
 {
   "ok": true,
-  "errors": [],
+  "requestId": "...",
+  "data": {},
   "warnings": [],
-  "data": {}
+  "errors": []
 }
 ```
+
+Failures use the same top-level shape and place structured issues in `errors`.
