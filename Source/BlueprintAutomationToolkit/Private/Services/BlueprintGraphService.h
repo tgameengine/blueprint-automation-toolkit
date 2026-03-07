@@ -22,10 +22,4 @@ class FBlueprintGraphService
 {
 public:
 	static FAutomationResult ApplyGraphPatch(const FBlueprintGraphApplyRequest& Request);
-
-private:
-	static UBlueprint* LoadBlueprintAsset(const FString& BlueprintPath, FString& OutResolvedPath);
-	static UEdGraph* ResolveTargetGraph(UBlueprint* Blueprint, const FString& GraphName);
-	static UEdGraphNode* FindNodeByUasId(UEdGraph* Graph, const FString& NodeId);
-	static void SetNodeUasId(UEdGraphNode* Node, const FString& NodeId);
 };
