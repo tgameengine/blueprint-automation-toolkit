@@ -122,6 +122,8 @@ private:
 	void BindExecRoute();
 	void BindPieControlRoutes();
 	void BindActorInfoRoutes();
+	void BindActorFindRoute();
+	void BindActorSpawnRoute();
 	void BindBlueprintRoutes();
 	void BindUObjectRoutes();
 	void BindAutomationCoreRoutes();
