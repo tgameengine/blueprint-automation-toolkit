@@ -2,6 +2,8 @@
 
 #include "BlueprintAutomationToolkitModule.h"
 
+#include "Commands/Reflection/CallFunctionCommand.h"
+#include "Commands/Reflection/SetPropertyCommand.h"
 #include "Commands/AutomationCommand.h"
 #include "Dom/JsonObject.h"
 #include "Misc/AutomationTest.h"
@@ -40,6 +42,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSetScalarPropertyTest, "Blueprint
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSetStructPropertyTest, "BlueprintAutomationToolkit.Reflection.SetStructProperty", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListFunctionsTest, "BlueprintAutomationToolkit.Reflection.ListFunctions", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionCallSafeFunctionTest, "BlueprintAutomationToolkit.Reflection.CallSafeFunction", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSetPropertyCommandTest, "BlueprintAutomationToolkit.Reflection.SetPropertyCommand", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionCallFunctionCommandTest, "BlueprintAutomationToolkit.Reflection.CallFunctionCommand", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionSafeModeBlockingTest, "BlueprintAutomationToolkit.Reflection.SafeModeBlocking", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionInvalidTargetsTest, "BlueprintAutomationToolkit.Reflection.InvalidTargets", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportWritesFileTest, "BlueprintAutomationToolkit.Reflection.ResponseExportWritesFile", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -520,6 +524,70 @@ bool FBATReflectionCallSafeFunctionTest::RunTest(const FString& Parameters)
 	const TSharedPtr<FJsonObject> Data = GetStructuredData(Result);
 	const TSharedPtr<FJsonValue>* ReturnValue = Data.IsValid() ? Data->Values.Find(TEXT("returnValue")) : nullptr;
 	return TestTrue(TEXT("CallFunction returns updated health"), ReturnValue && (*ReturnValue)->Type == EJson::Number && static_cast<int32>((*ReturnValue)->AsNumber()) == 125 && Object->MaxHealth == 125);
+}
+
+bool FBATReflectionSetPropertyCommandTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	Module.Test_SetReflectionSafeMode(true);
+	Module.Test_SetReflectionClassAllowList({ TEXT("BATReflectionTestObject") });
+	TStrongObjectPtr<UBATReflectionTestObject> Object(CreateReflectionTestObject());
+
+	FAutomationContext Context;
+	Context.RequestId = TEXT("set-property-command-test");
+	Context.Endpoint = TEXT("/object/set-property");
+	Context.Module = &Module;
+	Context.Body = MakeObjectRequest(Object.Get());
+	Context.Body->SetStringField(TEXT("property"), TEXT("bCanAttack"));
+	Context.Body->SetBoolField(TEXT("value"), false);
+
+	FSetPropertyCommand Command;
+	const FAutomationResult Result = Command.Execute(Context);
+	DestroyReflectionTestObject(Object.Get());
+
+	if (!TestTrue(TEXT("SetProperty command succeeds"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject> Data = GetStructuredData(Result);
+	const TSharedPtr<FJsonObject>* UpdatedProperties = nullptr;
+	return TestTrue(TEXT("SetProperty command updates object and returns updatedProperties"), !Object->bCanAttack && Data.IsValid() && Data->TryGetObjectField(TEXT("updatedProperties"), UpdatedProperties) && UpdatedProperties && (*UpdatedProperties)->HasField(TEXT("bCanAttack")));
+}
+
+bool FBATReflectionCallFunctionCommandTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	Module.Test_SetReflectionSafeMode(true);
+	Module.Test_SetReflectionClassAllowList({ TEXT("BATReflectionTestObject") });
+	TStrongObjectPtr<UBATReflectionTestObject> Object(CreateReflectionTestObject());
+
+	FAutomationContext Context;
+	Context.RequestId = TEXT("call-function-command-test");
+	Context.Endpoint = TEXT("/object/call-function");
+	Context.Module = &Module;
+	Context.Body = MakeObjectRequest(Object.Get());
+	Context.Body->SetStringField(TEXT("function"), TEXT("SetSpawnOffset"));
+	TSharedRef<FJsonObject> Arguments = MakeShared<FJsonObject>();
+	TSharedRef<FJsonObject> Offset = MakeShared<FJsonObject>();
+	Offset->SetNumberField(TEXT("x"), 1.0);
+	Offset->SetNumberField(TEXT("y"), 2.0);
+	Offset->SetNumberField(TEXT("z"), 3.0);
+	Arguments->SetObjectField(TEXT("NewOffset"), Offset);
+	Context.Body->SetObjectField(TEXT("arguments"), Arguments);
+
+	FCallFunctionCommand Command;
+	const FAutomationResult Result = Command.Execute(Context);
+	DestroyReflectionTestObject(Object.Get());
+
+	if (!TestTrue(TEXT("CallFunction command succeeds"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject> Data = GetStructuredData(Result);
+	const TSharedPtr<FJsonObject>* OutParameters = nullptr;
+	return TestTrue(TEXT("CallFunction command updates object and returns outParameters object"), Object->SpawnOffset.Equals(FVector(1.0f, 2.0f, 3.0f)) && Data.IsValid() && Data->TryGetObjectField(TEXT("outParameters"), OutParameters) && OutParameters);
 }
 
 bool FBATReflectionSafeModeBlockingTest::RunTest(const FString& Parameters)
