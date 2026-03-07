@@ -1,18 +1,123 @@
 # Blueprint Automation Toolkit (Editor Plugin)
 
-Blueprint Automation Toolkit is an **Editor-only**, **localhost-only**, token-authenticated HTTP control surface for Unreal Editor.
+Blueprint Automation Toolkit is an **Editor-only**, **localhost-only**, token-authenticated HTTP automation platform for Unreal Editor.
 
-The primary use case is AI-agent and automation control of a running editor session through one canonical workflow:
+The primary use case is Copilot or another local AI agent driving the editor through a small reflective API instead of feature-specific gameplay commands.
 
-1. Discover the server and its gates with `GET /engine/discover`
-2. Check runtime state with `GET /ai/health` and `GET /ai/capabilities`
-3. Resolve or describe a target object with `POST /object/resolve` or `POST /object/describe`
-4. Read or mutate objects with `POST /object/get`, `POST /object/set-property`, and `POST /object/call-function`
-5. Apply Blueprint graph edits with `POST /blueprint/graph/apply`
-6. Compile explicitly with `POST /blueprint/compile`
-7. Save explicitly with `POST /asset/save`
+The preferred workflow is:
 
-The internal services stay modular, but the public API is organized as an agent-first protocol instead of a collection of route-specific utilities.
+1. Discover the server and active gates with `GET /engine/discover`
+2. Inspect runtime state with `GET /health` and `GET /ai/capabilities`
+3. Resolve or describe targets with `POST /object/resolve` or `GET /object/describe`
+4. Read or mutate reflected state with `GET /object/get_property`, `POST /object/set_property`, and `POST /object/call_function`
+5. Read or apply Blueprint graph data with `GET /blueprint/graph/read` and `POST /blueprint/graph/apply`
+6. Persist Blueprint changes with `POST /blueprint/compile_save`
+7. Drive editor selection or PIE with `POST /editor/select`, `POST /editor/focus`, `POST /pie/start`, and `POST /pie/stop`
+
+The internal services stay layered, but the public API is intentionally small and reflective so the platform scales by data, not by adding endless one-off routes.
+
+## Core API
+
+Preferred endpoints:
+
+- `POST /blueprint/graph/apply`
+- `GET /blueprint/graph/read`
+- `POST /blueprint/compile_save`
+- `POST /actor/spawn`
+- `POST /actor/destroy`
+- `POST /object/call_function`
+- `POST /object/set_property`
+- `GET /object/get_property`
+- `GET /object/describe`
+- `POST /editor/select`
+- `POST /editor/focus`
+- `POST /pie/start`
+- `POST /pie/stop`
+
+Legacy narrow gameplay endpoints such as `ActorShoot`, `PlayerTeleport`, and `PlayerWander` remain in the codebase only for backward compatibility work. They are no longer part of the default automation contract and are not bound by the default route registry.
+
+## Response Shape
+
+All automation endpoints return a structured JSON envelope:
+
+```json
+{
+	"ok": true,
+	"requestId": "2a4b6f4f-0c7a-4a91-b793-8c7d8c65f3a3",
+	"data": {}
+}
+```
+
+Failures use the same top-level shape with a normalized error object:
+
+```json
+{
+	"ok": false,
+	"requestId": "2a4b6f4f-0c7a-4a91-b793-8c7d8c65f3a3",
+	"error": "compile_failed",
+	"details": {
+		"message": "Blueprint compile failed.",
+		"errors": []
+	}
+}
+```
+
+## Example: Create a Blueprint Graph
+
+Create or update an Event Graph in one request:
+
+```json
+{
+	"blueprint": "/Game/BP_Spawner",
+	"graph": "EventGraph",
+	"options": {
+		"compile": true,
+		"save": false,
+		"transaction": true
+	},
+	"nodes": [
+		{
+			"id": "begin_play",
+			"type": "K2Node_Event",
+			"event": "BeginPlay",
+			"x": 0,
+			"y": 0
+		},
+		{
+			"id": "print_message",
+			"type": "K2Node_PrintString",
+			"message": "Spawner ready",
+			"x": 320,
+			"y": 0
+		}
+	],
+	"links": [
+		{
+			"from": "begin_play.Then",
+			"to": "print_message.execute"
+		}
+	]
+}
+```
+
+Typical success response:
+
+```json
+{
+	"ok": true,
+	"data": {
+		"blueprint": "/Game/BP_Spawner.BP_Spawner",
+		"graph": "EventGraph",
+		"nodesCreated": ["begin_play", "print_message"],
+		"nodesUpdated": [],
+		"linksCreated": 1,
+		"compileStatus": "up_to_date",
+		"saveStatus": "not_requested",
+		"warnings": [],
+		"errors": []
+	}
+}
+```
 
 ## Scope
 

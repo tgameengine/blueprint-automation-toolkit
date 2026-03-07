@@ -3,8 +3,13 @@
 #include "Auth/TokenAuthMiddleware.h"
 #include "BlueprintAutomationToolkitSettings.h"
 #include "Commands/Actor/SpawnActorCommand.h"
+#include "Commands/Actor/DestroyActorCommand.h"
 #include "Commands/Blueprint/ApplyGraphCommand.h"
+#include "Commands/Blueprint/CompileSaveBlueprintCommand.h"
+#include "Commands/Blueprint/ReadGraphCommand.h"
 #include "Commands/CommandDispatcher.h"
+#include "Commands/Editor/FocusEditorTargetCommand.h"
+#include "Commands/Editor/SelectEditorTargetCommand.h"
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/DescribeObjectCommand.h"
 #include "Commands/Reflection/GetObjectCommand.h"
@@ -2385,36 +2390,70 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 	delete CommandDispatcher;
 	CommandDispatcher = new FCommandDispatcher();
 
+	using EPermissionTier = FCommandDispatcher::EPermissionTier;
+
 	CommandDispatcher->Register(TEXT("/blueprint/graph/apply"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FApplyGraphCommand>();
-	});
+	}, EPermissionTier::Edit);
+	CommandDispatcher->Register(TEXT("/blueprint/graph/read"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FReadGraphCommand>();
+	}, EPermissionTier::Read);
+	CommandDispatcher->Register(TEXT("/blueprint/compile_save"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FCompileSaveBlueprintCommand>();
+	}, EPermissionTier::Edit);
 	CommandDispatcher->Register(TEXT("/object/resolve"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FGetObjectCommand>();
-	});
+	}, EPermissionTier::Read);
 	CommandDispatcher->Register(TEXT("/object/get"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FGetObjectCommand>();
-	});
+	}, EPermissionTier::Read);
+	CommandDispatcher->Register(TEXT("/object/get_property"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FGetObjectCommand>();
+	}, EPermissionTier::Read);
 	CommandDispatcher->Register(TEXT("/object/describe"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FDescribeObjectCommand>();
-	});
+	}, EPermissionTier::Read);
 	CommandDispatcher->Register(TEXT("/object/set-property"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FSetPropertyCommand>();
-	});
+	}, EPermissionTier::Edit);
+	CommandDispatcher->Register(TEXT("/object/set_property"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FSetPropertyCommand>();
+	}, EPermissionTier::Edit);
 	CommandDispatcher->Register(TEXT("/object/call-function"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		return MakeUnique<FCallFunctionCommand>();
-	});
+	}, EPermissionTier::Admin);
+	CommandDispatcher->Register(TEXT("/object/call_function"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FCallFunctionCommand>();
+	}, EPermissionTier::Admin);
 
 	CommandDispatcher->Register(TEXT("/actor/spawn"), []() -> TUniquePtr<FAutomationCommand>
 	{
 		static const FObjectAutomationService Service;
 		return MakeUnique<FSpawnActorCommand>(Service);
-	});
+	}, EPermissionTier::Edit);
+	CommandDispatcher->Register(TEXT("/actor/destroy"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FDestroyActorCommand>();
+	}, EPermissionTier::Edit);
+	CommandDispatcher->Register(TEXT("/editor/select"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FSelectEditorTargetCommand>();
+	}, EPermissionTier::Edit);
+	CommandDispatcher->Register(TEXT("/editor/focus"), []() -> TUniquePtr<FAutomationCommand>
+	{
+		return MakeUnique<FFocusEditorTargetCommand>();
+	}, EPermissionTier::Edit);
 }
 
 FAutomationResult FBlueprintAutomationToolkitModule::ExecuteAutomationCommand(const FString& Endpoint, const FString& RequestId, const TSharedPtr<FJsonObject>& BodyObj, bool bReturnRawObject) const

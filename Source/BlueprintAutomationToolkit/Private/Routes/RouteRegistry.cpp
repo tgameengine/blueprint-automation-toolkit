@@ -13,9 +13,7 @@ void FBlueprintAutomationToolkitModule::BindRoutes()
 	const FRouteBinder RouteBinders[] = {
 		{&FBlueprintAutomationToolkitModule::BindEditorRoutes},
 		{&FBlueprintAutomationToolkitModule::BindPieControlRoutes},
-		{&FBlueprintAutomationToolkitModule::BindPlayerWanderRoute},
-		{&FBlueprintAutomationToolkitModule::BindPlayerTeleportRoute},
-		{&FBlueprintAutomationToolkitModule::BindActorShootRoute},
+		{&FBlueprintAutomationToolkitModule::BindAutomationCoreRoutes},
 		{&FBlueprintAutomationToolkitModule::BindActorInfoRoutes},
 		{&FBlueprintAutomationToolkitModule::BindBlueprintRoutes},
 		{&FBlueprintAutomationToolkitModule::BindUObjectRoutes},

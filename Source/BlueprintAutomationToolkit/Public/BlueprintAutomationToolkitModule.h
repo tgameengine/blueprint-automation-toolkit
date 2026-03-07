@@ -118,6 +118,7 @@ private:
 	void BindBlueprintRoutes();
 	void BindUObjectRoutes();
 	void BindReflectionRoutes();
+	void BindAutomationCoreRoutes();
 	void BindAssetRoutes();
 	void BindActionsRoutes();
 	void BindBlueprintAssetsRoutes();
@@ -388,11 +389,20 @@ private:
 	FHttpRouteHandle BlueprintNodeDescribeRoute;
 	FHttpRouteHandle ObjectResolveRoute;
 	FHttpRouteHandle ObjectDescribeRoute;
+	FHttpRouteHandle ObjectDescribeGetRoute;
 	FHttpRouteHandle ObjectGetRoute;
+	FHttpRouteHandle ObjectGetPropertyRoute;
 	FHttpRouteHandle ObjectSetPropertyRoute;
+	FHttpRouteHandle ObjectSetPropertyAliasRoute;
 	FHttpRouteHandle ObjectCallFunctionRoute;
+	FHttpRouteHandle ObjectCallFunctionAliasRoute;
 	FHttpRouteHandle ActorSpawnRoute;
+	FHttpRouteHandle ActorDestroyRoute;
 	FHttpRouteHandle ActorFindRoute;
+	FHttpRouteHandle BlueprintGraphReadRoute;
+	FHttpRouteHandle BlueprintCompileSaveRoute;
+	FHttpRouteHandle EditorSelectRoute;
+	FHttpRouteHandle EditorFocusRoute;
 	FHttpRouteHandle AssetDuplicateRoute;
 	FHttpRouteHandle AssetSaveRoute;
 	FHttpRouteHandle AssetDeleteRoute;

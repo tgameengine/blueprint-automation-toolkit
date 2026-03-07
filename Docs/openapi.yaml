@@ -1,16 +1,22 @@
 openapi: 3.0.3
 info:
   title: Blueprint Automation Toolkit
-  version: 0.2.0
+  version: 0.3.0
   description: |
-    Editor-only localhost agent-control API for Unreal Engine.
-    The canonical agent flow is discover -> inspect -> mutate -> blueprint graph apply -> compile -> save.
+    Editor-only localhost AI automation API for Unreal Editor.
+    The canonical agent flow is discover -> inspect -> mutate -> blueprint graph read/apply -> compile_save.
     Mutating editor-asset routes return 409 pie_edit_blocked while PIE is running; stop PIE before retrying asset or Blueprint edits.
 servers:
   - url: http://127.0.0.1:9876
 security:
   - bearerAuth: []
 paths:
+  /health:
+    get:
+      summary: Preferred lightweight health check
+      responses:
+        '200':
+          description: OK
   /ai/health:
     get:
       summary: Canonical health check for agents
@@ -85,6 +91,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
   /object/describe:
+    get:
+      summary: Describe an automation target from query parameters
+      parameters:
+        - in: query
+          name: target
+          schema:
+            type: string
+        - in: query
+          name: objectPath
+          schema:
+            type: string
+        - in: query
+          name: actorName
+          schema:
+            type: string
+        - in: query
+          name: verbose
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Reflection describe result
     post:
       summary: Canonically describe an automation target
       description: One-round-trip inspection route for agents. Returns resolved identity, class information, concise editable property summaries, callable function summaries, selected readable values, and relevant object flags.
@@ -118,6 +146,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/get_property:
+    get:
+      summary: Preferred reflected property read endpoint
+      description: Reads one property via `property` or multiple properties via comma-separated `properties`.
+      parameters:
+        - in: query
+          name: target
+          schema:
+            type: string
+        - in: query
+          name: objectPath
+          schema:
+            type: string
+        - in: query
+          name: actorName
+          schema:
+            type: string
+        - in: query
+          name: property
+          schema:
+            type: string
+        - in: query
+          name: properties
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Property read result
   /object/set-property:
     post:
       summary: Canonically set reflected properties
@@ -135,6 +191,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/set_property:
+    post:
+      summary: Preferred reflected property write endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionSetPropertyRequest'
+      responses:
+        '200':
+          description: Property update result
   /object/call-function:
     post:
       summary: Canonically call a reflected UFunction
@@ -152,6 +220,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReflectionStructuredResponse'
+  /object/call_function:
+    post:
+      summary: Preferred reflected function call endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReflectionCallFunctionRequest'
+      responses:
+        '200':
+          description: Function call result
   /actor/spawn:
     post:
       summary: Spawn an actor and optionally set initial properties
@@ -190,6 +270,25 @@ paths:
       responses:
         '200':
           description: Spawn result
+  /actor/destroy:
+    post:
+      summary: Destroy a resolved editor actor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target:
+                  type: string
+                objectPath:
+                  type: string
+                actorName:
+                  type: string
+      responses:
+        '200':
+          description: Destroy result
   /actor/find:
     post:
       summary: Find actors by tag, name, or class
@@ -211,6 +310,50 @@ paths:
       responses:
         '200':
           description: Actor find result
+  /editor/select:
+    post:
+      summary: Select one or more actors in the editor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                replace:
+                  type: boolean
+                target:
+                  type: string
+                targets:
+                  type: array
+                  items:
+                    oneOf:
+                      - type: string
+                      - type: object
+      responses:
+        '200':
+          description: Selection result
+  /editor/focus:
+    post:
+      summary: Focus an actor viewport or asset editor on a resolved target
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target:
+                  type: string
+                objectPath:
+                  type: string
+                actorName:
+                  type: string
+                select:
+                  type: boolean
+      responses:
+        '200':
+          description: Focus result
   /asset/duplicate:
     post:
       summary: Duplicate an asset to a destination package path
@@ -510,9 +653,21 @@ paths:
       responses:
         '202':
           description: Job created
+  /pie/start:
+    post:
+      summary: Preferred PIE start endpoint
+      responses:
+        '202':
+          description: Job created
   /ai/pie/stop:
     post:
       summary: Submit PIE stop job
+      responses:
+        '202':
+          description: Job created
+  /pie/stop:
+    post:
+      summary: Preferred PIE stop endpoint
       responses:
         '202':
           description: Job created
@@ -613,6 +768,29 @@ paths:
       responses:
         '200':
           description: Blueprint compile result
+  /blueprint/compile_save:
+    post:
+      summary: Preferred Blueprint compile and save endpoint
+      description: Compiles a Blueprint and optionally saves it in one request. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blueprint]
+              properties:
+                blueprint:
+                  type: string
+                compile:
+                  type: boolean
+                  default: true
+                save:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Blueprint compile/save result
   /blueprint/components/remove:
     post:
       summary: Remove a Blueprint component by name
@@ -791,6 +969,23 @@ paths:
       responses:
         '200':
           description: Blueprint schema result
+  /blueprint/graph/read:
+    get:
+      summary: Preferred Blueprint graph introspection endpoint
+      description: Returns graph summaries when only `blueprint` is provided, or a full node/link snapshot when both `blueprint` and `graph` are provided.
+      parameters:
+        - in: query
+          name: blueprint
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: graph
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Blueprint graph read result
   /blueprint/graph/nodes:
     post:
       summary: Read normalized graph node metadata for a Blueprint graph

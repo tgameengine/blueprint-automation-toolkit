@@ -681,10 +681,17 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("reflection"), true);
 	Capabilities->SetBoolField(TEXT("objectDescribe"), true);
 	Capabilities->SetBoolField(TEXT("objectGet"), true);
+	Capabilities->SetBoolField(TEXT("objectGetProperty"), true);
 	Capabilities->SetBoolField(TEXT("objectSetProperty"), true);
 	Capabilities->SetBoolField(TEXT("objectCallFunction"), true);
+	Capabilities->SetBoolField(TEXT("actorSpawn"), true);
+	Capabilities->SetBoolField(TEXT("actorDestroy"), true);
+	Capabilities->SetBoolField(TEXT("editorSelect"), true);
+	Capabilities->SetBoolField(TEXT("editorFocus"), true);
+	Capabilities->SetBoolField(TEXT("pieControl"), true);
+	Capabilities->SetBoolField(TEXT("blueprintGraphRead"), true);
 	Capabilities->SetBoolField(TEXT("blueprintGraphApply"), true);
-	Capabilities->SetBoolField(TEXT("compileBlueprint"), true);
+	Capabilities->SetBoolField(TEXT("compileSaveBlueprint"), true);
 	Capabilities->SetBoolField(TEXT("saveAsset"), true);
 	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
 	Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
@@ -711,13 +718,20 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 
 	TArray<TSharedPtr<FJsonValue>> Routes;
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/engine/discover")));
-	Routes.Add(MakeShared<FJsonValueString>(TEXT("/ai/health")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/health")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/describe")));
-	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/set-property")));
-	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/call-function")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/get_property")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/set_property")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/object/call_function")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/actor/spawn")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/actor/destroy")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/editor/select")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/editor/focus")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pie/start")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pie/stop")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/read")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
-	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile")));
-	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/save")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
 	Data->SetArrayField(TEXT("canonicalRoutes"), Routes);
 
 	return Data;
@@ -734,15 +748,30 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	TSharedRef<FJsonObject> PreferredRoutes = MakeShared<FJsonObject>();
 	PreferredRoutes->SetStringField(TEXT("resolveObject"), TEXT("/object/resolve"));
 	PreferredRoutes->SetStringField(TEXT("describeObject"), TEXT("/object/describe"));
-	PreferredRoutes->SetStringField(TEXT("getObject"), TEXT("/object/get"));
-	PreferredRoutes->SetStringField(TEXT("setProperty"), TEXT("/object/set-property"));
-	PreferredRoutes->SetStringField(TEXT("callFunction"), TEXT("/object/call-function"));
+	PreferredRoutes->SetStringField(TEXT("getProperty"), TEXT("/object/get_property"));
+	PreferredRoutes->SetStringField(TEXT("setProperty"), TEXT("/object/set_property"));
+	PreferredRoutes->SetStringField(TEXT("callFunction"), TEXT("/object/call_function"));
+	PreferredRoutes->SetStringField(TEXT("spawnActor"), TEXT("/actor/spawn"));
+	PreferredRoutes->SetStringField(TEXT("destroyActor"), TEXT("/actor/destroy"));
+	PreferredRoutes->SetStringField(TEXT("editorSelect"), TEXT("/editor/select"));
+	PreferredRoutes->SetStringField(TEXT("editorFocus"), TEXT("/editor/focus"));
+	PreferredRoutes->SetStringField(TEXT("pieStart"), TEXT("/pie/start"));
+	PreferredRoutes->SetStringField(TEXT("pieStop"), TEXT("/pie/stop"));
+	PreferredRoutes->SetStringField(TEXT("readGraph"), TEXT("/blueprint/graph/read"));
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
-	PreferredRoutes->SetStringField(TEXT("compileBlueprint"), TEXT("/blueprint/compile"));
-	PreferredRoutes->SetStringField(TEXT("saveAsset"), TEXT("/asset/save"));
+	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
 	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
 
-	Data->SetArrayField(TEXT("deprecatedRoutes"), TArray<TSharedPtr<FJsonValue>>());
+	TArray<TSharedPtr<FJsonValue>> DeprecatedRoutes;
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/object/get")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/object/set-property")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/object/call-function")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/asset/save")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/ai/player/wander")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/ai/player/teleport_to_actor")));
+	DeprecatedRoutes.Add(MakeShared<FJsonValueString>(TEXT("/ai/actor/shoot")));
+	Data->SetArrayField(TEXT("deprecatedRoutes"), DeprecatedRoutes);
 
 	TSharedPtr<FJsonObject> Capabilities;
 	if (const TSharedPtr<FJsonObject>* CapabilitiesPtr = nullptr; Data->TryGetObjectField(TEXT("capabilities"), CapabilitiesPtr) && CapabilitiesPtr && CapabilitiesPtr->IsValid())
@@ -953,11 +982,14 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/set-defaults"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/graph/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/remove"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/replace"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/node/delete"), ESearchCase::CaseSensitive))
@@ -1017,15 +1049,25 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	if (Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/describe"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/get"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/get_property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
-		|| Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
+		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/call_function"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/editor/select"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/editor/focus"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Editor);
 	}
 	if (Endpoint.Equals(TEXT("/actor/spawn"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/actor/find"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Editor);
+	}
+	if (Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive))
+	{
+		return PM2(EBATPermission::Blueprint, EBATPermission::Filesystem);
 	}
 	if (Endpoint.Equals(TEXT("/asset/duplicate"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
@@ -1254,7 +1296,8 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/blueprint/compile"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive))
 	{
 		FString Blueprint;
 		if (!BodyObj->TryGetStringField(TEXT("blueprint"), Blueprint) || Blueprint.TrimStartAndEnd().IsEmpty())
@@ -1334,12 +1377,18 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/object/set-property"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
-		if (!BodyObj->TryGetStringField(TEXT("path"), Path) || Path.TrimStartAndEnd().IsEmpty())
+		FString ObjectPath;
+		FString ActorName;
+		const bool bHasPath = BodyObj->TryGetStringField(TEXT("path"), Path) && !Path.TrimStartAndEnd().IsEmpty();
+		const bool bHasObjectPath = BodyObj->TryGetStringField(TEXT("objectPath"), ObjectPath) && !ObjectPath.TrimStartAndEnd().IsEmpty();
+		const bool bHasActorName = BodyObj->TryGetStringField(TEXT("actorName"), ActorName) && !ActorName.TrimStartAndEnd().IsEmpty();
+		if (!(bHasPath || bHasObjectPath || bHasActorName))
 		{
-			OutError = TEXT("'path' is required");
+			OutError = TEXT("One of 'path', 'objectPath', or 'actorName' is required");
 			return false;
 		}
 		const TSharedPtr<FJsonObject>* Values = nullptr;
@@ -1349,13 +1398,19 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			return false;
 		}
 	}
-	else if (Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive))
+	else if (Endpoint.Equals(TEXT("/object/call-function"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/object/call_function"), ESearchCase::CaseSensitive))
 	{
 		FString Path;
+		FString ObjectPath;
+		FString ActorName;
 		FString Function;
-		if (!BodyObj->TryGetStringField(TEXT("path"), Path) || Path.TrimStartAndEnd().IsEmpty())
+		const bool bHasPath = BodyObj->TryGetStringField(TEXT("path"), Path) && !Path.TrimStartAndEnd().IsEmpty();
+		const bool bHasObjectPath = BodyObj->TryGetStringField(TEXT("objectPath"), ObjectPath) && !ObjectPath.TrimStartAndEnd().IsEmpty();
+		const bool bHasActorName = BodyObj->TryGetStringField(TEXT("actorName"), ActorName) && !ActorName.TrimStartAndEnd().IsEmpty();
+		if (!(bHasPath || bHasObjectPath || bHasActorName))
 		{
-			OutError = TEXT("'path' is required");
+			OutError = TEXT("One of 'path', 'objectPath', or 'actorName' is required");
 			return false;
 		}
 		if (!BodyObj->TryGetStringField(TEXT("function"), Function) || Function.TrimStartAndEnd().IsEmpty())
@@ -1385,6 +1440,26 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 		if (!BodyObj->TryGetStringField(TEXT("value"), Value) || Value.TrimStartAndEnd().IsEmpty())
 		{
 			OutError = TEXT("'value' is required");
+			return false;
+		}
+	}
+	else if (Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/editor/select"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/editor/focus"), ESearchCase::CaseSensitive))
+	{
+		FString Target;
+		FString Path;
+		FString ObjectPath;
+		FString ActorName;
+		const bool bHasTarget = BodyObj->TryGetStringField(TEXT("target"), Target) && !Target.TrimStartAndEnd().IsEmpty();
+		const bool bHasPath = BodyObj->TryGetStringField(TEXT("path"), Path) && !Path.TrimStartAndEnd().IsEmpty();
+		const bool bHasObjectPath = BodyObj->TryGetStringField(TEXT("objectPath"), ObjectPath) && !ObjectPath.TrimStartAndEnd().IsEmpty();
+		const bool bHasActorName = BodyObj->TryGetStringField(TEXT("actorName"), ActorName) && !ActorName.TrimStartAndEnd().IsEmpty();
+		const TArray<TSharedPtr<FJsonValue>>* Targets = nullptr;
+		const bool bHasTargets = BodyObj->TryGetArrayField(TEXT("targets"), Targets) && Targets && Targets->Num() > 0;
+		if (!(bHasTarget || bHasPath || bHasObjectPath || bHasActorName || bHasTargets))
+		{
+			OutError = TEXT("A target reference is required");
 			return false;
 		}
 	}

@@ -244,30 +244,80 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(ObjectResolveRoute);
 		ObjectResolveRoute.Reset();
 	}
+	if (ObjectDescribeRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectDescribeRoute);
+		ObjectDescribeRoute.Reset();
+	}
+	if (ObjectDescribeGetRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectDescribeGetRoute);
+		ObjectDescribeGetRoute.Reset();
+	}
 	if (ObjectGetRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectGetRoute);
 		ObjectGetRoute.Reset();
+	}
+	if (ObjectGetPropertyRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectGetPropertyRoute);
+		ObjectGetPropertyRoute.Reset();
 	}
 	if (ObjectSetPropertyRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectSetPropertyRoute);
 		ObjectSetPropertyRoute.Reset();
 	}
+	if (ObjectSetPropertyAliasRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectSetPropertyAliasRoute);
+		ObjectSetPropertyAliasRoute.Reset();
+	}
 	if (ObjectCallFunctionRoute.IsValid())
 	{
 		Router->UnbindRoute(ObjectCallFunctionRoute);
 		ObjectCallFunctionRoute.Reset();
+	}
+	if (ObjectCallFunctionAliasRoute.IsValid())
+	{
+		Router->UnbindRoute(ObjectCallFunctionAliasRoute);
+		ObjectCallFunctionAliasRoute.Reset();
 	}
 	if (ActorSpawnRoute.IsValid())
 	{
 		Router->UnbindRoute(ActorSpawnRoute);
 		ActorSpawnRoute.Reset();
 	}
+	if (ActorDestroyRoute.IsValid())
+	{
+		Router->UnbindRoute(ActorDestroyRoute);
+		ActorDestroyRoute.Reset();
+	}
 	if (ActorFindRoute.IsValid())
 	{
 		Router->UnbindRoute(ActorFindRoute);
 		ActorFindRoute.Reset();
+	}
+	if (BlueprintGraphReadRoute.IsValid())
+	{
+		Router->UnbindRoute(BlueprintGraphReadRoute);
+		BlueprintGraphReadRoute.Reset();
+	}
+	if (BlueprintCompileSaveRoute.IsValid())
+	{
+		Router->UnbindRoute(BlueprintCompileSaveRoute);
+		BlueprintCompileSaveRoute.Reset();
+	}
+	if (EditorSelectRoute.IsValid())
+	{
+		Router->UnbindRoute(EditorSelectRoute);
+		EditorSelectRoute.Reset();
+	}
+	if (EditorFocusRoute.IsValid())
+	{
+		Router->UnbindRoute(EditorFocusRoute);
+		EditorFocusRoute.Reset();
 	}
 	if (AssetDuplicateRoute.IsValid())
 	{
