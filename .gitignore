@@ -1,0 +1,27 @@
+# Unreal plugin build outputs
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+
+# IDE
+.vs/
+.vscode/
+*.VC.db
+
+# Build artifacts
+*.pdb
+*.obj
+*.lib
+*.exp
+*.dll
+*.exe
+*.log
+
+# UAT BuildPlugin output
+_Package/
+
+# OS
+Thumbs.db
+Desktop.ini
+*.zip

@@ -1,0 +1,39 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "Blueprint Automation Toolkit",
+  "Description": "Editor-only localhost automation toolkit for Blueprint and Unreal Editor workflows.",
+  "Category": "Developer",
+  "CreatedBy": "AkaSoft",
+  "CreatedByURL": "",
+  "DocsURL": "",
+  "MarketplaceURL": "",
+  "SupportURL": "",
+  "CanContainContent": true,
+  "IsBetaVersion": true,
+  "IsExperimentalVersion": true,
+  "Installed": false,
+  "EnabledByDefault": true,
+  "Plugins": [
+    {
+      "Name": "PCG",
+      "Enabled": true
+    },
+    {
+      "Name": "GeometryProcessing",
+      "Enabled": true
+    },
+    {
+      "Name": "GeometryScripting",
+      "Enabled": true
+    }
+  ],
+  "Modules": [
+    {
+      "Name": "BlueprintAutomationToolkit",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
