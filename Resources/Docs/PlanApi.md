@@ -79,6 +79,42 @@ r3 = requests.get(
 print(r3.json())
 ```
 
+## Event Node Variants
+
+`POST /blueprint/graph/apply` supports more than `BeginPlay` for event authoring.
+
+Actor event example:
+
+```json
+{
+  "blueprint": "/Game/BP_PickupOrb",
+  "graph": "EventGraph",
+  "nodes": [
+    {"id": "overlap", "type": "K2Node_Event", "event": "ActorBeginOverlap", "x": 0, "y": 0},
+    {"id": "destroy", "type": "K2Node_CallFunction", "function": "/Script/Engine.Actor:K2_DestroyActor", "x": 320, "y": 0}
+  ],
+  "links": [
+    {"from": "overlap.Then", "to": "destroy.execute"}
+  ]
+}
+```
+
+Component-bound event example:
+
+```json
+{
+  "blueprint": "/Game/BP_PickupOrb",
+  "graph": "EventGraph",
+  "nodes": [
+    {"id": "mesh_overlap", "type": "K2Node_ComponentBoundEvent", "component": "PickupMesh", "event": "OnComponentBeginOverlap", "x": 0, "y": 0},
+    {"id": "destroy", "type": "K2Node_CallFunction", "function": "/Script/Engine.Actor:K2_DestroyActor", "x": 360, "y": 0}
+  ],
+  "links": [
+    {"from": "mesh_overlap.Then", "to": "destroy.execute"}
+  ]
+}
+```
+
 ## Response Envelope
 
 All endpoints use this response envelope:

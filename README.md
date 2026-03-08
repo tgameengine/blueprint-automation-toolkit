@@ -161,6 +161,74 @@ Create or update an Event Graph in one request:
 }
 ```
 
+Actor event nodes are no longer limited to `BeginPlay`. The graph apply API also accepts other Blueprint-overridable actor events, such as `ActorBeginOverlap`:
+
+```json
+{
+	"blueprint": "/Game/BP_PickupOrb",
+	"graph": "EventGraph",
+	"options": {
+		"compile": true,
+		"save": false,
+		"transaction": true
+	},
+	"nodes": [
+		{
+			"id": "actor_overlap",
+			"type": "K2Node_Event",
+			"event": "ActorBeginOverlap",
+			"x": 0,
+			"y": 0
+		},
+		{
+			"id": "destroy_self",
+			"type": "K2Node_CallFunction",
+			"function": "/Script/Engine.Actor:K2_DestroyActor",
+			"x": 320,
+			"y": 0
+		}
+	],
+	"links": [
+		{
+			"from": "actor_overlap.Then",
+			"to": "destroy_self.execute"
+		}
+	]
+}
+```
+
+Component-bound event nodes are also supported through `K2Node_ComponentBoundEvent`:
+
+```json
+{
+	"blueprint": "/Game/BP_PickupOrb",
+	"graph": "EventGraph",
+	"nodes": [
+		{
+			"id": "mesh_overlap",
+			"type": "K2Node_ComponentBoundEvent",
+			"component": "PickupMesh",
+			"event": "OnComponentBeginOverlap",
+			"x": 0,
+			"y": 0
+		},
+		{
+			"id": "destroy_self",
+			"type": "K2Node_CallFunction",
+			"function": "/Script/Engine.Actor:K2_DestroyActor",
+			"x": 360,
+			"y": 0
+		}
+	],
+	"links": [
+		{
+			"from": "mesh_overlap.Then",
+			"to": "destroy_self.execute"
+		}
+	]
+}
+```
+
 Typical success response:
 
 ```json
