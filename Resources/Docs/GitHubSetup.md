@@ -2,7 +2,7 @@
 
 ## Repository Creation
 
-- [ ] Create public repo (e.g., `murataka/blueprint-automation-toolkit`)
+- [ ] Create public repo: `tgameengine/blueprint-automation-toolkit`
 - [ ] Push plugin source (everything under the plugin root)
 - [ ] Verify LICENSE file is visible at repo root
 - [ ] Verify README.md renders correctly
