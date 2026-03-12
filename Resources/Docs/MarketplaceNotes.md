@@ -30,6 +30,18 @@ Default behavior is intentionally conservative:
 - `RateLimitPerSecond=10`
 - `RateLimitBurst=20`
 
+## Distribution model
+
+- Plugin source is available on GitHub at no cost under a proprietary license with a free use grant.
+- The Marketplace listing provides a packaged, pre-built binary for convenience at $14.99.
+- Both versions are feature-identical. The Marketplace version ships under the standard UE Marketplace EULA.
+- No feature gating, no time-limited trials, no telemetry.
+
+## Pricing
+
+- Marketplace price: **$14.99** (USD)
+- No subscriptions, no recurring fees.
+
 ## Safe vs unsafe mode
 
 Safe mode (`bSafeModeEnabled=true`):

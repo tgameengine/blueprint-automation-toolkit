@@ -4,6 +4,19 @@ Blueprint Automation Toolkit is an **Editor-only**, **localhost-only**, token-au
 
 The primary use case is a local AI agent driving Unreal Editor through a small set of deep, generic primitives across assets, reflected objects, Blueprints, animation references, skeleton data, and editor scene state instead of feature-specific gameplay commands.
 
+## Getting the Plugin
+
+| Source | Cost | What you get |
+|--------|------|--------------|
+| **GitHub** | Free | Source code. Clone and build from source against your UE project. |
+| **UE Marketplace** | $14.99 | Packaged binary. One-click install, Vault integration, engine version management. |
+
+Both versions are identical in features. The Marketplace listing is a convenience option.
+
+## License
+
+This plugin is proprietary software. You may use it freely in your own projects (including commercial). Redistribution or repackaging as a standalone/competing product is prohibited. See [LICENSE](LICENSE) for full terms.
+
 The preferred workflow is:
 
 1. Discover the server and active gates with `GET /engine/discover`
