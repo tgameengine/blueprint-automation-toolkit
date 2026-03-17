@@ -22,6 +22,24 @@ DEFINE_LOG_CATEGORY_STATIC(LogBlueprintAutomationToolkitExecRoute, Log, All);
 
 namespace
 {
+	class FBATLogCapture : public FOutputDevice
+	{
+	public:
+		virtual void Serialize(const TCHAR* V, ELogVerbosity::Type Verbosity, const FName& Category) override
+		{
+			static const FName LogPython(TEXT("LogPython"));
+			if (Category == LogPython)
+			{
+				if (!CapturedOutput.IsEmpty())
+				{
+					CapturedOutput += TEXT("\n");
+				}
+				CapturedOutput += V;
+			}
+		}
+
+		FString CapturedOutput;
+	};
 	static TUniquePtr<FHttpServerResponse> MakeJsonResponse(EHttpServerResponseCodes Code, const FString& JsonString)
 	{
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(JsonString, TEXT("application/json"));
@@ -364,6 +382,14 @@ void FBlueprintAutomationToolkitModule::BindExecRoute()
 
 					FStringOutputDevice Out;
 					bool bOk = false;
+
+					TUniquePtr<FBATLogCapture> PythonLogCapture;
+					if (bIsPython)
+					{
+						PythonLogCapture = MakeUnique<FBATLogCapture>();
+						GLog->AddOutputDevice(PythonLogCapture.Get());
+					}
+
 					if (!TryExecBatCommandDirect(World, Command, Out, bOk))
 					{
 						if (GEngine)
@@ -373,6 +399,15 @@ void FBlueprintAutomationToolkitModule::BindExecRoute()
 						if (!bOk)
 						{
 							bOk = IConsoleManager::Get().ProcessUserConsoleInput(*Command, Out, World);
+						}
+					}
+
+					if (PythonLogCapture.IsValid())
+					{
+						GLog->RemoveOutputDevice(PythonLogCapture.Get());
+						if (Out.IsEmpty() && !PythonLogCapture->CapturedOutput.IsEmpty())
+						{
+							Out.Log(*PythonLogCapture->CapturedOutput);
 						}
 					}
 

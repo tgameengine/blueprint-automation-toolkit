@@ -1565,6 +1565,10 @@ namespace
 		Obj->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
 		Obj->SetNumberField(TEXT("x"), Node->NodePosX);
 		Obj->SetNumberField(TEXT("y"), Node->NodePosY);
+		if (!Node->NodeComment.IsEmpty())
+		{
+			Obj->SetStringField(TEXT("comment"), Node->NodeComment);
+		}
 
 		TArray<TSharedPtr<FJsonValue>> Pins;
 		for (UEdGraphPin* Pin : Node->Pins)

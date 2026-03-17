@@ -8,6 +8,7 @@
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
+#include "EdGraphNode_Comment.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
@@ -1184,6 +1185,19 @@ namespace
 			GraphNode->AllocateDefaultPins();
 			GraphNode->ReconstructNode();
 			return GraphNode;
+		}
+
+		if (NodeSpec.Type.Equals(TEXT("EdGraphNode_Comment"), ESearchCase::CaseSensitive))
+		{
+			UEdGraphNode_Comment* CommentNode = NewObject<UEdGraphNode_Comment>(Graph);
+			Graph->AddNode(CommentNode, true, false);
+			CommentNode->CreateNewGuid();
+			CommentNode->PostPlacedNewNode();
+			if (!NodeSpec.Message.IsEmpty())
+			{
+				CommentNode->NodeComment = NodeSpec.Message;
+			}
+			return CommentNode;
 		}
 
 		InOutResult.Errors.Add(FString::Printf(TEXT("unsupported_node_type:%s"), *NodeSpec.Type));
