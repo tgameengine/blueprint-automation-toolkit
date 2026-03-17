@@ -222,6 +222,9 @@ namespace BAT::BlueprintGraphApplyRequest
 						}
 					}
 				}
+				else if (NodeSpec.Type.Equals(TEXT("EdGraphNode_Comment"), ESearchCase::CaseSensitive))
+				{
+				}
 				else
 				{
 					OutErrors.Add(FString::Printf(TEXT("nodes[%d]_unsupported_type:%s"), NodeIndex, *NodeSpec.Type));
