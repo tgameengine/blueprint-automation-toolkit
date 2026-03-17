@@ -379,6 +379,29 @@ Example workspace `mcp.json` entry:
 }
 ```
 
+If you prefer a fixed workspace-local token instead of a VS Code prompt, use the same proxy with `inputs: []` and set `BAT_AUTH_TOKEN` directly:
+
+```json
+{
+	"servers": {
+		"bat": {
+			"type": "stdio",
+			"command": "${workspaceFolder}/Plugins/blueprint-automation-toolkit/.venv/Scripts/python.exe",
+			"args": [
+				"${workspaceFolder}/Plugins/blueprint-automation-toolkit/Tools/bat_mcp_proxy.py"
+			],
+			"env": {
+				"BAT_BASE_URL": "http://127.0.0.1:9876",
+				"BAT_AUTH_TOKEN": "<your-bat-token>"
+			}
+		}
+	},
+	"inputs": []
+}
+```
+
+Use the fixed-token variant only if you are comfortable storing a project-local secret in `mcp.json`.
+
 The proxy exposes a compact set of BAT-oriented tools, including `bat_discover`, `bat_health`, `bat_object_resolve`, `bat_object_describe`, `bat_blueprint_graph_read`, `bat_blueprint_graph_apply`, `bat_blueprint_compile_save`, and a generic `bat_request` escape hatch.
 
 Start Unreal Editor and the BAT HTTP server before starting the MCP server in VS Code. A quick health check is still `GET /engine/discover` against the BAT listener, not against the MCP proxy.
