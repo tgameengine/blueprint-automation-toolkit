@@ -334,7 +334,18 @@ For this project's recommended usage patterns (Live Coding builds + `/ai/exec` f
 
 ### MCP in VS Code
 
-Blueprint Automation Toolkit does not expose a native MCP transport from the Unreal module itself, but this plugin now ships a small Python stdio proxy at `Tools/bat_mcp_proxy.py` for VS Code MCP usage.
+Blueprint Automation Toolkit does not expose a native MCP transport from the Unreal module itself. The preferred long-term integration is the standalone VS Code extension in `Tools/vscode-bat-extension`, which provides BAT MCP server definitions programmatically and avoids per-repository `mcp.json` setup.
+
+The plugin-scoped Python proxy at `Tools/bat_mcp_proxy.py` remains available as a fallback or development bridge, but it should not be the primary setup once the extension path is in use.
+
+Preferred VS Code workflow:
+
+1. Run the BAT VS Code extension from `Tools/vscode-bat-extension`.
+2. Store the BAT token through the extension command surface.
+3. Start the `bat` MCP server from `MCP: List Servers`.
+4. Do not add a manual BAT entry to workspace `mcp.json` unless you are explicitly debugging the legacy proxy path.
+
+Legacy proxy workflow:
 
 Minimal local setup:
 
