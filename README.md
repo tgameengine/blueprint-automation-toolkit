@@ -332,6 +332,57 @@ For this project's recommended usage patterns (Live Coding builds + `/ai/exec` f
 - `Resources/Docs/PlanApi.md`
 - `Resources/Docs/MarketplaceNotes.md`
 
+### MCP in VS Code
+
+Blueprint Automation Toolkit does not expose a native MCP transport from the Unreal module itself, but this plugin now ships a small Python stdio proxy at `Tools/bat_mcp_proxy.py` for VS Code MCP usage.
+
+Minimal local setup:
+
+```powershell
+py -3 -m venv Plugins/blueprint-automation-toolkit/.venv
+Plugins/blueprint-automation-toolkit/.venv/Scripts/python.exe -m pip install -r Plugins/blueprint-automation-toolkit/Tools/requirements.txt
+```
+
+The proxy uses these environment variables:
+
+- `BAT_BASE_URL` default: `http://127.0.0.1:9876`
+- `BAT_AUTH_TOKEN` optional bearer token
+- `BAT_TIMEOUT_SECONDS` optional request timeout override
+
+If token persistence is enabled, the project-scoped token from `DefaultEditor.ini` is an allowed source. Otherwise copy the current token from the `Blueprint Automation Toolkit` panel or provide it explicitly via your MCP client configuration.
+
+Example workspace `mcp.json` entry:
+
+```json
+{
+	"servers": {
+		"bat": {
+			"type": "stdio",
+			"command": "${workspaceFolder}/Plugins/blueprint-automation-toolkit/.venv/Scripts/python.exe",
+			"args": [
+				"${workspaceFolder}/Plugins/blueprint-automation-toolkit/Tools/bat_mcp_proxy.py"
+			],
+			"env": {
+				"BAT_BASE_URL": "http://127.0.0.1:9876",
+				"BAT_AUTH_TOKEN": "${input:batAuthToken}"
+			}
+		}
+	},
+	"inputs": [
+		{
+			"type": "promptString",
+			"id": "batAuthToken",
+			"description": "Blueprint Automation Toolkit bearer token",
+			"password": true
+		}
+	]
+}
+```
+
+The proxy exposes a compact set of BAT-oriented tools, including `bat_discover`, `bat_health`, `bat_object_resolve`, `bat_object_describe`, `bat_blueprint_graph_read`, `bat_blueprint_graph_apply`, `bat_blueprint_compile_save`, and a generic `bat_request` escape hatch.
+
+Start Unreal Editor and the BAT HTTP server before starting the MCP server in VS Code. A quick health check is still `GET /engine/discover` against the BAT listener, not against the MCP proxy.
+
 ## Headless automation tests
 
 To run this plugin's automation tests headlessly, use `UnrealEditor-Cmd` with a quoted `ExecCmds` value and a report export path:

@@ -1,0 +1,1 @@
+# bat_mcp_proxy.py uses only the Python standard library.

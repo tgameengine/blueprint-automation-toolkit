@@ -8,6 +8,11 @@ Saved/
 .vs/
 .vscode/
 *.VC.db
+.venv/
+
+# Python
+__pycache__/
+*.pyc
 
 # Build artifacts
 *.pdb
