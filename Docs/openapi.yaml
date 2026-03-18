@@ -480,6 +480,45 @@ paths:
       responses:
         '200':
           description: PCG spawn result
+  /pcg/apply:
+    post:
+      summary: Create or reconcile a BAT-managed PCG graph asset from a plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [graph, ops]
+              properties:
+                graph:
+                  type: string
+                options:
+                  type: object
+                  properties:
+                    mode:
+                      type: string
+                    ownership:
+                      type: string
+                    create_if_missing:
+                      type: boolean
+                    clear_unmanaged:
+                      type: boolean
+                    transaction:
+                      type: boolean
+                    save:
+                      type: boolean
+                parameters:
+                  type: array
+                  items:
+                    type: object
+                ops:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: PCG apply result
   /jobs/submit:
     post:
       summary: Submit an async job

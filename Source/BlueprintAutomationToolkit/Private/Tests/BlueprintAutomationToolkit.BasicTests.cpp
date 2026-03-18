@@ -13,6 +13,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
+#include "Routes/PCG/PcgApplyRequest.h"
 #include "Services/BlueprintGraph/BlueprintGraphLayoutService.h"
 #include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 #include "Services/BlueprintGraphService.h"
@@ -42,8 +43,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasJobsAndLogsTest, "BlueprintAutoma
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasEngineDiscoverPathTest, "BlueprintAutomationToolkit.OpenApi.HasEngineDiscoverPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintPlanPathsTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintPlanPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintSchemaPathTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintSchemaPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasPcgApplyPathTest, "BlueprintAutomationToolkit.OpenApi.HasPcgApplyPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExecPythonRequiresPythonPermissionTest, "BlueprintAutomationToolkit.Security.ExecPythonRequiresPythonPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversPieAliasesTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversPieAliases", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversPcgApplyTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversPcgApply", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversBlueprintCompileSaveTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversBlueprintCompileSave", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportAddsFilesystemPermissionTest, "BlueprintAutomationToolkit.Security.ResponseExportAddsFilesystemPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExtensionCommandRegistrationMetadataTest, "BlueprintAutomationToolkit.Extension.CommandRegistrationMetadata", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -67,6 +70,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsUpdateOnl
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeExistingNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeExistingNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArrangeConnectedNodesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsAutoArrangeConnectedNodes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsPreserveFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsPreserveFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestNormalizesConvenienceFieldsTest, "BlueprintAutomationToolkit.PCG.ApplyRequestNormalizesConvenienceFields", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsDuplicateNodeIdsTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsDuplicateNodeIds", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -303,6 +308,32 @@ bool FBATOpenApiHasBlueprintSchemaPathTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+bool FBATOpenApiHasPcgApplyPathTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!Plugin.IsValid())
+	{
+		Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	}
+
+	if (!Plugin.IsValid())
+	{
+		AddError(TEXT("Plugin not found"));
+		return false;
+	}
+
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
+	FString Spec;
+	if (!FFileHelper::LoadFileToString(Spec, *OpenApiPath))
+	{
+		AddError(TEXT("Failed to read openapi.yaml"));
+		return false;
+	}
+
+	TestTrue(TEXT("OpenAPI contains /pcg/apply"), Spec.Contains(TEXT("/pcg/apply:"), ESearchCase::CaseSensitive));
+	return true;
+}
+
 bool FBATExecPythonRequiresPythonPermissionTest::RunTest(const FString& Parameters)
 {
 	FBlueprintAutomationToolkitModule Module;
@@ -325,6 +356,16 @@ bool FBATPermissionMapCoversPieAliasesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("/pie/start requires PIE permission"), Module.Test_GetRouteRequiredPermissions(TEXT("/pie/start")), PieMask);
 	TestEqual(TEXT("/pie/stop requires PIE permission"), Module.Test_GetRouteRequiredPermissions(TEXT("/pie/stop")), PieMask);
 	return true;
+}
+
+bool FBATPermissionMapCoversPcgApplyTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const uint32 ExpectedMask =
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Editor) |
+		static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
+
+	return TestEqual(TEXT("/pcg/apply requires Editor and Filesystem permissions"), Module.Test_GetRouteRequiredPermissions(TEXT("/pcg/apply")), ExpectedMask);
 }
 
 bool FBATPermissionMapCoversBlueprintCompileSaveTest::RunTest(const FString& Parameters)
@@ -997,6 +1038,100 @@ bool FBATBlueprintGraphApplyRequestSupportsPreserveFeederLanesTest::RunTest(cons
 	}
 
 	return TestTrue(TEXT("Graph apply request should preserve preserveFeederLanes=true"), Request.Options.bPreserveFeederLanes);
+}
+
+bool FBATPcgApplyRequestNormalizesConvenienceFieldsTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), TEXT("/Game/PCG/Graphs/BAT_CityGraph.BAT_CityGraph"));
+
+	TSharedRef<FJsonObject> Parameter = MakeShared<FJsonObject>();
+	Parameter->SetStringField(TEXT("name"), TEXT("StreetWidth"));
+	Parameter->SetStringField(TEXT("type"), TEXT("float"));
+	Parameter->SetNumberField(TEXT("default"), 1800.0);
+	Body->SetArrayField(TEXT("parameters"), { MakeShared<FJsonValueObject>(Parameter) });
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	Node->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	Node->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
+	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
+	MeshSet->SetArrayField(TEXT("meshes"), {
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")),
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2"))
+	});
+	Node->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(Node) });
+
+	FPcgApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::PcgApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestTrue(TEXT("PCG apply request should parse valid convenience fields"), bParsed))
+	{
+		for (const FString& ParseError : ParseErrors)
+		{
+			AddError(ParseError);
+		}
+		return false;
+	}
+
+	if (!TestEqual(TEXT("PCG apply request should preserve one parameter entry"), Request.Parameters.Num(), 1))
+	{
+		return false;
+	}
+
+	if (!TestEqual(TEXT("PCG apply request should normalize top-level parameters and inline mesh_set into canonical ops"), Request.Ops.Num(), 3))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("First canonical op should be parameters.set"), Request.Ops[0].Op, FString(TEXT("parameters.set")));
+	TestEqual(TEXT("Second canonical op should be nodes.add"), Request.Ops[1].Op, FString(TEXT("nodes.add")));
+	TestEqual(TEXT("Third canonical op should be spawners.set_mesh_set"), Request.Ops[2].Op, FString(TEXT("spawners.set_mesh_set")));
+	return TestEqual(TEXT("Canonical mesh-set node should reference the authored node id"), Request.Ops[2].Node, FString(TEXT("structure_spawner")));
+}
+
+bool FBATPcgApplyRequestRejectsDuplicateNodeIdsTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), TEXT("/Game/PCG/Graphs/BAT_CityGraph.BAT_CityGraph"));
+
+	TSharedRef<FJsonObject> NodeA = MakeShared<FJsonObject>();
+	NodeA->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	NodeA->SetStringField(TEXT("id"), TEXT("duplicate_node"));
+	NodeA->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	TSharedRef<FJsonObject> NodeB = MakeShared<FJsonObject>();
+	NodeB->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	NodeB->SetStringField(TEXT("id"), TEXT("duplicate_node"));
+	NodeB->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	Body->SetArrayField(TEXT("ops"), {
+		MakeShared<FJsonValueObject>(NodeA),
+		MakeShared<FJsonValueObject>(NodeB)
+	});
+
+	FPcgApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::PcgApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestFalse(TEXT("PCG apply request should reject duplicate node ids"), bParsed))
+	{
+		return false;
+	}
+
+	for (const FString& ParseError : ParseErrors)
+	{
+		if (ParseError.Contains(TEXT("duplicate_node_id"), ESearchCase::CaseSensitive))
+		{
+			return true;
+		}
+	}
+
+	AddError(TEXT("Expected duplicate_node_id parse error"));
+	return false;
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)

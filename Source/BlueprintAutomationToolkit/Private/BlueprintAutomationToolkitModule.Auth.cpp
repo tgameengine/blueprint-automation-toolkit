@@ -620,6 +620,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("pieControl"), true);
 	Capabilities->SetBoolField(TEXT("blueprintGraphRead"), true);
 	Capabilities->SetBoolField(TEXT("blueprintGraphApply"), true);
+	Capabilities->SetBoolField(TEXT("pcgApply"), true);
 	Capabilities->SetBoolField(TEXT("compileSaveBlueprint"), true);
 	Capabilities->SetBoolField(TEXT("saveAsset"), true);
 	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
@@ -662,6 +663,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pie/stop")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/read")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pcg/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
 	Data->SetArrayField(TEXT("canonicalRoutes"), Routes);
 
@@ -724,6 +726,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("pieStop"), TEXT("/pie/stop"));
 	PreferredRoutes->SetStringField(TEXT("readGraph"), TEXT("/blueprint/graph/read"));
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
+	PreferredRoutes->SetStringField(TEXT("applyPcg"), TEXT("/pcg/apply"));
 	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
 	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
 
@@ -818,6 +821,7 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/apply"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/pcg/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/set-defaults"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/graph/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive)
@@ -885,6 +889,10 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 			return PM2(EBATPermission::Blueprint, EBATPermission::Filesystem);
 		}
 		return PM(EBATPermission::Blueprint);
+	}
+	if (Endpoint.Equals(TEXT("/pcg/apply"), ESearchCase::CaseSensitive))
+	{
+		return PM2(EBATPermission::Editor, EBATPermission::Filesystem);
 	}
 	if (Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/describe"), ESearchCase::CaseSensitive)
@@ -1134,6 +1142,38 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 		if (Blueprint.Len() > 512)
 		{
 			OutError = TEXT("'blueprint' length must be <= 512");
+			return false;
+		}
+	}
+	else if (Endpoint.Equals(TEXT("/pcg/apply"), ESearchCase::CaseSensitive))
+	{
+		FString Graph;
+		if (!BodyObj->TryGetStringField(TEXT("graph"), Graph) || Graph.TrimStartAndEnd().IsEmpty())
+		{
+			OutError = TEXT("'graph' is required");
+			return false;
+		}
+		if (Graph.Len() > 512)
+		{
+			OutError = TEXT("'graph' length must be <= 512");
+			return false;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Ops = nullptr;
+		if (!BodyObj->TryGetArrayField(TEXT("ops"), Ops) || !Ops)
+		{
+			OutError = TEXT("'ops' array is required");
+			return false;
+		}
+		if (Ops->Num() > MaxOpsPerPlan)
+		{
+			OutError = FString::Printf(TEXT("'ops' length must be <= %d"), MaxOpsPerPlan);
+			return false;
+		}
+
+		if (const TArray<TSharedPtr<FJsonValue>>* Parameters = nullptr; BodyObj->TryGetArrayField(TEXT("parameters"), Parameters) && Parameters && Parameters->Num() > MaxOpsPerPlan)
+		{
+			OutError = FString::Printf(TEXT("'parameters' length must be <= %d"), MaxOpsPerPlan);
 			return false;
 		}
 	}

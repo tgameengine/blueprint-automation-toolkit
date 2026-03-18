@@ -5,6 +5,7 @@
 #include "Commands/Actor/SpawnActorCommand.h"
 #include "Commands/Actor/DestroyActorCommand.h"
 #include "Commands/Blueprint/ApplyGraphCommand.h"
+#include "Commands/PCG/ApplyPcgPlanCommand.h"
 #include "Commands/Blueprint/CompileSaveBlueprintCommand.h"
 #include "Commands/Blueprint/ReadGraphCommand.h"
 #include "Commands/CommandDispatcher.h"
@@ -2411,6 +2412,15 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		EBATAutomationPermission::Blueprint,
 		false,
 		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/pcg/apply"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FApplyPcgPlanCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor | EBATAutomationPermission::Filesystem,
+		false,
+		true,
 		false
 	});
 	RegisterBuiltInAutomationCommand({
