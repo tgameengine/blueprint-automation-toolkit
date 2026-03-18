@@ -15,6 +15,7 @@
 #include "Misc/Guid.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
+#include "Elements/PCGSurfaceSampler.h"
 #include "PCGNode.h"
 #include "PCGGraph.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
@@ -84,6 +85,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsMissingGraphTest, "Bl
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandCreatesAndSavesGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandCreatesAndSavesGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandAddsNodeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandAddsNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandReappliesNodeByIdTest, "BlueprintAutomationToolkit.PCG.ApplyCommandReappliesNodeById", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandSetsSupportedNodeSettingTest, "BlueprintAutomationToolkit.PCG.ApplyCommandSetsSupportedNodeSetting", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnsupportedNodeSettingTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnsupportedNodeSetting", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRemovesNodeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRemovesNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeRemoveTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeRemove", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandConnectsEdgeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandConnectsEdge", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeEdgeConnectTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeEdgeConnect", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1210,12 +1217,12 @@ bool FBATPcgNodeRegistryResolvesKnownFamiliesTest::RunTest(const FString& Parame
 		return false;
 	}
 
-	if (!TestTrue(TEXT("StaticMeshSpawner should allow density setting"), StaticMeshSpawner->SupportedSettingKeys.Contains(TEXT("density"))))
+	if (!TestTrue(TEXT("StaticMeshSpawner should allow warn_on_identical_spawn setting"), StaticMeshSpawner->SupportedSettingKeys.Contains(TEXT("warn_on_identical_spawn"))))
 	{
 		return false;
 	}
 
-	if (!TestTrue(TEXT("SurfaceSampler should allow density setting"), SurfaceSampler->SupportedSettingKeys.Contains(TEXT("density"))))
+	if (!TestTrue(TEXT("SurfaceSampler should allow points_per_squared_meter setting"), SurfaceSampler->SupportedSettingKeys.Contains(TEXT("points_per_squared_meter"))))
 	{
 		return false;
 	}
@@ -1423,6 +1430,330 @@ bool FBATPcgApplyCommandReappliesNodeByIdTest::RunTest(const FString& Parameters
 
 	CleanupPcgTestGraphAsset(GraphPath);
 	return TestEqual(TEXT("Reapplying the same nodes.add id should not duplicate the managed node"), MatchingCount, 1);
+}
+
+bool FBATPcgApplyCommandSetsSupportedNodeSettingTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddNode->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> Settings = MakeShared<FJsonObject>();
+	Settings->SetNumberField(TEXT("points_per_squared_meter"), 2.5);
+	Settings->SetBoolField(TEXT("apply_density_to_points"), false);
+
+	TSharedRef<FJsonObject> SetNode = MakeShared<FJsonObject>();
+	SetNode->SetStringField(TEXT("op"), TEXT("nodes.set"));
+	SetNode->SetStringField(TEXT("node"), TEXT("surface_sampler"));
+	SetNode->SetObjectField(TEXT("settings"), Settings);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(SetNode) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for nodes.set with supported flat settings"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after nodes.set"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SurfaceSamplerNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:surface_sampler"), ESearchCase::CaseSensitive))
+		{
+			SurfaceSamplerNode = NodeInstance;
+			break;
+		}
+	}
+
+	if (!TestNotNull(TEXT("Managed surface sampler node should exist"), SurfaceSamplerNode))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGSurfaceSamplerSettings* SurfaceSamplerSettings = Cast<UPCGSurfaceSamplerSettings>(SurfaceSamplerNode->GetSettings());
+	if (!TestNotNull(TEXT("Managed node should own a surface sampler settings object"), SurfaceSamplerSettings))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bPointsOk = TestEqual(TEXT("nodes.set should update points_per_squared_meter"), SurfaceSamplerSettings->PointsPerSquaredMeter, 2.5f);
+	const bool bDensityFlagOk = TestFalse(TEXT("nodes.set should update apply_density_to_points"), SurfaceSamplerSettings->bApplyDensityToPoints);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bPointsOk && bDensityFlagOk;
+}
+
+bool FBATPcgApplyCommandRejectsUnsupportedNodeSettingTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("branch_a"));
+	AddNode->SetStringField(TEXT("type"), TEXT("Branch"));
+
+	TSharedRef<FJsonObject> Settings = MakeShared<FJsonObject>();
+	Settings->SetBoolField(TEXT("not_a_supported_setting"), true);
+
+	TSharedRef<FJsonObject> SetNode = MakeShared<FJsonObject>();
+	SetNode->SetStringField(TEXT("op"), TEXT("nodes.set"));
+	SetNode->SetStringField(TEXT("node"), TEXT("branch_a"));
+	SetNode->SetObjectField(TEXT("settings"), Settings);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(SetNode) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestFalse(TEXT("nodes.set should reject unsupported flat settings"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Unsupported node setting should report unsupported_setting"), Result.ErrorCode, FString(TEXT("unsupported_setting")));
+}
+
+bool FBATPcgApplyCommandRemovesNodeTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddNode->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> RemoveNode = MakeShared<FJsonObject>();
+	RemoveNode->SetStringField(TEXT("op"), TEXT("nodes.remove"));
+	RemoveNode->SetStringField(TEXT("node"), TEXT("surface_sampler"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(RemoveNode) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for nodes.remove"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after nodes.remove"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	int32 MatchingCount = 0;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:surface_sampler"), ESearchCase::CaseSensitive))
+		{
+			++MatchingCount;
+		}
+	}
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return TestEqual(TEXT("nodes.remove should delete the managed node"), MatchingCount, 0);
+}
+
+bool FBATPcgApplyCommandRejectsUnknownNodeRemoveTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+
+	TSharedRef<FJsonObject> RemoveNode = MakeShared<FJsonObject>();
+	RemoveNode->SetStringField(TEXT("op"), TEXT("nodes.remove"));
+	RemoveNode->SetStringField(TEXT("node"), TEXT("missing_node"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(RemoveNode) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestFalse(TEXT("nodes.remove should reject unknown managed node ids"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Unknown node removal should report unknown_node_reference"), Result.ErrorCode, FString(TEXT("unknown_node_reference")));
+}
+
+bool FBATPcgApplyCommandConnectsEdgeTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddSource = MakeShared<FJsonObject>();
+	AddSource->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddSource->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddSource->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> AddTarget = MakeShared<FJsonObject>();
+	AddTarget->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddTarget->SetStringField(TEXT("id"), TEXT("transform_points"));
+	AddTarget->SetStringField(TEXT("type"), TEXT("TransformPoints"));
+
+	TSharedRef<FJsonObject> Connect = MakeShared<FJsonObject>();
+	Connect->SetStringField(TEXT("op"), TEXT("edges.connect"));
+	Connect->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	Connect->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), {
+		MakeShared<FJsonValueObject>(AddSource),
+		MakeShared<FJsonValueObject>(AddTarget),
+		MakeShared<FJsonValueObject>(Connect)
+	});
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for edges.connect"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after edges.connect"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SourceNode = nullptr;
+	UPCGNode* TargetNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (!NodeInstance)
+		{
+			continue;
+		}
+
+		if (NodeInstance->NodeComment.Contains(TEXT("BAT_ID:surface_sampler"), ESearchCase::CaseSensitive))
+		{
+			SourceNode = NodeInstance;
+		}
+		else if (NodeInstance->NodeComment.Contains(TEXT("BAT_ID:transform_points"), ESearchCase::CaseSensitive))
+		{
+			TargetNode = NodeInstance;
+		}
+	}
+
+	if (!TestNotNull(TEXT("Source node should exist"), SourceNode) || !TestNotNull(TEXT("Target node should exist"), TargetNode))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGPin* SourcePin = SourceNode->GetOutputPin(TEXT("Out"));
+	UPCGPin* TargetPin = TargetNode->GetInputPin(TEXT("In"));
+	if (!TestNotNull(TEXT("Source output pin should exist"), SourcePin) || !TestNotNull(TEXT("Target input pin should exist"), TargetPin))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bConnected = TestTrue(TEXT("Connected edge should mark the source pin connected"), SourcePin->IsConnected())
+		&& TestTrue(TEXT("Connected edge should mark the target pin connected"), TargetPin->IsConnected())
+		&& TestEqual(TEXT("Connected edge should create exactly one outbound connection"), SourcePin->EdgeCount(), 1);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bConnected;
+}
+
+bool FBATPcgApplyCommandRejectsUnknownNodeEdgeConnectTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+
+	TSharedRef<FJsonObject> AddTarget = MakeShared<FJsonObject>();
+	AddTarget->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddTarget->SetStringField(TEXT("id"), TEXT("transform_points"));
+	AddTarget->SetStringField(TEXT("type"), TEXT("TransformPoints"));
+
+	TSharedRef<FJsonObject> Connect = MakeShared<FJsonObject>();
+	Connect->SetStringField(TEXT("op"), TEXT("edges.connect"));
+	Connect->SetStringField(TEXT("from"), TEXT("missing_node.Out"));
+	Connect->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddTarget), MakeShared<FJsonValueObject>(Connect) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestFalse(TEXT("edges.connect should reject unknown managed node ids"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Unknown node connect should report unknown_node_reference"), Result.ErrorCode, FString(TEXT("unknown_node_reference")));
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)
