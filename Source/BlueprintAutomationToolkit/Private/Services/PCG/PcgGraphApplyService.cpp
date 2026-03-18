@@ -5,12 +5,15 @@
 #include "Services/PCG/PcgNodeRegistry.h"
 
 #include "Dom/JsonObject.h"
+#include "Engine/StaticMesh.h"
 #include "Elements/ControlFlow/PCGBranch.h"
 #include "Elements/PCGAttributeFilter.h"
 #include "Elements/PCGDifferenceElement.h"
 #include "Elements/PCGStaticMeshSpawner.h"
 #include "Elements/PCGSurfaceSampler.h"
 #include "Elements/PCGTransformPoints.h"
+#include "MeshSelectors/PCGMeshSelectorWeighted.h"
+#include "MeshSelectors/PCGMeshSelectorWeightedByCategory.h"
 #include "PCGGraph.h"
 #include "PCGNode.h"
 #include "PCGSettings.h"
@@ -72,6 +75,43 @@ namespace
 
 		OutPinLabel = FName(*PinLabel);
 		return OutPinLabel != NAME_None;
+	}
+
+	static TSoftObjectPtr<UStaticMesh> MakeMeshSoftPointer(const FString& MeshPath)
+	{
+		FString NormalizedPath = MeshPath;
+		NormalizedPath.TrimStartAndEndInline();
+		return TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(NormalizedPath));
+	}
+
+	static void BuildWeightedEntries(const TArray<FString>& MeshPaths, TArray<FPCGMeshSelectorWeightedEntry>& OutEntries)
+	{
+		OutEntries.Reset();
+		OutEntries.Reserve(MeshPaths.Num());
+		for (const FString& MeshPath : MeshPaths)
+		{
+			OutEntries.Add(FPCGMeshSelectorWeightedEntry(MakeMeshSoftPointer(MeshPath), 1));
+		}
+	}
+
+	template <typename TSelector>
+	static TSelector* EnsureMeshSelector(UPCGStaticMeshSpawnerSettings* SpawnerSettings)
+	{
+		if (!SpawnerSettings)
+		{
+			return nullptr;
+		}
+
+		SpawnerSettings->SetMeshSelectorType(TSelector::StaticClass());
+		TSelector* Selector = Cast<TSelector>(SpawnerSettings->MeshSelectorParameters);
+		if (!Selector)
+		{
+			SpawnerSettings->MeshSelectorType = TSelector::StaticClass();
+			Selector = NewObject<TSelector>(SpawnerSettings, TSelector::StaticClass(), NAME_None, RF_Transactional);
+			SpawnerSettings->MeshSelectorParameters = Selector;
+		}
+
+		return Selector;
 	}
 
 	static bool TryGetBoolValue(const TSharedPtr<FJsonValue>& Value, bool& OutValue)
@@ -572,6 +612,68 @@ namespace
 		GraphHandle.Graph->GetOutermost()->MarkPackageDirty();
 		return FAutomationResult::Ok(nullptr);
 	}
+
+	static FAutomationResult ApplySpawnerMeshSet(const FPcgApplyOpSpec& Op, FPcgGraphAssetHandle& GraphHandle)
+	{
+		if (!GraphHandle.Graph)
+		{
+			return FAutomationResult::Error(TEXT("graph_not_ready"), TEXT("PCG graph is not available for mesh-set updates."), 500);
+		}
+
+		UPCGNode* Node = FindManagedNodeById(GraphHandle.Graph, Op.Node);
+		if (!Node)
+		{
+			return FAutomationResult::Error(TEXT("unknown_node_reference"), FString::Printf(TEXT("Unknown managed PCG node id: %s"), *Op.Node), 404);
+		}
+
+		UPCGStaticMeshSpawnerSettings* SpawnerSettings = Cast<UPCGStaticMeshSpawnerSettings>(Node->GetSettings());
+		if (!SpawnerSettings)
+		{
+			return FAutomationResult::Error(TEXT("invalid_target_node"), TEXT("spawners.set_mesh_set requires a StaticMeshSpawner node."), 400);
+		}
+
+		GraphHandle.Graph->Modify();
+		Node->Modify();
+		SpawnerSettings->Modify();
+
+		if (Op.MeshSet.Mode.Equals(TEXT("weighted"), ESearchCase::CaseSensitive))
+		{
+			UPCGMeshSelectorWeighted* WeightedSelector = EnsureMeshSelector<UPCGMeshSelectorWeighted>(SpawnerSettings);
+			if (!WeightedSelector)
+			{
+				return FAutomationResult::Error(TEXT("mesh_set_apply_failed"), TEXT("Failed to create weighted mesh selector for StaticMeshSpawner."), 500);
+			}
+
+			WeightedSelector->Modify();
+			BuildWeightedEntries(Op.MeshSet.Meshes, WeightedSelector->MeshEntries);
+			GraphHandle.Graph->GetOutermost()->MarkPackageDirty();
+			return FAutomationResult::Ok(nullptr);
+		}
+
+		if (Op.MeshSet.Mode.Equals(TEXT("weighted_by_category"), ESearchCase::CaseSensitive))
+		{
+			UPCGMeshSelectorWeightedByCategory* CategorySelector = EnsureMeshSelector<UPCGMeshSelectorWeightedByCategory>(SpawnerSettings);
+			if (!CategorySelector)
+			{
+				return FAutomationResult::Error(TEXT("mesh_set_apply_failed"), TEXT("Failed to create weighted-by-category mesh selector for StaticMeshSpawner."), 500);
+			}
+
+			CategorySelector->Modify();
+			CategorySelector->Entries.Reset();
+			CategorySelector->Entries.Reserve(Op.MeshSet.Categories.Num());
+			for (const FPcgApplyMeshCategorySpec& Category : Op.MeshSet.Categories)
+			{
+				TArray<FPCGMeshSelectorWeightedEntry> WeightedEntries;
+				BuildWeightedEntries(Category.Meshes, WeightedEntries);
+				CategorySelector->Entries.Add(FPCGWeightedByCategoryEntryList(Category.Name, WeightedEntries));
+			}
+
+			GraphHandle.Graph->GetOutermost()->MarkPackageDirty();
+			return FAutomationResult::Ok(nullptr);
+		}
+
+		return FAutomationResult::Error(TEXT("invalid_request"), FString::Printf(TEXT("Unsupported mesh_set mode: %s"), *Op.MeshSet.Mode), 400);
+	}
 }
 
 FAutomationResult FPcgGraphApplyService::ApplyOps(const FPcgApplyRequest& Request, FPcgGraphAssetHandle& GraphHandle)
@@ -585,7 +687,12 @@ FAutomationResult FPcgGraphApplyService::ApplyOps(const FPcgApplyRequest& Reques
 
 		if (Op.Op.Equals(TEXT("spawners.set_mesh_set"), ESearchCase::CaseSensitive))
 		{
-			return FAutomationResult::Error(TEXT("not_implemented"), TEXT("spawners.set_mesh_set is not implemented yet."), 501);
+			const FAutomationResult Result = ApplySpawnerMeshSet(Op, GraphHandle);
+			if (!Result.bSuccess)
+			{
+				return Result;
+			}
+			continue;
 		}
 
 		if (Op.Op.Equals(TEXT("nodes.add"), ESearchCase::CaseSensitive))

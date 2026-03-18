@@ -16,6 +16,9 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Elements/PCGSurfaceSampler.h"
+#include "Elements/PCGStaticMeshSpawner.h"
+#include "MeshSelectors/PCGMeshSelectorWeighted.h"
+#include "MeshSelectors/PCGMeshSelectorWeightedByCategory.h"
 #include "PCGNode.h"
 #include "PCGGraph.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
@@ -93,6 +96,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandConnectsEdgeTest, "Blueprint
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeEdgeConnectTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeEdgeConnect", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandDisconnectsEdgeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandDisconnectsEdge", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeEdgeDisconnectTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeEdgeDisconnect", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandConnectEdgeIsIdempotentTest, "BlueprintAutomationToolkit.PCG.ApplyCommandConnectEdgeIsIdempotent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandDisconnectEdgeIsIdempotentTest, "BlueprintAutomationToolkit.PCG.ApplyCommandDisconnectEdgeIsIdempotent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandSetsSpawnerWeightedMeshSetTest, "BlueprintAutomationToolkit.PCG.ApplyCommandSetsSpawnerWeightedMeshSet", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandSetsSpawnerWeightedByCategoryMeshSetTest, "BlueprintAutomationToolkit.PCG.ApplyCommandSetsSpawnerWeightedByCategoryMeshSet", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsMeshSetOnNonSpawnerNodeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsMeshSetOnNonSpawnerNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandMeshSetIsIdempotentTest, "BlueprintAutomationToolkit.PCG.ApplyCommandMeshSetIsIdempotent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1889,6 +1898,459 @@ bool FBATPcgApplyCommandRejectsUnknownNodeEdgeDisconnectTest::RunTest(const FStr
 	}
 
 	return TestEqual(TEXT("Unknown node disconnect should report unknown_node_reference"), Result.ErrorCode, FString(TEXT("unknown_node_reference")));
+}
+
+bool FBATPcgApplyCommandConnectEdgeIsIdempotentTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddSource = MakeShared<FJsonObject>();
+	AddSource->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddSource->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddSource->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> AddTarget = MakeShared<FJsonObject>();
+	AddTarget->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddTarget->SetStringField(TEXT("id"), TEXT("transform_points"));
+	AddTarget->SetStringField(TEXT("type"), TEXT("TransformPoints"));
+
+	TSharedRef<FJsonObject> ConnectFirst = MakeShared<FJsonObject>();
+	ConnectFirst->SetStringField(TEXT("op"), TEXT("edges.connect"));
+	ConnectFirst->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	ConnectFirst->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> ConnectSecond = MakeShared<FJsonObject>();
+	ConnectSecond->SetStringField(TEXT("op"), TEXT("edges.connect"));
+	ConnectSecond->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	ConnectSecond->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), {
+		MakeShared<FJsonValueObject>(AddSource),
+		MakeShared<FJsonValueObject>(AddTarget),
+		MakeShared<FJsonValueObject>(ConnectFirst),
+		MakeShared<FJsonValueObject>(ConnectSecond)
+	});
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("Repeated edges.connect should still succeed"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after repeated edges.connect"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SourceNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:surface_sampler"), ESearchCase::CaseSensitive))
+		{
+			SourceNode = NodeInstance;
+			break;
+		}
+	}
+
+	if (!TestNotNull(TEXT("Source node should exist after repeated connect"), SourceNode))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGPin* SourcePin = SourceNode->GetOutputPin(TEXT("Out"));
+	if (!TestNotNull(TEXT("Source output pin should exist after repeated connect"), SourcePin))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bSingleEdge = TestEqual(TEXT("Repeated edges.connect should leave a single edge"), SourcePin->EdgeCount(), 1);
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bSingleEdge;
+}
+
+bool FBATPcgApplyCommandDisconnectEdgeIsIdempotentTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddSource = MakeShared<FJsonObject>();
+	AddSource->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddSource->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddSource->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> AddTarget = MakeShared<FJsonObject>();
+	AddTarget->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddTarget->SetStringField(TEXT("id"), TEXT("transform_points"));
+	AddTarget->SetStringField(TEXT("type"), TEXT("TransformPoints"));
+
+	TSharedRef<FJsonObject> Connect = MakeShared<FJsonObject>();
+	Connect->SetStringField(TEXT("op"), TEXT("edges.connect"));
+	Connect->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	Connect->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> DisconnectFirst = MakeShared<FJsonObject>();
+	DisconnectFirst->SetStringField(TEXT("op"), TEXT("edges.disconnect"));
+	DisconnectFirst->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	DisconnectFirst->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> DisconnectSecond = MakeShared<FJsonObject>();
+	DisconnectSecond->SetStringField(TEXT("op"), TEXT("edges.disconnect"));
+	DisconnectSecond->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	DisconnectSecond->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), {
+		MakeShared<FJsonValueObject>(AddSource),
+		MakeShared<FJsonValueObject>(AddTarget),
+		MakeShared<FJsonValueObject>(Connect),
+		MakeShared<FJsonValueObject>(DisconnectFirst),
+		MakeShared<FJsonValueObject>(DisconnectSecond)
+	});
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("Repeated edges.disconnect should still succeed"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after repeated edges.disconnect"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SourceNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:surface_sampler"), ESearchCase::CaseSensitive))
+		{
+			SourceNode = NodeInstance;
+			break;
+		}
+	}
+
+	if (!TestNotNull(TEXT("Source node should exist after repeated disconnect"), SourceNode))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGPin* SourcePin = SourceNode->GetOutputPin(TEXT("Out"));
+	if (!TestNotNull(TEXT("Source output pin should exist after repeated disconnect"), SourcePin))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bNoEdges = TestEqual(TEXT("Repeated edges.disconnect should leave zero edges"), SourcePin->EdgeCount(), 0);
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bNoEdges;
+}
+
+bool FBATPcgApplyCommandSetsSpawnerWeightedMeshSetTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	AddNode->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
+	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
+	MeshSet->SetArrayField(TEXT("meshes"), {
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")),
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2"))
+	});
+
+	TSharedRef<FJsonObject> SetMeshSet = MakeShared<FJsonObject>();
+	SetMeshSet->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
+	SetMeshSet->SetStringField(TEXT("node"), TEXT("structure_spawner"));
+	SetMeshSet->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(SetMeshSet) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for spawners.set_mesh_set weighted mode"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after weighted mesh_set"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SpawnerNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:structure_spawner"), ESearchCase::CaseSensitive))
+		{
+			SpawnerNode = NodeInstance;
+			break;
+		}
+	}
+
+	UPCGStaticMeshSpawnerSettings* SpawnerSettings = SpawnerNode ? Cast<UPCGStaticMeshSpawnerSettings>(SpawnerNode->GetSettings()) : nullptr;
+	UPCGMeshSelectorWeighted* WeightedSelector = SpawnerSettings ? Cast<UPCGMeshSelectorWeighted>(SpawnerSettings->MeshSelectorParameters) : nullptr;
+	if (!TestNotNull(TEXT("Weighted mesh_set should leave a static mesh spawner settings object"), SpawnerSettings)
+		|| !TestNotNull(TEXT("Weighted mesh_set should use the weighted mesh selector"), WeightedSelector))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bEntryCountOk = TestEqual(TEXT("Weighted mesh_set should assign two mesh entries"), WeightedSelector->MeshEntries.Num(), 2);
+	const bool bFirstMeshOk = TestEqual(TEXT("Weighted mesh_set should assign the first mesh path"), WeightedSelector->MeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")));
+	const bool bSecondMeshOk = TestEqual(TEXT("Weighted mesh_set should assign the second mesh path"), WeightedSelector->MeshEntries[1].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")));
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bEntryCountOk && bFirstMeshOk && bSecondMeshOk;
+}
+
+bool FBATPcgApplyCommandSetsSpawnerWeightedByCategoryMeshSetTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	AddNode->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	TSharedRef<FJsonObject> CategoryA = MakeShared<FJsonObject>();
+	CategoryA->SetStringField(TEXT("name"), TEXT("A"));
+	CategoryA->SetArrayField(TEXT("meshes"), { MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")) });
+
+	TSharedRef<FJsonObject> CategoryB = MakeShared<FJsonObject>();
+	CategoryB->SetStringField(TEXT("name"), TEXT("B"));
+	CategoryB->SetArrayField(TEXT("meshes"), { MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")) });
+
+	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
+	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted_by_category"));
+	MeshSet->SetArrayField(TEXT("categories"), { MakeShared<FJsonValueObject>(CategoryA), MakeShared<FJsonValueObject>(CategoryB) });
+
+	TSharedRef<FJsonObject> SetMeshSet = MakeShared<FJsonObject>();
+	SetMeshSet->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
+	SetMeshSet->SetStringField(TEXT("node"), TEXT("structure_spawner"));
+	SetMeshSet->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(SetMeshSet) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for spawners.set_mesh_set weighted_by_category mode"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after weighted_by_category mesh_set"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SpawnerNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:structure_spawner"), ESearchCase::CaseSensitive))
+		{
+			SpawnerNode = NodeInstance;
+			break;
+		}
+	}
+
+	UPCGStaticMeshSpawnerSettings* SpawnerSettings = SpawnerNode ? Cast<UPCGStaticMeshSpawnerSettings>(SpawnerNode->GetSettings()) : nullptr;
+	UPCGMeshSelectorWeightedByCategory* CategorySelector = SpawnerSettings ? Cast<UPCGMeshSelectorWeightedByCategory>(SpawnerSettings->MeshSelectorParameters) : nullptr;
+	if (!TestNotNull(TEXT("Weighted-by-category mesh_set should leave a static mesh spawner settings object"), SpawnerSettings)
+		|| !TestNotNull(TEXT("Weighted-by-category mesh_set should use the weighted-by-category selector"), CategorySelector))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bCategoryCountOk = TestEqual(TEXT("Weighted-by-category mesh_set should assign two categories"), CategorySelector->Entries.Num(), 2);
+	const bool bCategoryAOk = TestEqual(TEXT("First category name should match"), CategorySelector->Entries[0].CategoryEntry, FString(TEXT("A")))
+		&& TestEqual(TEXT("First category should assign the first project mesh"), CategorySelector->Entries[0].WeightedMeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")));
+	const bool bCategoryBOk = TestEqual(TEXT("Second category name should match"), CategorySelector->Entries[1].CategoryEntry, FString(TEXT("B")))
+		&& TestEqual(TEXT("Second category should assign the second project mesh"), CategorySelector->Entries[1].WeightedMeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")));
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bCategoryCountOk && bCategoryAOk && bCategoryBOk;
+}
+
+bool FBATPcgApplyCommandRejectsMeshSetOnNonSpawnerNodeTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddNode->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
+	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
+	MeshSet->SetArrayField(TEXT("meshes"), {
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2"))
+	});
+
+	TSharedRef<FJsonObject> SetMeshSet = MakeShared<FJsonObject>();
+	SetMeshSet->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
+	SetMeshSet->SetStringField(TEXT("node"), TEXT("surface_sampler"));
+	SetMeshSet->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(SetMeshSet) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestFalse(TEXT("spawners.set_mesh_set should reject non-spawner nodes"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Non-spawner mesh_set should report invalid_target_node"), Result.ErrorCode, FString(TEXT("invalid_target_node")));
+}
+
+bool FBATPcgApplyCommandMeshSetIsIdempotentTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	AddNode->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
+	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
+	MeshSet->SetArrayField(TEXT("meshes"), {
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")),
+		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2"))
+	});
+
+	TSharedRef<FJsonObject> SetMeshSetA = MakeShared<FJsonObject>();
+	SetMeshSetA->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
+	SetMeshSetA->SetStringField(TEXT("node"), TEXT("structure_spawner"));
+	SetMeshSetA->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	TSharedRef<FJsonObject> SetMeshSetB = MakeShared<FJsonObject>();
+	SetMeshSetB->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
+	SetMeshSetB->SetStringField(TEXT("node"), TEXT("structure_spawner"));
+	SetMeshSetB->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), {
+		MakeShared<FJsonValueObject>(AddNode),
+		MakeShared<FJsonValueObject>(SetMeshSetA),
+		MakeShared<FJsonValueObject>(SetMeshSetB)
+	});
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("Repeated spawners.set_mesh_set should still succeed"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after repeated mesh_set"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SpawnerNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:structure_spawner"), ESearchCase::CaseSensitive))
+		{
+			SpawnerNode = NodeInstance;
+			break;
+		}
+	}
+
+	UPCGStaticMeshSpawnerSettings* SpawnerSettings = SpawnerNode ? Cast<UPCGStaticMeshSpawnerSettings>(SpawnerNode->GetSettings()) : nullptr;
+	UPCGMeshSelectorWeighted* WeightedSelector = SpawnerSettings ? Cast<UPCGMeshSelectorWeighted>(SpawnerSettings->MeshSelectorParameters) : nullptr;
+	if (!TestNotNull(TEXT("Repeated mesh_set should keep a static mesh spawner settings object"), SpawnerSettings)
+		|| !TestNotNull(TEXT("Repeated mesh_set should keep a weighted selector"), WeightedSelector))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bEntryCountOk = TestEqual(TEXT("Repeated mesh_set should leave exactly two mesh entries"), WeightedSelector->MeshEntries.Num(), 2);
+	const bool bFirstMeshOk = TestEqual(TEXT("Repeated mesh_set should preserve the first mesh path"), WeightedSelector->MeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")));
+	const bool bSecondMeshOk = TestEqual(TEXT("Repeated mesh_set should preserve the second mesh path"), WeightedSelector->MeshEntries[1].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")));
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bEntryCountOk && bFirstMeshOk && bSecondMeshOk;
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)
