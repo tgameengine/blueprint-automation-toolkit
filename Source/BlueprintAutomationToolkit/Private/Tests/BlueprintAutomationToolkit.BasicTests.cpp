@@ -4,6 +4,7 @@
 
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/SetPropertyCommand.h"
+#include "Commands/PCG/ApplyPcgPlanCommand.h"
 #include "Commands/AutomationCommand.h"
 #include "Core/ForwardAxis.h"
 #include "Domain/Requests/AssetSaveRequest.h"
@@ -11,6 +12,8 @@
 #include "Misc/AutomationTest.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/FileHelper.h"
+#include "Misc/Guid.h"
+#include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "Routes/PCG/PcgApplyRequest.h"
@@ -72,6 +75,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArran
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsPreserveFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsPreserveFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestNormalizesConvenienceFieldsTest, "BlueprintAutomationToolkit.PCG.ApplyRequestNormalizesConvenienceFields", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsDuplicateNodeIdsTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsDuplicateNodeIds", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsMissingGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsMissingGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandCreatesAndSavesGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandCreatesAndSavesGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -93,6 +98,44 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATResponseExportWritesFileTest, "BlueprintAut
 
 namespace
 {
+	static FString MakeUniquePcgTestGraphObjectPath()
+	{
+		const FString Suffix = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+		return FString::Printf(TEXT("/Game/__BATTests__/PCG/BAT_TestGraph_%s.BAT_TestGraph_%s"), *Suffix, *Suffix);
+	}
+
+	static FString GetPackagePathFromObjectPath(const FString& ObjectPath)
+	{
+		return FPackageName::ObjectPathToPackageName(ObjectPath);
+	}
+
+	static FString GetPackageFilenameFromObjectPath(const FString& ObjectPath)
+	{
+		return FPackageName::LongPackageNameToFilename(GetPackagePathFromObjectPath(ObjectPath), FPackageName::GetAssetPackageExtension());
+	}
+
+	static void CleanupPcgTestGraphAsset(const FString& ObjectPath)
+	{
+		const FString PackagePath = GetPackagePathFromObjectPath(ObjectPath);
+		if (UPackage* Package = FindPackage(nullptr, *PackagePath))
+		{
+			ResetLoaders(Package);
+		}
+
+		const FString Filename = GetPackageFilenameFromObjectPath(ObjectPath);
+		IFileManager::Get().Delete(*Filename, false, true, true);
+	}
+
+	static FAutomationContext MakePcgApplyContext(const TSharedPtr<FJsonObject>& BodyObj)
+	{
+		FAutomationContext Context;
+		Context.RequestId = TEXT("bat-test-request");
+		Context.Endpoint = TEXT("/pcg/apply");
+		Context.Body = BodyObj;
+		Context.bReturnRawObject = true;
+		return Context;
+	}
+
 	static UBATReflectionTestObject* CreateReflectionTestObject()
 	{
 		UBATReflectionTestObject* Object = NewObject<UBATReflectionTestObject>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UBATReflectionTestObject::StaticClass(), TEXT("BATReflectionTestObject")), RF_Transient);
@@ -1132,6 +1175,61 @@ bool FBATPcgApplyRequestRejectsDuplicateNodeIdsTest::RunTest(const FString& Para
 
 	AddError(TEXT("Expected duplicate_node_id parse error"));
 	return false;
+}
+
+bool FBATPcgApplyCommandRejectsMissingGraphTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetArrayField(TEXT("ops"), TArray<TSharedPtr<FJsonValue>>());
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	TestFalse(TEXT("PCG apply should fail when graph is missing and create_if_missing is false"), Result.bSuccess);
+	return TestEqual(TEXT("Missing graph should return graph_not_found"), Result.ErrorCode, FString(TEXT("graph_not_found")));
+}
+
+bool FBATPcgApplyCommandCreatesAndSavesGraphTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), TArray<TSharedPtr<FJsonValue>>());
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	if (!TestTrue(TEXT("PCG apply should create and save a graph when requested"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const FString Filename = GetPackageFilenameFromObjectPath(GraphPath);
+	const bool bFileExists = IFileManager::Get().FileExists(*Filename);
+	const bool bObjectLoads = LoadObject<UObject>(nullptr, *GraphPath) != nullptr;
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestTrue(TEXT("Saved PCG graph package file should exist"), bFileExists))
+	{
+		return false;
+	}
+
+	return TestTrue(TEXT("Saved PCG graph asset should load by object path"), bObjectLoads);
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)

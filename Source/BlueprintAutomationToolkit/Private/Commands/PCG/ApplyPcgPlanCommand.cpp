@@ -1,8 +1,10 @@
 #include "Commands/PCG/ApplyPcgPlanCommand.h"
 
+#include "Core/EditorExecution.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Routes/PCG/PcgApplyRequest.h"
+#include "Services/PCG/PcgGraphAssetService.h"
 
 namespace
 {
@@ -57,14 +59,50 @@ FAutomationResult FApplyPcgPlanCommand::Execute(FAutomationContext& Context)
 		return FAutomationResult::ErrorWithData(TEXT("invalid_request"), TEXT("PCG apply request parsing failed"), 400, BuildIssueEnvelope(TEXT("invalid_request"), TEXT("PCG apply request parsing failed"), ParseErrors));
 	}
 
-	TSharedRef<FJsonObject> Details = MakeShared<FJsonObject>();
-	Details->SetStringField(TEXT("graph"), ParsedRequest.GraphPath);
-	Details->SetNumberField(TEXT("opCount"), ParsedRequest.Ops.Num());
-	Details->SetNumberField(TEXT("parameterCount"), ParsedRequest.Parameters.Num());
+	TOptional<FAutomationResult> LifecycleResult;
+	const bool bCompleted = BAT::EditorExecution::RunOnGameThreadAndWaitVoid([&ParsedRequest, &LifecycleResult]()
+	{
+		FPcgGraphAssetHandle Handle;
+		const FAutomationResult Result = FPcgGraphAssetService::AcquireGraphAsset(ParsedRequest, Handle);
+		if (!Result.bSuccess)
+		{
+			LifecycleResult = Result;
+			return;
+		}
 
-	return FAutomationResult::ErrorWithData(
-		TEXT("not_implemented"),
-		TEXT("PCG apply executor is not implemented yet."),
-		501,
-		BuildIssueEnvelope(TEXT("not_implemented"), TEXT("PCG apply executor is not implemented yet."), {}, Details));
+		if (ParsedRequest.Ops.Num() > 0)
+		{
+			TSharedRef<FJsonObject> Details = MakeShared<FJsonObject>();
+			Details->SetStringField(TEXT("graph"), ParsedRequest.GraphPath);
+			Details->SetBoolField(TEXT("created"), Handle.bCreated);
+			Details->SetBoolField(TEXT("loadedExisting"), Handle.bLoadedExisting);
+			Details->SetBoolField(TEXT("saved"), Handle.bSaved);
+			Details->SetNumberField(TEXT("opCount"), ParsedRequest.Ops.Num());
+			LifecycleResult = FAutomationResult::ErrorWithData(
+				TEXT("not_implemented"),
+				TEXT("PCG graph lifecycle is implemented, but PCG plan ops are not implemented yet."),
+				501,
+				BuildIssueEnvelope(TEXT("not_implemented"), TEXT("PCG graph lifecycle is implemented, but PCG plan ops are not implemented yet."), {}, Details));
+			return;
+		}
+
+		TSharedRef<FJsonObject> Data = MakeShared<FJsonObject>();
+		Data->SetBoolField(TEXT("ok"), true);
+		Data->SetStringField(TEXT("graph"), ParsedRequest.GraphPath);
+		Data->SetBoolField(TEXT("created"), Handle.bCreated);
+		Data->SetBoolField(TEXT("loadedExisting"), Handle.bLoadedExisting);
+		Data->SetBoolField(TEXT("saved"), Handle.bSaved);
+		Data->SetBoolField(TEXT("graphReady"), Handle.GraphInterface != nullptr);
+		Data->SetArrayField(TEXT("warnings"), TArray<TSharedPtr<FJsonValue>>());
+		Data->SetArrayField(TEXT("errors"), TArray<TSharedPtr<FJsonValue>>());
+		Data->SetObjectField(TEXT("data"), MakeShared<FJsonObject>());
+		LifecycleResult = FAutomationResult::Ok(MakeShared<FJsonValueObject>(Data));
+	}, 10.0f);
+
+	if (!bCompleted || !LifecycleResult.IsSet())
+	{
+		return FAutomationResult::Error(TEXT("game_thread_timeout"), TEXT("Timed out waiting for GameThread execution"), 504);
+	}
+
+	return LifecycleResult.GetValue();
 }
