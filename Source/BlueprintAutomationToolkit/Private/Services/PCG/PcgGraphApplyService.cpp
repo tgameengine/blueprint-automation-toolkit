@@ -520,6 +520,58 @@ namespace
 		GraphHandle.Graph->GetOutermost()->MarkPackageDirty();
 		return FAutomationResult::Ok(nullptr);
 	}
+
+	static FAutomationResult ApplyEdgesDisconnect(const FPcgApplyOpSpec& Op, FPcgGraphAssetHandle& GraphHandle)
+	{
+		if (!GraphHandle.Graph)
+		{
+			return FAutomationResult::Error(TEXT("graph_not_ready"), TEXT("PCG graph is not available for edge removal."), 500);
+		}
+
+		FString FromNodeId;
+		FName FromPinLabel = NAME_None;
+		FString ToNodeId;
+		FName ToPinLabel = NAME_None;
+		if (!TryParsePinAddress(Op.From, FromNodeId, FromPinLabel) || !TryParsePinAddress(Op.To, ToNodeId, ToPinLabel))
+		{
+			return FAutomationResult::Error(TEXT("invalid_pin_reference"), TEXT("Edge pin references must use '<nodeId>.<pinLabel>' format."), 400);
+		}
+
+		UPCGNode* FromNode = FindManagedNodeById(GraphHandle.Graph, FromNodeId);
+		if (!FromNode)
+		{
+			return FAutomationResult::Error(TEXT("unknown_node_reference"), FString::Printf(TEXT("Unknown managed PCG node id: %s"), *FromNodeId), 404);
+		}
+
+		UPCGNode* ToNode = FindManagedNodeById(GraphHandle.Graph, ToNodeId);
+		if (!ToNode)
+		{
+			return FAutomationResult::Error(TEXT("unknown_node_reference"), FString::Printf(TEXT("Unknown managed PCG node id: %s"), *ToNodeId), 404);
+		}
+
+		UPCGPin* FromPin = FromNode->GetOutputPin(FromPinLabel);
+		UPCGPin* ToPin = ToNode->GetInputPin(ToPinLabel);
+		if (!FromPin)
+		{
+			return FAutomationResult::Error(TEXT("invalid_pin_reference"), FString::Printf(TEXT("Output pin '%s' does not exist on node '%s'"), *FromPinLabel.ToString(), *FromNodeId), 400);
+		}
+		if (!ToPin)
+		{
+			return FAutomationResult::Error(TEXT("invalid_pin_reference"), FString::Printf(TEXT("Input pin '%s' does not exist on node '%s'"), *ToPinLabel.ToString(), *ToNodeId), 400);
+		}
+
+		GraphHandle.Graph->Modify();
+		FromNode->Modify();
+		ToNode->Modify();
+		const bool bDisconnected = FromPin->BreakEdgeTo(ToPin);
+		if (!bDisconnected && (FromPin->IsConnected() || ToPin->IsConnected()))
+		{
+			return FAutomationResult::Error(TEXT("edge_disconnect_failed"), TEXT("Failed to remove PCG graph edge."), 500);
+		}
+
+		GraphHandle.Graph->GetOutermost()->MarkPackageDirty();
+		return FAutomationResult::Ok(nullptr);
+	}
 }
 
 FAutomationResult FPcgGraphApplyService::ApplyOps(const FPcgApplyRequest& Request, FPcgGraphAssetHandle& GraphHandle)
@@ -569,6 +621,16 @@ FAutomationResult FPcgGraphApplyService::ApplyOps(const FPcgApplyRequest& Reques
 		if (Op.Op.Equals(TEXT("edges.connect"), ESearchCase::CaseSensitive))
 		{
 			const FAutomationResult Result = ApplyEdgesConnect(Op, GraphHandle);
+			if (!Result.bSuccess)
+			{
+				return Result;
+			}
+			continue;
+		}
+
+		if (Op.Op.Equals(TEXT("edges.disconnect"), ESearchCase::CaseSensitive))
+		{
+			const FAutomationResult Result = ApplyEdgesDisconnect(Op, GraphHandle);
 			if (!Result.bSuccess)
 			{
 				return Result;

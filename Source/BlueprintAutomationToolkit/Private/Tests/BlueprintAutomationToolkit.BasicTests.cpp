@@ -91,6 +91,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRemovesNodeTest, "BlueprintA
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeRemoveTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeRemove", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandConnectsEdgeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandConnectsEdge", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeEdgeConnectTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeEdgeConnect", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandDisconnectsEdgeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandDisconnectsEdge", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsUnknownNodeEdgeDisconnectTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsUnknownNodeEdgeDisconnect", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1754,6 +1756,139 @@ bool FBATPcgApplyCommandRejectsUnknownNodeEdgeConnectTest::RunTest(const FString
 	}
 
 	return TestEqual(TEXT("Unknown node connect should report unknown_node_reference"), Result.ErrorCode, FString(TEXT("unknown_node_reference")));
+}
+
+bool FBATPcgApplyCommandDisconnectsEdgeTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> AddSource = MakeShared<FJsonObject>();
+	AddSource->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddSource->SetStringField(TEXT("id"), TEXT("surface_sampler"));
+	AddSource->SetStringField(TEXT("type"), TEXT("SurfaceSampler"));
+
+	TSharedRef<FJsonObject> AddTarget = MakeShared<FJsonObject>();
+	AddTarget->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddTarget->SetStringField(TEXT("id"), TEXT("transform_points"));
+	AddTarget->SetStringField(TEXT("type"), TEXT("TransformPoints"));
+
+	TSharedRef<FJsonObject> Connect = MakeShared<FJsonObject>();
+	Connect->SetStringField(TEXT("op"), TEXT("edges.connect"));
+	Connect->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	Connect->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Disconnect = MakeShared<FJsonObject>();
+	Disconnect->SetStringField(TEXT("op"), TEXT("edges.disconnect"));
+	Disconnect->SetStringField(TEXT("from"), TEXT("surface_sampler.Out"));
+	Disconnect->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), {
+		MakeShared<FJsonValueObject>(AddSource),
+		MakeShared<FJsonValueObject>(AddTarget),
+		MakeShared<FJsonValueObject>(Connect),
+		MakeShared<FJsonValueObject>(Disconnect)
+	});
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for edges.disconnect"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after edges.disconnect"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGNode* SourceNode = nullptr;
+	UPCGNode* TargetNode = nullptr;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (!NodeInstance)
+		{
+			continue;
+		}
+
+		if (NodeInstance->NodeComment.Contains(TEXT("BAT_ID:surface_sampler"), ESearchCase::CaseSensitive))
+		{
+			SourceNode = NodeInstance;
+		}
+		else if (NodeInstance->NodeComment.Contains(TEXT("BAT_ID:transform_points"), ESearchCase::CaseSensitive))
+		{
+			TargetNode = NodeInstance;
+		}
+	}
+
+	if (!TestNotNull(TEXT("Source node should exist after disconnect"), SourceNode) || !TestNotNull(TEXT("Target node should exist after disconnect"), TargetNode))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGPin* SourcePin = SourceNode->GetOutputPin(TEXT("Out"));
+	UPCGPin* TargetPin = TargetNode->GetInputPin(TEXT("In"));
+	if (!TestNotNull(TEXT("Source output pin should exist after disconnect"), SourcePin) || !TestNotNull(TEXT("Target input pin should exist after disconnect"), TargetPin))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const bool bDisconnected = TestFalse(TEXT("Disconnected edge should clear source pin connection state"), SourcePin->IsConnected())
+		&& TestFalse(TEXT("Disconnected edge should clear target pin connection state"), TargetPin->IsConnected())
+		&& TestEqual(TEXT("Disconnected edge should leave zero outbound connections"), SourcePin->EdgeCount(), 0);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bDisconnected;
+}
+
+bool FBATPcgApplyCommandRejectsUnknownNodeEdgeDisconnectTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+
+	TSharedRef<FJsonObject> AddTarget = MakeShared<FJsonObject>();
+	AddTarget->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddTarget->SetStringField(TEXT("id"), TEXT("transform_points"));
+	AddTarget->SetStringField(TEXT("type"), TEXT("TransformPoints"));
+
+	TSharedRef<FJsonObject> Disconnect = MakeShared<FJsonObject>();
+	Disconnect->SetStringField(TEXT("op"), TEXT("edges.disconnect"));
+	Disconnect->SetStringField(TEXT("from"), TEXT("missing_node.Out"));
+	Disconnect->SetStringField(TEXT("to"), TEXT("transform_points.In"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddTarget), MakeShared<FJsonValueObject>(Disconnect) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestFalse(TEXT("edges.disconnect should reject unknown managed node ids"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Unknown node disconnect should report unknown_node_reference"), Result.ErrorCode, FString(TEXT("unknown_node_reference")));
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)
