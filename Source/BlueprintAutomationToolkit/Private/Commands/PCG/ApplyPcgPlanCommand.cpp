@@ -4,6 +4,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Routes/PCG/PcgApplyRequest.h"
+#include "Services/PCG/PcgGraphApplyService.h"
 #include "Services/PCG/PcgGraphAssetService.h"
 
 namespace
@@ -70,20 +71,21 @@ FAutomationResult FApplyPcgPlanCommand::Execute(FAutomationContext& Context)
 			return;
 		}
 
-		if (ParsedRequest.Ops.Num() > 0)
+		const FAutomationResult ApplyResult = FPcgGraphApplyService::ApplyOps(ParsedRequest, Handle);
+		if (!ApplyResult.bSuccess)
 		{
-			TSharedRef<FJsonObject> Details = MakeShared<FJsonObject>();
-			Details->SetStringField(TEXT("graph"), ParsedRequest.GraphPath);
-			Details->SetBoolField(TEXT("created"), Handle.bCreated);
-			Details->SetBoolField(TEXT("loadedExisting"), Handle.bLoadedExisting);
-			Details->SetBoolField(TEXT("saved"), Handle.bSaved);
-			Details->SetNumberField(TEXT("opCount"), ParsedRequest.Ops.Num());
-			LifecycleResult = FAutomationResult::ErrorWithData(
-				TEXT("not_implemented"),
-				TEXT("PCG graph lifecycle is implemented, but PCG plan ops are not implemented yet."),
-				501,
-				BuildIssueEnvelope(TEXT("not_implemented"), TEXT("PCG graph lifecycle is implemented, but PCG plan ops are not implemented yet."), {}, Details));
+			LifecycleResult = ApplyResult;
 			return;
+		}
+
+		if (ParsedRequest.Options.bSave)
+		{
+			const FAutomationResult SaveResult = FPcgGraphAssetService::SaveGraphAsset(Handle);
+			if (!SaveResult.bSuccess)
+			{
+				LifecycleResult = SaveResult;
+				return;
+			}
 		}
 
 		TSharedRef<FJsonObject> Data = MakeShared<FJsonObject>();

@@ -60,15 +60,6 @@ FAutomationResult FPcgGraphAssetService::AcquireGraphAsset(const FPcgApplyReques
 		OutHandle.Graph = ExistingGraph->GetMutablePCGGraph();
 		OutHandle.bLoadedExisting = true;
 
-		if (Request.Options.bSave)
-		{
-			if (!SaveObjectPackage(ExistingGraph))
-			{
-				return FAutomationResult::Error(TEXT("save_failed"), TEXT("Failed to save existing PCG graph asset."), 500);
-			}
-			OutHandle.bSaved = true;
-		}
-
 		return FAutomationResult::Ok(nullptr);
 	}
 
@@ -101,14 +92,21 @@ FAutomationResult FPcgGraphAssetService::AcquireGraphAsset(const FPcgApplyReques
 	OutHandle.Graph = NewGraph;
 	OutHandle.bCreated = true;
 
-	if (Request.Options.bSave)
+	return FAutomationResult::Ok(nullptr);
+}
+
+FAutomationResult FPcgGraphAssetService::SaveGraphAsset(FPcgGraphAssetHandle& Handle)
+{
+	if (!Handle.GraphInterface)
 	{
-		if (!SaveObjectPackage(NewGraph))
-		{
-			return FAutomationResult::Error(TEXT("save_failed"), TEXT("Failed to save created PCG graph asset."), 500);
-		}
-		OutHandle.bSaved = true;
+		return FAutomationResult::Error(TEXT("save_failed"), TEXT("No PCG graph asset is available to save."), 500);
 	}
 
+	if (!SaveObjectPackage(Handle.GraphInterface))
+	{
+		return FAutomationResult::Error(TEXT("save_failed"), TEXT("Failed to save PCG graph asset."), 500);
+	}
+
+	Handle.bSaved = true;
 	return FAutomationResult::Ok(nullptr);
 }

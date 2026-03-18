@@ -15,6 +15,8 @@
 #include "Misc/Guid.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
+#include "PCGNode.h"
+#include "PCGGraph.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "Routes/PCG/PcgApplyRequest.h"
 #include "Services/PCG/PcgNodeRegistry.h"
@@ -80,6 +82,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgNodeRegistryResolvesKnownFamiliesTest, "
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsUnsupportedNodeFamilyTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsUnsupportedNodeFamily", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsMissingGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsMissingGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandCreatesAndSavesGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandCreatesAndSavesGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandAddsNodeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandAddsNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandReappliesNodeByIdTest, "BlueprintAutomationToolkit.PCG.ApplyCommandReappliesNodeById", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1304,6 +1308,121 @@ bool FBATPcgApplyCommandCreatesAndSavesGraphTest::RunTest(const FString& Paramet
 	}
 
 	return TestTrue(TEXT("Saved PCG graph asset should load by object path"), bObjectLoads);
+}
+
+bool FBATPcgApplyCommandAddsNodeTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	Node->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	Node->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+	Node->SetNumberField(TEXT("x"), 420);
+	Node->SetNumberField(TEXT("y"), 84);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(Node) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for nodes.add"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Created PCG graph should load"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	TArray<UPCGNode*> MatchingNodes;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:structure_spawner"), ESearchCase::CaseSensitive))
+		{
+			MatchingNodes.Add(NodeInstance);
+		}
+	}
+
+	if (!TestEqual(TEXT("nodes.add should create exactly one managed node"), MatchingNodes.Num(), 1))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	int32 NodeX = 0;
+	int32 NodeY = 0;
+	MatchingNodes[0]->GetNodePosition(NodeX, NodeY);
+
+	const bool bPositionOk = TestEqual(TEXT("nodes.add should set node x position"), NodeX, 420)
+		&& TestEqual(TEXT("nodes.add should set node y position"), NodeY, 84);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bPositionOk;
+}
+
+bool FBATPcgApplyCommandReappliesNodeByIdTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	Node->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	Node->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+	Node->SetNumberField(TEXT("x"), 512);
+	Node->SetNumberField(TEXT("y"), 96);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(Node) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult FirstResult = Command.Execute(Context);
+	const FAutomationResult SecondResult = Command.Execute(Context);
+	if (!TestTrue(TEXT("First nodes.add request should succeed"), FirstResult.bSuccess)
+		|| !TestTrue(TEXT("Second nodes.add request should succeed"), SecondResult.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Reapplied PCG graph should load"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	int32 MatchingCount = 0;
+	for (UPCGNode* NodeInstance : Graph->GetNodes())
+	{
+		if (NodeInstance && NodeInstance->NodeComment.Contains(TEXT("BAT_ID:structure_spawner"), ESearchCase::CaseSensitive))
+		{
+			++MatchingCount;
+		}
+	}
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return TestEqual(TEXT("Reapplying the same nodes.add id should not duplicate the managed node"), MatchingCount, 1);
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)

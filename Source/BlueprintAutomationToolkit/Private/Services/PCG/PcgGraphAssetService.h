@@ -24,4 +24,5 @@ class FPcgGraphAssetService
 {
 public:
 	static FAutomationResult AcquireGraphAsset(const FPcgApplyRequest& Request, FPcgGraphAssetHandle& OutHandle);
+	static FAutomationResult SaveGraphAsset(FPcgGraphAssetHandle& Handle);
 };
