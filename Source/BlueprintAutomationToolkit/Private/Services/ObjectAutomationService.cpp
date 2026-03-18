@@ -4,9 +4,12 @@
 #include "Core/EditorExecution.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Editor.h"
+#include "Components/ActorComponent.h"
 #include "Engine/Blueprint.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "Misc/DefaultValueHelper.h"
 #include "Misc/PackageName.h"
 #include "UObject/SoftObjectPath.h"
@@ -90,6 +93,35 @@ namespace
 		}
 
 		return FString::Printf(TEXT("%s.%s_C"), *AssetObjectPath.Left(DotIndex), *ObjectName);
+	}
+
+	static void NotifyObjectEdited(UObject* TargetObject)
+	{
+		if (!TargetObject)
+		{
+			return;
+		}
+
+		TargetObject->MarkPackageDirty();
+
+#if WITH_EDITOR
+		TargetObject->PostEditChange();
+
+		if (UBlueprint* Blueprint = Cast<UBlueprint>(TargetObject))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+		}
+		else if (UBlueprint* OuterBlueprint = TargetObject->GetTypedOuter<UBlueprint>())
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsModified(OuterBlueprint);
+		}
+
+		if (GEditor)
+		{
+			GEditor->NoteSelectionChange();
+			GEditor->RedrawLevelEditingViewports(true);
+		}
+#endif
 	}
 
 	static bool TryResolveReferencedObject(const FString& InPath, UClass* RequiredClass, UObject*& OutObject)
@@ -746,7 +778,7 @@ FAutomationResult FObjectAutomationService::SetProperty(FBlueprintAutomationTool
 			}
 		}
 
-		TargetObject->MarkPackageDirty();
+		NotifyObjectEdited(TargetObject);
 
 		TSharedRef<FJsonObject> ResponseObj = MakeShared<FJsonObject>();
 		ResponseObj->SetStringField(TEXT("request_id"), RequestId);
