@@ -17,6 +17,7 @@
 #include "Misc/Paths.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "Routes/PCG/PcgApplyRequest.h"
+#include "Services/PCG/PcgNodeRegistry.h"
 #include "Services/BlueprintGraph/BlueprintGraphLayoutService.h"
 #include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 #include "Services/BlueprintGraphService.h"
@@ -75,6 +76,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsAutoArran
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestSupportsPreserveFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestSupportsPreserveFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestNormalizesConvenienceFieldsTest, "BlueprintAutomationToolkit.PCG.ApplyRequestNormalizesConvenienceFields", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsDuplicateNodeIdsTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsDuplicateNodeIds", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgNodeRegistryResolvesKnownFamiliesTest, "BlueprintAutomationToolkit.PCG.NodeRegistryResolvesKnownFamilies", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsUnsupportedNodeFamilyTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsUnsupportedNodeFamily", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsMissingGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsMissingGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandCreatesAndSavesGraphTest, "BlueprintAutomationToolkit.PCG.ApplyCommandCreatesAndSavesGraph", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1174,6 +1177,77 @@ bool FBATPcgApplyRequestRejectsDuplicateNodeIdsTest::RunTest(const FString& Para
 	}
 
 	AddError(TEXT("Expected duplicate_node_id parse error"));
+	return false;
+}
+
+bool FBATPcgNodeRegistryResolvesKnownFamiliesTest::RunTest(const FString& Parameters)
+{
+	const FPcgNodeFamilySpec* StaticMeshSpawner = FPcgNodeRegistry::FindByExternalType(TEXT("StaticMeshSpawner"));
+	const FPcgNodeFamilySpec* SurfaceSampler = FPcgNodeRegistry::FindByExternalType(TEXT("SurfaceSampler"));
+	const FPcgNodeFamilySpec* Difference = FPcgNodeRegistry::FindByExternalType(TEXT("Difference"));
+
+	if (!TestNotNull(TEXT("Registry should resolve StaticMeshSpawner"), StaticMeshSpawner))
+	{
+		return false;
+	}
+
+	if (!TestNotNull(TEXT("Registry should resolve SurfaceSampler"), SurfaceSampler))
+	{
+		return false;
+	}
+
+	if (!TestNotNull(TEXT("Registry should resolve Difference"), Difference))
+	{
+		return false;
+	}
+
+	if (!TestTrue(TEXT("StaticMeshSpawner should support mesh-set assignment"), StaticMeshSpawner->bSupportsMeshSet))
+	{
+		return false;
+	}
+
+	if (!TestTrue(TEXT("StaticMeshSpawner should allow density setting"), StaticMeshSpawner->SupportedSettingKeys.Contains(TEXT("density"))))
+	{
+		return false;
+	}
+
+	if (!TestTrue(TEXT("SurfaceSampler should allow density setting"), SurfaceSampler->SupportedSettingKeys.Contains(TEXT("density"))))
+	{
+		return false;
+	}
+
+	return TestFalse(TEXT("Unknown family should not resolve"), FPcgNodeRegistry::FindByExternalType(TEXT("NotARealNodeFamily")) != nullptr);
+}
+
+bool FBATPcgApplyRequestRejectsUnsupportedNodeFamilyTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), TEXT("/Game/PCG/Graphs/BAT_CityGraph.BAT_CityGraph"));
+
+	TSharedRef<FJsonObject> Node = MakeShared<FJsonObject>();
+	Node->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	Node->SetStringField(TEXT("id"), TEXT("bad_node"));
+	Node->SetStringField(TEXT("type"), TEXT("NotARealNodeFamily"));
+
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(Node) });
+
+	FPcgApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::PcgApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestFalse(TEXT("PCG apply request should reject unsupported node families"), bParsed))
+	{
+		return false;
+	}
+
+	for (const FString& ParseError : ParseErrors)
+	{
+		if (ParseError.Contains(TEXT("unsupported_node_type"), ESearchCase::CaseSensitive))
+		{
+			return true;
+		}
+	}
+
+	AddError(TEXT("Expected unsupported_node_type parse error"));
 	return false;
 }
 

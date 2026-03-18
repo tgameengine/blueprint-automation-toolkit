@@ -1,5 +1,7 @@
 #include "Routes/PCG/PcgApplyRequest.h"
 
+#include "Services/PCG/PcgNodeRegistry.h"
+
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 
@@ -312,6 +314,10 @@ namespace BAT::PcgApplyRequest
 				if (Op.Type.IsEmpty())
 				{
 					OutErrors.Add(FString::Printf(TEXT("ops[%d]_missing_type"), OpIndex));
+				}
+				else if (!FPcgNodeRegistry::IsSupportedType(Op.Type))
+				{
+					OutErrors.Add(FString::Printf(TEXT("unsupported_node_type:%s"), *Op.Type));
 				}
 				if (!Op.Id.IsEmpty())
 				{
