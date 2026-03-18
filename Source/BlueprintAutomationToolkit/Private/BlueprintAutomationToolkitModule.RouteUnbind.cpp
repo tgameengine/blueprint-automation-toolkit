@@ -282,11 +282,6 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(AssetCreateRoute);
 		AssetCreateRoute.Reset();
 	}
-	if (PcgSpawnSpheresRoute.IsValid())
-	{
-		Router->UnbindRoute(PcgSpawnSpheresRoute);
-		PcgSpawnSpheresRoute.Reset();
-	}
 	if (ActionsListRoute.IsValid())
 	{
 		Router->UnbindRoute(ActionsListRoute);

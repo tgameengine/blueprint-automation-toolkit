@@ -412,7 +412,6 @@ private:
 	FHttpRouteHandle AssetDuplicateRoute;
 	FHttpRouteHandle AssetSaveRoute;
 	FHttpRouteHandle AssetCreateRoute;
-	FHttpRouteHandle PcgSpawnSpheresRoute;
 	FHttpRouteHandle ActionsListRoute;
 	FHttpRouteHandle ActionsRunRoute;
 	TMap<FString, FHttpRouteHandle> DynamicAutomationRoutes;
