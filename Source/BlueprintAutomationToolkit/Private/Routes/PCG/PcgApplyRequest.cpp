@@ -253,10 +253,19 @@ namespace BAT::PcgApplyRequest
 			{
 				OutErrors.Add(TEXT("invalid_options_mode"));
 			}
+			else if (OutRequest.Options.Mode.Equals(TEXT("patch"), ESearchCase::CaseSensitive))
+			{
+				OutErrors.Add(TEXT("unsupported_options_mode_patch"));
+			}
 
 			if (!IsSupportedOwnership(OutRequest.Options.Ownership))
 			{
 				OutErrors.Add(TEXT("invalid_options_ownership"));
+			}
+
+			if (OutRequest.Options.bClearUnmanaged)
+			{
+				OutErrors.Add(TEXT("unsupported_options_clear_unmanaged"));
 			}
 		}
 

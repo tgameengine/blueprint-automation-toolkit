@@ -2,6 +2,7 @@
 
 #include "BlueprintAutomationToolkitModule.h"
 
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/SetPropertyCommand.h"
 #include "Commands/PCG/ApplyPcgPlanCommand.h"
@@ -40,12 +41,14 @@
 #include "Serialization/JsonSerializer.h"
 
 #include "Engine/EngineTypes.h"
+#include "Engine/StaticMesh.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "HAL/FileManager.h"
+#include "Modules/ModuleManager.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiSpecExistsTest, "BlueprintAutomationToolkit.OpenApi.SpecExists", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -102,6 +105,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandSetsSpawnerWeightedMeshSetTe
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandSetsSpawnerWeightedByCategoryMeshSetTest, "BlueprintAutomationToolkit.PCG.ApplyCommandSetsSpawnerWeightedByCategoryMeshSet", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsMeshSetOnNonSpawnerNodeTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsMeshSetOnNonSpawnerNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandMeshSetIsIdempotentTest, "BlueprintAutomationToolkit.PCG.ApplyCommandMeshSetIsIdempotent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandSetsGraphParametersTest, "BlueprintAutomationToolkit.PCG.ApplyCommandSetsGraphParameters", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsPatchModeTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsPatchMode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyRequestRejectsClearUnmanagedTest, "BlueprintAutomationToolkit.PCG.ApplyRequestRejectsClearUnmanaged", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPcgApplyCommandRejectsInvalidStaticMeshTest, "BlueprintAutomationToolkit.PCG.ApplyCommandRejectsInvalidStaticMesh", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesImplicitNodePosition", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutAutoArrangesCreatedNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -159,6 +166,65 @@ namespace
 		Context.Body = BodyObj;
 		Context.bReturnRawObject = true;
 		return Context;
+	}
+
+	static TArray<FString> GetProjectStaticMeshFixturePaths(FAutomationTestBase& Test, int32 RequestedCount)
+	{
+		TArray<FString> Result;
+		if (RequestedCount <= 0)
+		{
+			return Result;
+		}
+
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+		FARFilter Filter;
+		Filter.ClassPaths.Add(UStaticMesh::StaticClass()->GetClassPathName());
+		Filter.PackagePaths.Add(FName(TEXT("/Game")));
+		Filter.bRecursivePaths = true;
+
+		TArray<FAssetData> AssetData;
+		AssetRegistryModule.Get().GetAssets(Filter, AssetData);
+		AssetData.Sort([](const FAssetData& A, const FAssetData& B)
+		{
+			return A.GetSoftObjectPath().ToString() < B.GetSoftObjectPath().ToString();
+		});
+
+		for (const FAssetData& Entry : AssetData)
+		{
+			const FString ObjectPath = Entry.GetSoftObjectPath().ToString();
+			if (!ObjectPath.IsEmpty())
+			{
+				Result.Add(ObjectPath);
+				if (Result.Num() >= RequestedCount)
+				{
+					break;
+				}
+			}
+		}
+
+		if (Result.Num() == 0)
+		{
+			Test.AddWarning(TEXT("No project UStaticMesh assets were found under /Game; mesh validation success tests are being skipped."));
+			return Result;
+		}
+
+		while (Result.Num() < RequestedCount)
+		{
+			Result.Add(Result[0]);
+		}
+
+		return Result;
+	}
+
+	static TArray<TSharedPtr<FJsonValue>> MakeJsonStringArray(const TArray<FString>& Values)
+	{
+		TArray<TSharedPtr<FJsonValue>> Result;
+		Result.Reserve(Values.Num());
+		for (const FString& Value : Values)
+		{
+			Result.Add(MakeShared<FJsonValueString>(Value));
+		}
+		return Result;
 	}
 
 	static UBATReflectionTestObject* CreateReflectionTestObject()
@@ -2076,6 +2142,12 @@ bool FBATPcgApplyCommandSetsSpawnerWeightedMeshSetTest::RunTest(const FString& P
 {
 	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
 	CleanupPcgTestGraphAsset(GraphPath);
+	const TArray<FString> MeshPaths = GetProjectStaticMeshFixturePaths(*this, 2);
+	if (MeshPaths.Num() < 2)
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return true;
+	}
 
 	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
 	Options->SetBoolField(TEXT("create_if_missing"), true);
@@ -2088,10 +2160,7 @@ bool FBATPcgApplyCommandSetsSpawnerWeightedMeshSetTest::RunTest(const FString& P
 
 	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
 	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
-	MeshSet->SetArrayField(TEXT("meshes"), {
-		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")),
-		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2"))
-	});
+	MeshSet->SetArrayField(TEXT("meshes"), MakeJsonStringArray(MeshPaths));
 
 	TSharedRef<FJsonObject> SetMeshSet = MakeShared<FJsonObject>();
 	SetMeshSet->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
@@ -2139,8 +2208,8 @@ bool FBATPcgApplyCommandSetsSpawnerWeightedMeshSetTest::RunTest(const FString& P
 	}
 
 	const bool bEntryCountOk = TestEqual(TEXT("Weighted mesh_set should assign two mesh entries"), WeightedSelector->MeshEntries.Num(), 2);
-	const bool bFirstMeshOk = TestEqual(TEXT("Weighted mesh_set should assign the first mesh path"), WeightedSelector->MeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")));
-	const bool bSecondMeshOk = TestEqual(TEXT("Weighted mesh_set should assign the second mesh path"), WeightedSelector->MeshEntries[1].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")));
+	const bool bFirstMeshOk = TestEqual(TEXT("Weighted mesh_set should assign the first mesh path"), WeightedSelector->MeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), MeshPaths[0]);
+	const bool bSecondMeshOk = TestEqual(TEXT("Weighted mesh_set should assign the second mesh path"), WeightedSelector->MeshEntries[1].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), MeshPaths[1]);
 
 	CleanupPcgTestGraphAsset(GraphPath);
 	return bEntryCountOk && bFirstMeshOk && bSecondMeshOk;
@@ -2150,6 +2219,12 @@ bool FBATPcgApplyCommandSetsSpawnerWeightedByCategoryMeshSetTest::RunTest(const 
 {
 	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
 	CleanupPcgTestGraphAsset(GraphPath);
+	const TArray<FString> MeshPaths = GetProjectStaticMeshFixturePaths(*this, 2);
+	if (MeshPaths.Num() < 2)
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return true;
+	}
 
 	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
 	Options->SetBoolField(TEXT("create_if_missing"), true);
@@ -2162,11 +2237,11 @@ bool FBATPcgApplyCommandSetsSpawnerWeightedByCategoryMeshSetTest::RunTest(const 
 
 	TSharedRef<FJsonObject> CategoryA = MakeShared<FJsonObject>();
 	CategoryA->SetStringField(TEXT("name"), TEXT("A"));
-	CategoryA->SetArrayField(TEXT("meshes"), { MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")) });
+	CategoryA->SetArrayField(TEXT("meshes"), MakeJsonStringArray({ MeshPaths[0] }));
 
 	TSharedRef<FJsonObject> CategoryB = MakeShared<FJsonObject>();
 	CategoryB->SetStringField(TEXT("name"), TEXT("B"));
-	CategoryB->SetArrayField(TEXT("meshes"), { MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")) });
+	CategoryB->SetArrayField(TEXT("meshes"), MakeJsonStringArray({ MeshPaths[1] }));
 
 	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
 	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted_by_category"));
@@ -2219,9 +2294,9 @@ bool FBATPcgApplyCommandSetsSpawnerWeightedByCategoryMeshSetTest::RunTest(const 
 
 	const bool bCategoryCountOk = TestEqual(TEXT("Weighted-by-category mesh_set should assign two categories"), CategorySelector->Entries.Num(), 2);
 	const bool bCategoryAOk = TestEqual(TEXT("First category name should match"), CategorySelector->Entries[0].CategoryEntry, FString(TEXT("A")))
-		&& TestEqual(TEXT("First category should assign the first project mesh"), CategorySelector->Entries[0].WeightedMeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")));
+		&& TestEqual(TEXT("First category should assign the first project mesh"), CategorySelector->Entries[0].WeightedMeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), MeshPaths[0]);
 	const bool bCategoryBOk = TestEqual(TEXT("Second category name should match"), CategorySelector->Entries[1].CategoryEntry, FString(TEXT("B")))
-		&& TestEqual(TEXT("Second category should assign the second project mesh"), CategorySelector->Entries[1].WeightedMeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")));
+		&& TestEqual(TEXT("Second category should assign the second project mesh"), CategorySelector->Entries[1].WeightedMeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), MeshPaths[1]);
 
 	CleanupPcgTestGraphAsset(GraphPath);
 	return bCategoryCountOk && bCategoryAOk && bCategoryBOk;
@@ -2274,6 +2349,12 @@ bool FBATPcgApplyCommandMeshSetIsIdempotentTest::RunTest(const FString& Paramete
 {
 	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
 	CleanupPcgTestGraphAsset(GraphPath);
+	const TArray<FString> MeshPaths = GetProjectStaticMeshFixturePaths(*this, 2);
+	if (MeshPaths.Num() < 2)
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return true;
+	}
 
 	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
 	Options->SetBoolField(TEXT("create_if_missing"), true);
@@ -2286,10 +2367,7 @@ bool FBATPcgApplyCommandMeshSetIsIdempotentTest::RunTest(const FString& Paramete
 
 	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
 	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
-	MeshSet->SetArrayField(TEXT("meshes"), {
-		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")),
-		MakeShared<FJsonValueString>(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2"))
-	});
+	MeshSet->SetArrayField(TEXT("meshes"), MakeJsonStringArray(MeshPaths));
 
 	TSharedRef<FJsonObject> SetMeshSetA = MakeShared<FJsonObject>();
 	SetMeshSetA->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
@@ -2346,11 +2424,208 @@ bool FBATPcgApplyCommandMeshSetIsIdempotentTest::RunTest(const FString& Paramete
 	}
 
 	const bool bEntryCountOk = TestEqual(TEXT("Repeated mesh_set should leave exactly two mesh entries"), WeightedSelector->MeshEntries.Num(), 2);
-	const bool bFirstMeshOk = TestEqual(TEXT("Repeated mesh_set should preserve the first mesh path"), WeightedSelector->MeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_CommonHouse2.SM_CommonHouse2")));
-	const bool bSecondMeshOk = TestEqual(TEXT("Repeated mesh_set should preserve the second mesh path"), WeightedSelector->MeshEntries[1].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), FString(TEXT("/Game/StaticMeshes/SM_Hotel2.SM_Hotel2")));
+	const bool bFirstMeshOk = TestEqual(TEXT("Repeated mesh_set should preserve the first mesh path"), WeightedSelector->MeshEntries[0].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), MeshPaths[0]);
+	const bool bSecondMeshOk = TestEqual(TEXT("Repeated mesh_set should preserve the second mesh path"), WeightedSelector->MeshEntries[1].Descriptor.StaticMesh.ToSoftObjectPath().ToString(), MeshPaths[1]);
 
 	CleanupPcgTestGraphAsset(GraphPath);
 	return bEntryCountOk && bFirstMeshOk && bSecondMeshOk;
+}
+
+bool FBATPcgApplyCommandSetsGraphParametersTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+	Options->SetBoolField(TEXT("save"), true);
+
+	TSharedRef<FJsonObject> EntryFloat = MakeShared<FJsonObject>();
+	EntryFloat->SetStringField(TEXT("name"), TEXT("StreetWidth"));
+	EntryFloat->SetStringField(TEXT("type"), TEXT("float"));
+	EntryFloat->SetNumberField(TEXT("default"), 1800.0);
+
+	TSharedRef<FJsonObject> EntryInt = MakeShared<FJsonObject>();
+	EntryInt->SetStringField(TEXT("name"), TEXT("Seed"));
+	EntryInt->SetStringField(TEXT("type"), TEXT("int"));
+	EntryInt->SetNumberField(TEXT("default"), 1337);
+
+	TSharedRef<FJsonObject> EntryString = MakeShared<FJsonObject>();
+	EntryString->SetStringField(TEXT("name"), TEXT("Theme"));
+	EntryString->SetStringField(TEXT("type"), TEXT("string"));
+	EntryString->SetStringField(TEXT("default"), TEXT("dense_city"));
+
+	TSharedRef<FJsonObject> EntryName = MakeShared<FJsonObject>();
+	EntryName->SetStringField(TEXT("name"), TEXT("ProfileName"));
+	EntryName->SetStringField(TEXT("type"), TEXT("name"));
+	EntryName->SetStringField(TEXT("default"), TEXT("CityCore"));
+
+	TSharedRef<FJsonObject> EntryVector = MakeShared<FJsonObject>();
+	EntryVector->SetStringField(TEXT("name"), TEXT("CityOffset"));
+	EntryVector->SetStringField(TEXT("type"), TEXT("vector"));
+	EntryVector->SetArrayField(TEXT("default"), {
+		MakeShared<FJsonValueNumber>(100.0),
+		MakeShared<FJsonValueNumber>(200.0),
+		MakeShared<FJsonValueNumber>(300.0)
+	});
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("parameters"), {
+		MakeShared<FJsonValueObject>(EntryFloat),
+		MakeShared<FJsonValueObject>(EntryInt),
+		MakeShared<FJsonValueObject>(EntryString),
+		MakeShared<FJsonValueObject>(EntryName),
+		MakeShared<FJsonValueObject>(EntryVector)
+	});
+	Body->SetArrayField(TEXT("ops"), TArray<TSharedPtr<FJsonValue>>());
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+	if (!TestTrue(TEXT("PCG apply should succeed for graph parameter creation"), Result.bSuccess))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	UPCGGraph* Graph = LoadObject<UPCGGraph>(nullptr, *GraphPath);
+	if (!TestNotNull(TEXT("Graph should load after parameter creation"), Graph))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const FInstancedPropertyBag* UserParameters = Graph->GetUserParametersStruct();
+	if (!TestNotNull(TEXT("Graph should expose a user parameter bag"), UserParameters))
+	{
+		CleanupPcgTestGraphAsset(GraphPath);
+		return false;
+	}
+
+	const auto StreetWidth = UserParameters->GetValueFloat(TEXT("StreetWidth"));
+	const auto Seed = UserParameters->GetValueInt32(TEXT("Seed"));
+	const auto Theme = UserParameters->GetValueString(TEXT("Theme"));
+	const auto ProfileName = UserParameters->GetValueName(TEXT("ProfileName"));
+	const auto CityOffset = UserParameters->GetValueStruct<FVector>(TEXT("CityOffset"));
+
+	const bool bFloatOk = TestTrue(TEXT("StreetWidth parameter should exist"), StreetWidth.HasValue())
+		&& TestEqual(TEXT("StreetWidth default should be applied"), StreetWidth.GetValue(), 1800.0f);
+	const bool bIntOk = TestTrue(TEXT("Seed parameter should exist"), Seed.HasValue())
+		&& TestEqual(TEXT("Seed default should be applied"), Seed.GetValue(), 1337);
+	const bool bStringOk = TestTrue(TEXT("Theme parameter should exist"), Theme.HasValue())
+		&& TestEqual(TEXT("Theme default should be applied"), Theme.GetValue(), FString(TEXT("dense_city")));
+	const bool bNameOk = TestTrue(TEXT("ProfileName parameter should exist"), ProfileName.HasValue())
+		&& TestEqual(TEXT("ProfileName default should be applied"), ProfileName.GetValue(), FName(TEXT("CityCore")));
+	const bool bVectorOk = TestTrue(TEXT("CityOffset parameter should exist"), CityOffset.HasValue())
+		&& TestEqual(TEXT("CityOffset default should be applied"), *CityOffset.GetValue(), FVector(100.0f, 200.0f, 300.0f));
+
+	CleanupPcgTestGraphAsset(GraphPath);
+	return bFloatOk && bIntOk && bStringOk && bNameOk && bVectorOk;
+}
+
+bool FBATPcgApplyRequestRejectsPatchModeTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetStringField(TEXT("mode"), TEXT("patch"));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), TEXT("/Game/PCG/Graphs/BAT_CityGraph.BAT_CityGraph"));
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), TArray<TSharedPtr<FJsonValue>>());
+
+	FPcgApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::PcgApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestFalse(TEXT("patch mode should be rejected in v1"), bParsed))
+	{
+		return false;
+	}
+
+	for (const FString& ParseError : ParseErrors)
+	{
+		if (ParseError.Contains(TEXT("unsupported_options_mode_patch"), ESearchCase::CaseSensitive))
+		{
+			return true;
+		}
+	}
+
+	AddError(TEXT("Expected unsupported_options_mode_patch parse error"));
+	return false;
+}
+
+bool FBATPcgApplyRequestRejectsClearUnmanagedTest::RunTest(const FString& Parameters)
+{
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("clear_unmanaged"), true);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), TEXT("/Game/PCG/Graphs/BAT_CityGraph.BAT_CityGraph"));
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), TArray<TSharedPtr<FJsonValue>>());
+
+	FPcgApplyRequest Request;
+	TArray<FString> ParseErrors;
+	const bool bParsed = BAT::PcgApplyRequest::Parse(Body, Request, ParseErrors);
+	if (!TestFalse(TEXT("clear_unmanaged should be rejected in v1"), bParsed))
+	{
+		return false;
+	}
+
+	for (const FString& ParseError : ParseErrors)
+	{
+		if (ParseError.Contains(TEXT("unsupported_options_clear_unmanaged"), ESearchCase::CaseSensitive))
+		{
+			return true;
+		}
+	}
+
+	AddError(TEXT("Expected unsupported_options_clear_unmanaged parse error"));
+	return false;
+}
+
+bool FBATPcgApplyCommandRejectsInvalidStaticMeshTest::RunTest(const FString& Parameters)
+{
+	const FString GraphPath = MakeUniquePcgTestGraphObjectPath();
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	TSharedRef<FJsonObject> Options = MakeShared<FJsonObject>();
+	Options->SetBoolField(TEXT("create_if_missing"), true);
+
+	TSharedRef<FJsonObject> AddNode = MakeShared<FJsonObject>();
+	AddNode->SetStringField(TEXT("op"), TEXT("nodes.add"));
+	AddNode->SetStringField(TEXT("id"), TEXT("structure_spawner"));
+	AddNode->SetStringField(TEXT("type"), TEXT("StaticMeshSpawner"));
+
+	TSharedRef<FJsonObject> MeshSet = MakeShared<FJsonObject>();
+	MeshSet->SetStringField(TEXT("mode"), TEXT("weighted"));
+	MeshSet->SetArrayField(TEXT("meshes"), {
+		MakeShared<FJsonValueString>(TEXT("/Game/DoesNotExist/SM_Missing.SM_Missing"))
+	});
+
+	TSharedRef<FJsonObject> SetMeshSet = MakeShared<FJsonObject>();
+	SetMeshSet->SetStringField(TEXT("op"), TEXT("spawners.set_mesh_set"));
+	SetMeshSet->SetStringField(TEXT("node"), TEXT("structure_spawner"));
+	SetMeshSet->SetObjectField(TEXT("mesh_set"), MeshSet);
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("graph"), GraphPath);
+	Body->SetObjectField(TEXT("options"), Options);
+	Body->SetArrayField(TEXT("ops"), { MakeShared<FJsonValueObject>(AddNode), MakeShared<FJsonValueObject>(SetMeshSet) });
+
+	FApplyPcgPlanCommand Command;
+	FAutomationContext Context = MakePcgApplyContext(Body);
+	const FAutomationResult Result = Command.Execute(Context);
+
+	CleanupPcgTestGraphAsset(GraphPath);
+
+	if (!TestFalse(TEXT("Invalid static mesh path should fail"), Result.bSuccess))
+	{
+		return false;
+	}
+
+	return TestEqual(TEXT("Invalid mesh path should report invalid_static_mesh"), Result.ErrorCode, FString(TEXT("invalid_static_mesh")));
 }
 
 bool FBATBlueprintGraphLayoutPreservesImplicitNodePositionTest::RunTest(const FString& Parameters)

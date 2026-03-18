@@ -4,6 +4,7 @@
 #include "Services/PCG/PcgGraphAssetService.h"
 #include "Services/PCG/PcgNodeRegistry.h"
 
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Dom/JsonObject.h"
 #include "Engine/StaticMesh.h"
 #include "Elements/ControlFlow/PCGBranch.h"
@@ -12,11 +13,14 @@
 #include "Elements/PCGStaticMeshSpawner.h"
 #include "Elements/PCGSurfaceSampler.h"
 #include "Elements/PCGTransformPoints.h"
+#include "Helpers/PCGGraphParameterExtension.h"
 #include "MeshSelectors/PCGMeshSelectorWeighted.h"
 #include "MeshSelectors/PCGMeshSelectorWeightedByCategory.h"
+#include "Modules/ModuleManager.h"
 #include "PCGGraph.h"
 #include "PCGNode.h"
 #include "PCGSettings.h"
+#include "StructUtils/PropertyBag.h"
 
 namespace
 {
@@ -146,6 +150,340 @@ namespace
 		OutValue = Value->AsString();
 		OutValue.TrimStartAndEndInline();
 		return !OutValue.IsEmpty();
+	}
+
+	static bool TryGetVectorValue(const TSharedPtr<FJsonValue>& Value, FVector& OutValue)
+	{
+		if (!Value.IsValid())
+		{
+			return false;
+		}
+
+		if (Value->Type == EJson::Array)
+		{
+			const TArray<TSharedPtr<FJsonValue>>& Array = Value->AsArray();
+			if (Array.Num() != 3)
+			{
+				return false;
+			}
+
+			double X = 0.0;
+			double Y = 0.0;
+			double Z = 0.0;
+			if (!TryGetNumberValue(Array[0], X) || !TryGetNumberValue(Array[1], Y) || !TryGetNumberValue(Array[2], Z))
+			{
+				return false;
+			}
+
+			OutValue = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+			return true;
+		}
+
+		if (Value->Type == EJson::Object)
+		{
+			const TSharedPtr<FJsonObject> VectorObject = Value->AsObject();
+			if (!VectorObject.IsValid())
+			{
+				return false;
+			}
+
+			double X = 0.0;
+			double Y = 0.0;
+			double Z = 0.0;
+			if (!VectorObject->TryGetNumberField(TEXT("x"), X)
+				|| !VectorObject->TryGetNumberField(TEXT("y"), Y)
+				|| !VectorObject->TryGetNumberField(TEXT("z"), Z))
+			{
+				return false;
+			}
+
+			OutValue = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+			return true;
+		}
+
+		return false;
+	}
+
+	static FString PropertyBagAlterationResultToString(EPropertyBagAlterationResult Result)
+	{
+		switch (Result)
+		{
+		case EPropertyBagAlterationResult::Success:
+			return TEXT("success");
+		case EPropertyBagAlterationResult::InternalError:
+			return TEXT("internal_error");
+		case EPropertyBagAlterationResult::PropertyNameEmpty:
+			return TEXT("property_name_empty");
+		case EPropertyBagAlterationResult::PropertyNameInvalidCharacters:
+			return TEXT("property_name_invalid_characters");
+		case EPropertyBagAlterationResult::SourcePropertyNotFound:
+			return TEXT("source_property_not_found");
+		case EPropertyBagAlterationResult::TargetPropertyNotFound:
+			return TEXT("target_property_not_found");
+		case EPropertyBagAlterationResult::TargetPropertyAlreadyExists:
+			return TEXT("target_property_already_exists");
+		default:
+			return TEXT("unknown");
+		}
+	}
+
+	static FString PropertyBagResultToString(EPropertyBagResult Result)
+	{
+		switch (Result)
+		{
+		case EPropertyBagResult::Success:
+			return TEXT("success");
+		case EPropertyBagResult::TypeMismatch:
+			return TEXT("type_mismatch");
+		case EPropertyBagResult::OutOfBounds:
+			return TEXT("out_of_bounds");
+		case EPropertyBagResult::PropertyNotFound:
+			return TEXT("property_not_found");
+		case EPropertyBagResult::DuplicatedValue:
+			return TEXT("duplicated_value");
+		default:
+			return TEXT("unknown");
+		}
+	}
+
+	static EPropertyBagPropertyType GetPropertyBagTypeForParameter(const FString& ParameterType, const UObject*& OutValueTypeObject)
+	{
+		OutValueTypeObject = nullptr;
+
+		if (ParameterType.Equals(TEXT("bool"), ESearchCase::CaseSensitive))
+		{
+			return EPropertyBagPropertyType::Bool;
+		}
+		if (ParameterType.Equals(TEXT("int"), ESearchCase::CaseSensitive))
+		{
+			return EPropertyBagPropertyType::Int32;
+		}
+		if (ParameterType.Equals(TEXT("float"), ESearchCase::CaseSensitive))
+		{
+			return EPropertyBagPropertyType::Float;
+		}
+		if (ParameterType.Equals(TEXT("string"), ESearchCase::CaseSensitive))
+		{
+			return EPropertyBagPropertyType::String;
+		}
+		if (ParameterType.Equals(TEXT("name"), ESearchCase::CaseSensitive))
+		{
+			return EPropertyBagPropertyType::Name;
+		}
+		if (ParameterType.Equals(TEXT("vector"), ESearchCase::CaseSensitive))
+		{
+			OutValueTypeObject = TBaseStructure<FVector>::Get();
+			return EPropertyBagPropertyType::Struct;
+		}
+
+		return EPropertyBagPropertyType::None;
+	}
+
+	static FAutomationResult MakeInvalidParameterResult(const FString& ParameterName, const FString& Reason)
+	{
+		return FAutomationResult::Error(
+			TEXT("invalid_request"),
+			FString::Printf(TEXT("Invalid graph parameter '%s': %s"), *ParameterName, *Reason),
+			400);
+	}
+
+	static FAutomationResult SetGraphParameterDefault(UPCGGraph* Graph, const FPcgApplyParameterEntry& Entry)
+	{
+		if (!Graph || !Entry.DefaultValue.IsValid())
+		{
+			return FAutomationResult::Ok(nullptr);
+		}
+
+		const FName ParameterName(*Entry.Name);
+		EPropertyBagResult SetResult = EPropertyBagResult::PropertyNotFound;
+
+		if (Entry.Type.Equals(TEXT("bool"), ESearchCase::CaseSensitive))
+		{
+			bool bValue = false;
+			if (!TryGetBoolValue(Entry.DefaultValue, bValue))
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("default must be a boolean"));
+			}
+			SetResult = Graph->SetGraphParameter(ParameterName, bValue);
+		}
+		else if (Entry.Type.Equals(TEXT("int"), ESearchCase::CaseSensitive))
+		{
+			double NumberValue = 0.0;
+			if (!TryGetNumberValue(Entry.DefaultValue, NumberValue))
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("default must be a number"));
+			}
+			SetResult = Graph->SetGraphParameter(ParameterName, static_cast<int32>(NumberValue));
+		}
+		else if (Entry.Type.Equals(TEXT("float"), ESearchCase::CaseSensitive))
+		{
+			double NumberValue = 0.0;
+			if (!TryGetNumberValue(Entry.DefaultValue, NumberValue))
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("default must be a number"));
+			}
+			SetResult = Graph->SetGraphParameter(ParameterName, static_cast<float>(NumberValue));
+		}
+		else if (Entry.Type.Equals(TEXT("string"), ESearchCase::CaseSensitive))
+		{
+			FString StringValue;
+			if (!TryGetStringValue(Entry.DefaultValue, StringValue))
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("default must be a non-empty string"));
+			}
+			SetResult = Graph->SetGraphParameter(ParameterName, StringValue);
+		}
+		else if (Entry.Type.Equals(TEXT("name"), ESearchCase::CaseSensitive))
+		{
+			FString StringValue;
+			if (!TryGetStringValue(Entry.DefaultValue, StringValue))
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("default must be a non-empty string"));
+			}
+			SetResult = Graph->SetGraphParameter(ParameterName, FName(*StringValue));
+		}
+		else if (Entry.Type.Equals(TEXT("vector"), ESearchCase::CaseSensitive))
+		{
+			FVector VectorValue = FVector::ZeroVector;
+			if (!TryGetVectorValue(Entry.DefaultValue, VectorValue))
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("default must be a 3-number array or {x,y,z} object"));
+			}
+			SetResult = Graph->SetGraphParameter(ParameterName, VectorValue);
+		}
+		else
+		{
+			return MakeInvalidParameterResult(Entry.Name, TEXT("unsupported parameter type"));
+		}
+
+		if (SetResult != EPropertyBagResult::Success)
+		{
+			return MakeInvalidParameterResult(Entry.Name, FString::Printf(TEXT("failed to set default value (%s)"), *PropertyBagResultToString(SetResult)));
+		}
+
+		return FAutomationResult::Ok(nullptr);
+	}
+
+	static FAutomationResult ApplyGraphParameters(const TArray<FPcgApplyParameterEntry>& ParameterEntries, FPcgGraphAssetHandle& GraphHandle)
+	{
+		if (ParameterEntries.Num() == 0)
+		{
+			return FAutomationResult::Ok(nullptr);
+		}
+
+		if (!GraphHandle.Graph)
+		{
+			return FAutomationResult::Error(TEXT("graph_not_ready"), TEXT("PCG graph is not available for parameter updates."), 500);
+		}
+
+		TArray<FPropertyBagPropertyDesc> Descs;
+		Descs.Reserve(ParameterEntries.Num());
+		for (const FPcgApplyParameterEntry& Entry : ParameterEntries)
+		{
+			if (Entry.Name.IsEmpty())
+			{
+				return MakeInvalidParameterResult(TEXT(""), TEXT("name is required"));
+			}
+
+			const UObject* ValueTypeObject = nullptr;
+			const EPropertyBagPropertyType ValueType = GetPropertyBagTypeForParameter(Entry.Type, ValueTypeObject);
+			if (ValueType == EPropertyBagPropertyType::None)
+			{
+				return MakeInvalidParameterResult(Entry.Name, TEXT("unsupported parameter type"));
+			}
+
+			FPropertyBagPropertyDesc Desc(FName(*Entry.Name), ValueType, ValueTypeObject);
+#if WITH_EDITOR
+			if (!Entry.Description.IsEmpty())
+			{
+				Desc.SetMetaData(TEXT("Tooltip"), Entry.Description);
+			}
+#endif
+			Descs.Add(MoveTemp(Desc));
+		}
+
+		GraphHandle.Graph->Modify();
+		const EPropertyBagAlterationResult AddResult = GraphHandle.Graph->AddUserParameters(Descs);
+		if (AddResult != EPropertyBagAlterationResult::Success)
+		{
+			return FAutomationResult::Error(
+				TEXT("parameter_apply_failed"),
+				FString::Printf(TEXT("Failed to define graph parameters (%s)"), *PropertyBagAlterationResultToString(AddResult)),
+				500);
+		}
+
+		for (const FPcgApplyParameterEntry& Entry : ParameterEntries)
+		{
+			const FAutomationResult Result = SetGraphParameterDefault(GraphHandle.Graph, Entry);
+			if (!Result.bSuccess)
+			{
+				return Result;
+			}
+		}
+
+		GraphHandle.Graph->GetOutermost()->MarkPackageDirty();
+		return FAutomationResult::Ok(nullptr);
+	}
+
+	static FAutomationResult ValidateStaticMeshPath(const FString& MeshPath)
+	{
+		if (!MeshPath.StartsWith(TEXT("/Game/"), ESearchCase::CaseSensitive))
+		{
+			return FAutomationResult::Error(TEXT("invalid_static_mesh"), FString::Printf(TEXT("Static mesh path must resolve to a project asset under /Game/: %s"), *MeshPath), 400);
+		}
+
+		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+		const FAssetData AssetData = AssetRegistryModule.Get().GetAssetByObjectPath(FSoftObjectPath(MeshPath));
+		if (!AssetData.IsValid())
+		{
+			return FAutomationResult::Error(TEXT("invalid_static_mesh"), FString::Printf(TEXT("Static mesh asset could not be resolved: %s"), *MeshPath), 400);
+		}
+
+		if (AssetData.AssetClassPath != UStaticMesh::StaticClass()->GetClassPathName())
+		{
+			return FAutomationResult::Error(TEXT("invalid_static_mesh"), FString::Printf(TEXT("Asset is not a UStaticMesh: %s"), *MeshPath), 400);
+		}
+
+		if (!LoadObject<UStaticMesh>(nullptr, *MeshPath))
+		{
+			return FAutomationResult::Error(TEXT("invalid_static_mesh"), FString::Printf(TEXT("Static mesh asset failed to load: %s"), *MeshPath), 400);
+		}
+
+		return FAutomationResult::Ok(nullptr);
+	}
+
+	static FAutomationResult ValidateMeshSet(const FPcgApplyMeshSetSpec& MeshSet)
+	{
+		if (MeshSet.Mode.Equals(TEXT("weighted"), ESearchCase::CaseSensitive))
+		{
+			for (const FString& MeshPath : MeshSet.Meshes)
+			{
+				const FAutomationResult Result = ValidateStaticMeshPath(MeshPath);
+				if (!Result.bSuccess)
+				{
+					return Result;
+				}
+			}
+			return FAutomationResult::Ok(nullptr);
+		}
+
+		if (MeshSet.Mode.Equals(TEXT("weighted_by_category"), ESearchCase::CaseSensitive))
+		{
+			for (const FPcgApplyMeshCategorySpec& Category : MeshSet.Categories)
+			{
+				for (const FString& MeshPath : Category.Meshes)
+				{
+					const FAutomationResult Result = ValidateStaticMeshPath(MeshPath);
+					if (!Result.bSuccess)
+					{
+						return Result;
+					}
+				}
+			}
+			return FAutomationResult::Ok(nullptr);
+		}
+
+		return FAutomationResult::Error(TEXT("invalid_request"), FString::Printf(TEXT("Unsupported mesh_set mode: %s"), *MeshSet.Mode), 400);
 	}
 
 	static FAutomationResult MakeUnsupportedSettingResult(const FString& ExternalType, const FString& SettingKey)
@@ -632,6 +970,12 @@ namespace
 			return FAutomationResult::Error(TEXT("invalid_target_node"), TEXT("spawners.set_mesh_set requires a StaticMeshSpawner node."), 400);
 		}
 
+		const FAutomationResult ValidationResult = ValidateMeshSet(Op.MeshSet);
+		if (!ValidationResult.bSuccess)
+		{
+			return ValidationResult;
+		}
+
 		GraphHandle.Graph->Modify();
 		Node->Modify();
 		SpawnerSettings->Modify();
@@ -682,6 +1026,11 @@ FAutomationResult FPcgGraphApplyService::ApplyOps(const FPcgApplyRequest& Reques
 	{
 		if (Op.Op.Equals(TEXT("parameters.set"), ESearchCase::CaseSensitive))
 		{
+			const FAutomationResult Result = ApplyGraphParameters(Op.ParameterEntries, GraphHandle);
+			if (!Result.bSuccess)
+			{
+				return Result;
+			}
 			continue;
 		}
 
