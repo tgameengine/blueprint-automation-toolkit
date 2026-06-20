@@ -2,15 +2,23 @@
 
 #include "AssetToolsModule.h"
 #include "Async/Async.h"
+#include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Components/SkyAtmosphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Editor.h"
+#include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
+#include "Engine/SkyLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/TextRenderActor.h"
 #include "Elements/PCGStaticMeshSpawner.h"
+#include "GameFramework/PlayerStart.h"
 #include "HAL/PlatformMisc.h"
 #include "HttpPath.h"
 #include "HttpResultCallback.h"
@@ -46,6 +54,11 @@ namespace
 		Unsupported,
 		StaticMeshActor,
 		PointLight,
+		DirectionalLight,
+		SkyLight,
+		SkyAtmosphere,
+		PlayerStart,
+		TextRenderActor,
 		PcgVolume,
 	};
 
@@ -227,6 +240,41 @@ namespace
 			return EBATLayoutActorKind::PointLight;
 		}
 
+		if (ClassValue.Equals(TEXT("/Script/Engine.DirectionalLight"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("ADirectionalLight"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("DirectionalLight"), ESearchCase::IgnoreCase))
+		{
+			return EBATLayoutActorKind::DirectionalLight;
+		}
+
+		if (ClassValue.Equals(TEXT("/Script/Engine.SkyLight"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("ASkyLight"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("SkyLight"), ESearchCase::IgnoreCase))
+		{
+			return EBATLayoutActorKind::SkyLight;
+		}
+
+		if (ClassValue.Equals(TEXT("/Script/Engine.SkyAtmosphere"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("ASkyAtmosphere"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("SkyAtmosphere"), ESearchCase::IgnoreCase))
+		{
+			return EBATLayoutActorKind::SkyAtmosphere;
+		}
+
+		if (ClassValue.Equals(TEXT("/Script/Engine.PlayerStart"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("APlayerStart"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("PlayerStart"), ESearchCase::IgnoreCase))
+		{
+			return EBATLayoutActorKind::PlayerStart;
+		}
+
+		if (ClassValue.Equals(TEXT("/Script/Engine.TextRenderActor"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("ATextRenderActor"), ESearchCase::IgnoreCase)
+			|| ClassValue.Equals(TEXT("TextRenderActor"), ESearchCase::IgnoreCase))
+		{
+			return EBATLayoutActorKind::TextRenderActor;
+		}
+
 		if (ClassValue.Equals(TEXT("/Script/PCG.PCGVolume"), ESearchCase::IgnoreCase)
 			|| ClassValue.Equals(TEXT("APCGVolume"), ESearchCase::IgnoreCase)
 			|| ClassValue.Equals(TEXT("PCGVolume"), ESearchCase::IgnoreCase))
@@ -287,6 +335,57 @@ namespace
 		}
 
 		return false;
+	}
+
+	static void ApplyActorMetadata(AActor* Actor, const FString& Label, const TSharedPtr<FJsonObject>& ActorObj, int32& InOutApplied, int32& InOutRejected)
+	{
+		if (!Actor || !ActorObj.IsValid())
+		{
+			return;
+		}
+
+#if WITH_EDITOR
+		if (!Label.IsEmpty())
+		{
+			Actor->SetActorLabel(Label, true);
+		}
+
+		FString FolderPath;
+		if (!ActorObj->TryGetStringField(TEXT("folder"), FolderPath))
+		{
+			ActorObj->TryGetStringField(TEXT("folderPath"), FolderPath);
+		}
+		FolderPath.TrimStartAndEndInline();
+		if (!FolderPath.IsEmpty())
+		{
+			Actor->SetFolderPath(FName(*FolderPath));
+			++InOutApplied;
+		}
+#endif
+
+		const TArray<TSharedPtr<FJsonValue>>* TagsArray = nullptr;
+		if (ActorObj->TryGetArrayField(TEXT("tags"), TagsArray) && TagsArray)
+		{
+			for (const TSharedPtr<FJsonValue>& TagValue : *TagsArray)
+			{
+				if (!TagValue.IsValid() || TagValue->Type != EJson::String)
+				{
+					++InOutRejected;
+					continue;
+				}
+
+				FString TagText = TagValue->AsString();
+				TagText.TrimStartAndEndInline();
+				if (TagText.IsEmpty())
+				{
+					++InOutRejected;
+					continue;
+				}
+
+				Actor->Tags.AddUnique(FName(*TagText));
+				++InOutApplied;
+			}
+		}
 	}
 
 	static void ApplyAllowedLightProperties(UPointLightComponent* LightComp, const TSharedPtr<FJsonObject>& PropertiesObj, int32& InOutApplied, int32& InOutRejected)
@@ -352,6 +451,144 @@ namespace
 				if (TryGetBool(Value, bParsed))
 				{
 					LightComp->SetCastShadows(bParsed);
+					++InOutApplied;
+				}
+				else
+				{
+					++InOutRejected;
+				}
+				continue;
+			}
+
+			++InOutRejected;
+		}
+	}
+
+	static void ApplyAllowedDirectionalLightProperties(UDirectionalLightComponent* LightComp, const TSharedPtr<FJsonObject>& PropertiesObj, int32& InOutApplied, int32& InOutRejected)
+	{
+		if (!LightComp || !PropertiesObj.IsValid())
+		{
+			return;
+		}
+
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+		{
+			const FString& Name = Pair.Key;
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+
+			if (Name.Equals(TEXT("Intensity"), ESearchCase::IgnoreCase))
+			{
+				double Parsed = 0.0;
+				if (TryGetNumeric(Value, Parsed))
+				{
+					LightComp->SetIntensity((float)Parsed);
+					++InOutApplied;
+				}
+				else
+				{
+					++InOutRejected;
+				}
+				continue;
+			}
+
+			if (Name.Equals(TEXT("LightSourceAngle"), ESearchCase::IgnoreCase))
+			{
+				double Parsed = 0.0;
+				if (TryGetNumeric(Value, Parsed))
+				{
+					LightComp->SetLightSourceAngle((float)Parsed);
+					++InOutApplied;
+				}
+				else
+				{
+					++InOutRejected;
+				}
+				continue;
+			}
+
+			if (Name.Equals(TEXT("bCastShadows"), ESearchCase::IgnoreCase))
+			{
+				bool bParsed = false;
+				if (TryGetBool(Value, bParsed))
+				{
+					LightComp->SetCastShadows(bParsed);
+					++InOutApplied;
+				}
+				else
+				{
+					++InOutRejected;
+				}
+				continue;
+			}
+
+			++InOutRejected;
+		}
+	}
+
+	static void ApplyAllowedSkyLightProperties(USkyLightComponent* LightComp, const TSharedPtr<FJsonObject>& PropertiesObj, int32& InOutApplied, int32& InOutRejected)
+	{
+		if (!LightComp || !PropertiesObj.IsValid())
+		{
+			return;
+		}
+
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+		{
+			const FString& Name = Pair.Key;
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+
+			if (Name.Equals(TEXT("Intensity"), ESearchCase::IgnoreCase))
+			{
+				double Parsed = 0.0;
+				if (TryGetNumeric(Value, Parsed))
+				{
+					LightComp->SetIntensity((float)Parsed);
+					++InOutApplied;
+				}
+				else
+				{
+					++InOutRejected;
+				}
+				continue;
+			}
+
+			++InOutRejected;
+		}
+	}
+
+	static void ApplyAllowedTextRenderProperties(UTextRenderComponent* TextComp, const TSharedPtr<FJsonObject>& PropertiesObj, int32& InOutApplied, int32& InOutRejected)
+	{
+		if (!TextComp || !PropertiesObj.IsValid())
+		{
+			return;
+		}
+
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+		{
+			const FString& Name = Pair.Key;
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+
+			if (Name.Equals(TEXT("Text"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("text"), ESearchCase::IgnoreCase))
+			{
+				FString Text;
+				if (Value.IsValid() && Value->Type == EJson::String && Value->TryGetString(Text))
+				{
+					TextComp->SetText(FText::FromString(Text));
+					++InOutApplied;
+				}
+				else
+				{
+					++InOutRejected;
+				}
+				continue;
+			}
+
+			if (Name.Equals(TEXT("WorldSize"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("worldSize"), ESearchCase::IgnoreCase))
+			{
+				double Parsed = 0.0;
+				if (TryGetNumeric(Value, Parsed))
+				{
+					TextComp->SetWorldSize((float)Parsed);
 					++InOutApplied;
 				}
 				else
@@ -534,6 +771,64 @@ bool FBlueprintAutomationToolkitModule::ExecuteEditorLayoutApply(const TArray<TS
 				}
 			}
 
+			if (Kind == EBATLayoutActorKind::DirectionalLight && PropertiesObj.IsValid())
+			{
+				for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+				{
+					const FString& Name = Pair.Key;
+					if (Name.Equals(TEXT("Intensity"), ESearchCase::IgnoreCase)
+						|| Name.Equals(TEXT("LightSourceAngle"), ESearchCase::IgnoreCase)
+						|| Name.Equals(TEXT("bCastShadows"), ESearchCase::IgnoreCase))
+					{
+						continue;
+					}
+					++RejectedProperties;
+					AddOpError(OutErrors, ActorIndex, TEXT("property_not_allowed"));
+				}
+			}
+
+			if (Kind == EBATLayoutActorKind::SkyLight && PropertiesObj.IsValid())
+			{
+				for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+				{
+					if (Pair.Key.Equals(TEXT("Intensity"), ESearchCase::IgnoreCase))
+					{
+						continue;
+					}
+					++RejectedProperties;
+					AddOpError(OutErrors, ActorIndex, TEXT("property_not_allowed"));
+				}
+			}
+
+			if (Kind == EBATLayoutActorKind::SkyAtmosphere && PropertiesObj.IsValid())
+			{
+				RejectedProperties += PropertiesObj->Values.Num();
+				AddOpError(OutErrors, ActorIndex, TEXT("properties_not_supported_for_skyatmosphere"));
+			}
+
+			if (Kind == EBATLayoutActorKind::TextRenderActor && PropertiesObj.IsValid())
+			{
+				for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesObj->Values)
+				{
+					const FString& Name = Pair.Key;
+					if (Name.Equals(TEXT("Text"), ESearchCase::IgnoreCase)
+						|| Name.Equals(TEXT("text"), ESearchCase::IgnoreCase)
+						|| Name.Equals(TEXT("WorldSize"), ESearchCase::IgnoreCase)
+						|| Name.Equals(TEXT("worldSize"), ESearchCase::IgnoreCase))
+					{
+						continue;
+					}
+					++RejectedProperties;
+					AddOpError(OutErrors, ActorIndex, TEXT("property_not_allowed"));
+				}
+			}
+
+			if (Kind == EBATLayoutActorKind::PlayerStart && PropertiesObj.IsValid())
+			{
+				RejectedProperties += PropertiesObj->Values.Num();
+				AddOpError(OutErrors, ActorIndex, TEXT("properties_not_supported_for_playerstart"));
+			}
+
 			if (Kind == EBATLayoutActorKind::PcgVolume)
 			{
 				if (AssetsObj.IsValid())
@@ -607,12 +902,7 @@ bool FBlueprintAutomationToolkitModule::ExecuteEditorLayoutApply(const TArray<TS
 			}
 
 			Actor->SetActorScale3D(Scale);
-#if WITH_EDITOR
-			if (!Label.IsEmpty())
-			{
-				Actor->SetActorLabel(Label, true);
-			}
-#endif
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
 
 			UStaticMeshComponent* MeshComp = Actor->GetStaticMeshComponent();
 			if (AssetsObj.IsValid())
@@ -667,16 +957,121 @@ bool FBlueprintAutomationToolkitModule::ExecuteEditorLayoutApply(const TArray<TS
 			}
 
 			Actor->SetActorScale3D(Scale);
-#if WITH_EDITOR
-			if (!Label.IsEmpty())
-			{
-				Actor->SetActorLabel(Label, true);
-			}
-#endif
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
 
 			if (UPointLightComponent* LightComp = Cast<UPointLightComponent>(Actor->GetLightComponent()))
 			{
 				ApplyAllowedLightProperties(LightComp, PropertiesObj, AppliedProperties, RejectedProperties);
+			}
+
+			++SpawnedActors;
+			continue;
+		}
+
+		if (Kind == EBATLayoutActorKind::DirectionalLight)
+		{
+			ADirectionalLight* Actor = World->SpawnActor<ADirectionalLight>(Location, Rotation, Params);
+			if (!Actor)
+			{
+				++RejectedActors;
+				AddOpError(OutErrors, ActorIndex, TEXT("spawn_failed"));
+				continue;
+			}
+
+			Actor->SetActorScale3D(Scale);
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
+
+			if (UDirectionalLightComponent* LightComp = Cast<UDirectionalLightComponent>(Actor->GetLightComponent()))
+			{
+				ApplyAllowedDirectionalLightProperties(LightComp, PropertiesObj, AppliedProperties, RejectedProperties);
+			}
+
+			++SpawnedActors;
+			continue;
+		}
+
+		if (Kind == EBATLayoutActorKind::SkyLight)
+		{
+			ASkyLight* Actor = World->SpawnActor<ASkyLight>(Location, Rotation, Params);
+			if (!Actor)
+			{
+				++RejectedActors;
+				AddOpError(OutErrors, ActorIndex, TEXT("spawn_failed"));
+				continue;
+			}
+
+			Actor->SetActorScale3D(Scale);
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
+
+			if (USkyLightComponent* LightComp = Actor->GetLightComponent())
+			{
+				ApplyAllowedSkyLightProperties(LightComp, PropertiesObj, AppliedProperties, RejectedProperties);
+			}
+
+			++SpawnedActors;
+			continue;
+		}
+
+		if (Kind == EBATLayoutActorKind::SkyAtmosphere)
+		{
+			ASkyAtmosphere* Actor = World->SpawnActor<ASkyAtmosphere>(Location, Rotation, Params);
+			if (!Actor)
+			{
+				++RejectedActors;
+				AddOpError(OutErrors, ActorIndex, TEXT("spawn_failed"));
+				continue;
+			}
+
+			Actor->SetActorScale3D(Scale);
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
+			if (PropertiesObj.IsValid())
+			{
+				RejectedProperties += PropertiesObj->Values.Num();
+				AddOpError(OutErrors, ActorIndex, TEXT("properties_not_supported_for_skyatmosphere"));
+			}
+
+			++SpawnedActors;
+			continue;
+		}
+
+		if (Kind == EBATLayoutActorKind::PlayerStart)
+		{
+			APlayerStart* Actor = World->SpawnActor<APlayerStart>(Location, Rotation, Params);
+			if (!Actor)
+			{
+				++RejectedActors;
+				AddOpError(OutErrors, ActorIndex, TEXT("spawn_failed"));
+				continue;
+			}
+
+			Actor->SetActorScale3D(Scale);
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
+			if (PropertiesObj.IsValid())
+			{
+				RejectedProperties += PropertiesObj->Values.Num();
+				AddOpError(OutErrors, ActorIndex, TEXT("properties_not_supported_for_playerstart"));
+			}
+
+			++SpawnedActors;
+			continue;
+		}
+
+		if (Kind == EBATLayoutActorKind::TextRenderActor)
+		{
+			ATextRenderActor* Actor = World->SpawnActor<ATextRenderActor>(Location, Rotation, Params);
+			if (!Actor)
+			{
+				++RejectedActors;
+				AddOpError(OutErrors, ActorIndex, TEXT("spawn_failed"));
+				continue;
+			}
+
+			Actor->SetActorScale3D(Scale);
+			ApplyActorMetadata(Actor, Label, ActorObj, AppliedProperties, RejectedProperties);
+
+			if (UTextRenderComponent* TextComp = Actor->GetTextRender())
+			{
+				ApplyAllowedTextRenderProperties(TextComp, PropertiesObj, AppliedProperties, RejectedProperties);
 			}
 
 			++SpawnedActors;
@@ -692,12 +1087,7 @@ bool FBlueprintAutomationToolkitModule::ExecuteEditorLayoutApply(const TArray<TS
 		}
 
 		Volume->SetActorScale3D(Scale);
-#if WITH_EDITOR
-		if (!Label.IsEmpty())
-		{
-			Volume->SetActorLabel(Label, true);
-		}
-#endif
+		ApplyActorMetadata(Volume, Label, ActorObj, AppliedProperties, RejectedProperties);
 
 		UPCGComponent* PCGComponent = Volume->FindComponentByClass<UPCGComponent>();
 		if (!PCGComponent)

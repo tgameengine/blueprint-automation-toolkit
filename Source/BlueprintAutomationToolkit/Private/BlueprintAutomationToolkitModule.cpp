@@ -9,6 +9,7 @@
 #include "Commands/Blueprint/ReadGraphCommand.h"
 #include "Commands/CommandDispatcher.h"
 #include "Commands/Editor/FocusEditorTargetCommand.h"
+#include "Commands/Editor/LevelEditorCommands.h"
 #include "Commands/Editor/SelectEditorTargetCommand.h"
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/DescribeObjectCommand.h"
@@ -24,6 +25,7 @@
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
+#include "CoreGlobals.h"
 #include "Containers/Ticker.h"
 #include "Containers/UnrealString.h"
 #include "Dom/JsonObject.h"
@@ -2507,6 +2509,51 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		false,
 		false
 	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/level/audit"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FLevelAuditCommand>(); },
+		EBATAutomationPermissionTier::Read,
+		EBATAutomationPermission::Editor,
+		true,
+		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/level/destroy_actors"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FLevelDestroyActorsCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor,
+		true,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/level/save"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FLevelSaveCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor | EBATAutomationPermission::Filesystem,
+		true,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/level/create"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FLevelCreateCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor | EBATAutomationPermission::Filesystem,
+		true,
+		true,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/editor/level/load"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FLevelLoadCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor | EBATAutomationPermission::Filesystem,
+		true,
+		true,
+		false
+	});
 }
 
 bool FBlueprintAutomationToolkitModule::RegisterBuiltInAutomationCommand(FBATAutomationCommandRegistration Registration)
@@ -3358,6 +3405,12 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 	}
 
 	PersistSettings(!bAuthTokenFromEnv);
+
+	if (IsRunningCommandlet())
+	{
+		UE_LOG(LogBlueprintAutomationToolkit, Log, TEXT("Server startup skipped while running commandlet."));
+		return;
+	}
 
 	if (!bServerEnabled)
 	{

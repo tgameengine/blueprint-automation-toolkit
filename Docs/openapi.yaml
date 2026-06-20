@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Blueprint Automation Toolkit Editor Bridge
-  version: 0.3.0
+  version: 0.3.1
   description: |
     Secure typed localhost automation bridge for Unreal Editor.
     The canonical agent flow is discover -> inspect -> resolve -> mutate -> compile or validate -> inspect diagnostics -> save or focus.
@@ -237,6 +237,99 @@ paths:
       responses:
         '200':
           description: Actor find result
+  /editor/level/audit:
+    post:
+      summary: Audit editor level actors with composable filters
+      description: Lists matching actors and returns counts by class without requiring Python execution.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LevelActorFilterRequest'
+      responses:
+        '200':
+          description: Level actor audit result
+  /editor/level/destroy_actors:
+    post:
+      summary: Destroy editor level actors matched by filters
+      description: |
+        Uses the same filter language as `/editor/level/audit`.
+        Refuses an empty filter unless `allowAll=true`; pass `dryRun=true` to preview matches.
+        Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/LevelActorFilterRequest'
+                - type: object
+                  properties:
+                    dryRun:
+                      type: boolean
+                    allowAll:
+                      type: boolean
+                    allowPartial:
+                      type: boolean
+                    maxDelete:
+                      type: integer
+                      minimum: 1
+                      maximum: 5000
+      responses:
+        '200':
+          description: Destroy result or dry-run preview
+  /editor/level/save:
+    post:
+      summary: Save dirty editor map and optional content packages
+      description: Saves map packages and, by default, dirty content packages so World Partition external actor packages are persisted. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                saveContentPackages:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Level save result
+  /editor/level/load:
+    post:
+      summary: Load an editor map by package or filename
+      description: Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                map:
+                  type: string
+                mapPackage:
+                  type: string
+                package:
+                  type: string
+                path:
+                  type: string
+                filename:
+                  type: string
+                saveBeforeLoad:
+                  type: boolean
+                showProgress:
+                  type: boolean
+              anyOf:
+                - required: [map]
+                - required: [mapPackage]
+                - required: [package]
+                - required: [path]
+                - required: [filename]
+      responses:
+        '200':
+          description: Level load result
   /editor/select:
     post:
       summary: Select one or more actors in the editor
@@ -967,6 +1060,76 @@ components:
       scheme: bearer
       bearerFormat: token
   schemas:
+    LevelActorFilterRequest:
+      type: object
+      properties:
+        by:
+          type: string
+          enum: [label, name, class, tag, folder]
+        value:
+          type: string
+        label:
+          type: string
+        actorLabel:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        labelPrefix:
+          type: string
+        labelSuffix:
+          type: string
+        labelContains:
+          type: string
+        labelNotContains:
+          type: string
+        name:
+          type: string
+        actorName:
+          type: string
+        names:
+          type: array
+          items:
+            type: string
+        class:
+          type: string
+        className:
+          type: string
+        classNames:
+          type: array
+          items:
+            type: string
+        classes:
+          type: array
+          items:
+            type: string
+        classContains:
+          type: string
+        folder:
+          type: string
+        folderPath:
+          type: string
+        folderPrefix:
+          type: string
+        folderContains:
+          type: string
+        tag:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        includeHidden:
+          type: boolean
+          default: true
+        includeTransient:
+          type: boolean
+          default: false
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 5000
     Issue:
       type: object
       required: [code, message, recoverable]

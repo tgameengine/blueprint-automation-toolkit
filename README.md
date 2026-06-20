@@ -25,8 +25,9 @@ The preferred workflow is:
 4. Read or mutate reflected state with `GET /object/get_property`, `POST /object/set_property`, and `POST /object/call_function`
 5. Read or apply Blueprint graph data with `GET /blueprint/graph/read` and `POST /blueprint/graph/apply`
 6. Compile or validate changes and inspect diagnostics
-7. Persist assets or Blueprints with `POST /asset/save` or `POST /blueprint/compile_save`
-8. Drive editor selection or focus with `POST /editor/select` and `POST /editor/focus`
+7. Audit, load, save, or clean level actors with `POST /editor/level/*`
+8. Persist assets or Blueprints with `POST /asset/save` or `POST /blueprint/compile_save`
+9. Drive editor selection or focus with `POST /editor/select` and `POST /editor/focus`
 
 Compile-related routes return structured diagnostics with normalized `warnings` and `errors` entries built from Unreal's compiler log and policy layer.
 
@@ -41,6 +42,10 @@ Preferred endpoints:
 - `POST /blueprint/compile_save`
 - `POST /actor/spawn`
 - `POST /actor/destroy`
+- `POST /editor/level/audit`
+- `POST /editor/level/destroy_actors`
+- `POST /editor/level/save`
+- `POST /editor/level/load`
 - `POST /object/call_function`
 - `POST /object/set_property`
 - `GET /object/get_property`
@@ -49,6 +54,25 @@ Preferred endpoints:
 - `POST /editor/focus`
 - `POST /pie/start`
 - `POST /pie/stop`
+
+Level automation helpers:
+
+- `POST /editor/level/audit` lists and counts actors by filters such as `labelPrefix`, `labelSuffix`, `labelContains`, `className`, `folderPrefix`, and `tag`.
+- `POST /editor/level/destroy_actors` destroys all actors matching the same filter language. It refuses an empty filter unless `allowAll=true`; use `dryRun=true` to preview matches.
+- `POST /editor/level/save` saves dirty map packages and, by default, dirty content packages so World Partition external actors are persisted.
+- `POST /editor/level/load` loads a map from `map`, `mapPackage`, `package`, `path`, or `filename`.
+
+Example:
+
+```json
+{
+  "labelPrefix": "SKP_TEST_",
+  "labelSuffix": "_Light",
+  "className": "PointLight",
+  "dryRun": true,
+  "maxDelete": 20
+}
+```
 
 ## Extending It
 
@@ -495,6 +519,7 @@ Canonical agent workflow:
 4. `POST /object/set_property` or `POST /object/call_function`
 5. `POST /blueprint/graph/apply`
 6. `POST /blueprint/compile_save`
+7. `POST /editor/level/save` when level actors or external actor packages changed
 
 Base URL:
 

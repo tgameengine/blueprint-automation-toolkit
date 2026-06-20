@@ -14,7 +14,7 @@
   "IsBetaVersion": false,
   "IsExperimentalVersion": false,
   "Installed": false,
-  "EnabledByDefault": true,
+  "EnabledByDefault": false,
   "Plugins": [
     {
       "Name": "PCG",
@@ -32,8 +32,11 @@
   "Modules": [
     {
       "Name": "BlueprintAutomationToolkit",
-      "Type": "Editor",
-      "LoadingPhase": "Default"
+      "Type": "EditorNoCommandlet",
+      "LoadingPhase": "Default",
+      "TargetAllowList": [
+        "Editor"
+      ]
     }
   ]
 }

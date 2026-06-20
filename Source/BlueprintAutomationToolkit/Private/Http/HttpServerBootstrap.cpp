@@ -1,10 +1,17 @@
 #include "BlueprintAutomationToolkitModule.h"
 
+#include "CoreGlobals.h"
 #include "HttpServerModule.h"
 #include "IHttpRouter.h"
 
 bool FBlueprintAutomationToolkitModule::StartServer(bool bInteractiveStart)
 {
+	if (IsRunningCommandlet())
+	{
+		UE_LOG(LogBlueprintAutomationToolkit, Log, TEXT("Server start skipped while running commandlet."));
+		return false;
+	}
+
 	if (bServerRunning)
 	{
 		return true;
