@@ -11,6 +11,7 @@
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "EngineUtils.h"
+#include "LevelEditor.h"
 #include "GenericPlatform/GenericPlatformProcess.h"
 #include "HAL/PlatformTime.h"
 #include "HttpResultCallback.h"
@@ -25,10 +26,12 @@
 #include "Misc/SecureHash.h"
 #include "Misc/ScopeLock.h"
 #include "Misc/PackageName.h"
+#include "Modules/ModuleManager.h"
 #include "ScopedTransaction.h"
 #include "Serialization/JsonSerializer.h"
 #include "FileHelpers.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Settings/LevelEditorPlaySettings.h"
 #include "Transport/PolicyMiddleware.h"
 #include "Transport/ResponseWriter.h"
 
@@ -1849,7 +1852,28 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::ExecuteJobByKind(cons
 		{
 			if (GEditor && GEditor->PlayWorld == nullptr)
 			{
+				ULevelEditorPlaySettings* PlaySettings = GetMutableDefault<ULevelEditorPlaySettings>();
+				if (PlaySettings)
+				{
+					PlaySettings->SetPlayNetMode(PIE_Standalone);
+					PlaySettings->SetPlayNumberOfClients(1);
+					PlaySettings->SetRunUnderOneProcess(true);
+					PlaySettings->bLaunchSeparateServer = false;
+					PlaySettings->LastExecutedPlayModeLocation = PlayLocation_DefaultPlayerStart;
+					PlaySettings->LastExecutedPlayModeType = PlayMode_InViewPort;
+				}
+
 				FRequestPlaySessionParams Params;
+				if (FModuleManager::Get().IsModuleLoaded(TEXT("LevelEditor")))
+				{
+					FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>(TEXT("LevelEditor"));
+					TSharedPtr<IAssetViewport> ActiveLevelViewport = LevelEditorModule.GetFirstActiveViewport();
+					if (ActiveLevelViewport.IsValid())
+					{
+						Params.DestinationSlateViewport = ActiveLevelViewport;
+					}
+				}
+
 				GEditor->RequestPlaySession(Params);
 				bStarted = true;
 			}
