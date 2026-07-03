@@ -13,11 +13,11 @@
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "Misc/Guid.h"
+#include "Misc/OutputDevice.h"
 #include "IHttpRouter.h"
 #include "Misc/Base64.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
-#include "Misc/StringOutputDevice.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBlueprintAutomationToolkitExecRoute, Log, All);
 
