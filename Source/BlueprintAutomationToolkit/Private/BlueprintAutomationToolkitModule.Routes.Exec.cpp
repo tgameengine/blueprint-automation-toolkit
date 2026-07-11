@@ -14,6 +14,10 @@
 #include "HttpServerResponse.h"
 #include "Misc/Guid.h"
 #include "Misc/OutputDevice.h"
+#include "Runtime/Launch/Resources/Version.h"
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 7)
+#include "Misc/StringOutputDevice.h"
+#endif
 #include "IHttpRouter.h"
 #include "Misc/Base64.h"
 #include "Serialization/JsonReader.h"
@@ -363,7 +367,7 @@ void FBlueprintAutomationToolkitModule::BindExecRoute()
 							TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
 							R->SetStringField(TEXT("command"), Cmd);
 							R->SetBoolField(TEXT("ok"), bOk);
-							R->SetStringField(TEXT("output"), Out);
+							R->SetStringField(TEXT("output"), FString(Out));
 							Results.Add(MakeShared<FJsonValueObject>(R));
 						}
 
@@ -421,7 +425,7 @@ void FBlueprintAutomationToolkitModule::BindExecRoute()
 					{
 						Obj->SetNumberField(TEXT("pie_index"), ResolvedPieIndex);
 					}
-					Obj->SetStringField(TEXT("output"), Out);
+					Obj->SetStringField(TEXT("output"), FString(Out));
 					ThreadResult = FAutomationResult::Ok(MakeShared<FJsonValueObject>(Obj));
 				}, 10.0);
 

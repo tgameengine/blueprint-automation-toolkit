@@ -9,6 +9,7 @@
 #include "GameFramework/Actor.h"
 #include "Misc/DefaultValueHelper.h"
 #include "Misc/PackageName.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "UObject/SoftObjectPath.h"
 #include "UObject/StructOnScope.h"
 #include "UObject/UObjectIterator.h"
@@ -832,7 +833,11 @@ FAutomationResult FObjectAutomationService::CallFunction(FBlueprintAutomationToo
 				continue;
 			}
 
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+			const TSharedPtr<FJsonValue>* JsonField = ArgsObj->Values.Find(UE::FSharedString(*ParamProperty->GetName()));
+#else
 			const TSharedPtr<FJsonValue>* JsonField = ArgsObj->Values.Find(ParamProperty->GetName());
+#endif
 			if (!JsonField)
 			{
 				Result = FAutomationResult::Error(TEXT("bad_args"), FString::Printf(TEXT("Missing argument '%s'"), *ParamProperty->GetName()), 400);

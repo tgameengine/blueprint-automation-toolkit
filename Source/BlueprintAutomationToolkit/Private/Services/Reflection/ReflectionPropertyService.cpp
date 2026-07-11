@@ -10,6 +10,7 @@
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 
@@ -228,7 +229,14 @@ FAutomationResult FReflectionPropertyService::SetProperty(FBlueprintAutomationTo
 		const TSharedPtr<FJsonObject>* ValuesObject = nullptr;
 		if (BodyObj.IsValid() && BodyObj->TryGetObjectField(TEXT("values"), ValuesObject) && ValuesObject && ValuesObject->IsValid())
 		{
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+			for (const TPair<UE::FSharedString, TSharedPtr<FJsonValue>>& Pair : (*ValuesObject)->Values)
+			{
+				Assignments.Add(FString(Pair.Key), Pair.Value);
+			}
+#else
 			Assignments = (*ValuesObject)->Values;
+#endif
 		}
 		else
 		{

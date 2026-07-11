@@ -11,6 +11,7 @@
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Misc/ScopeExit.h"
+#include "Runtime/Launch/Resources/Version.h"
 #include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 
@@ -207,7 +208,11 @@ FAutomationResult FReflectionFunctionService::CallFunction(FBlueprintAutomationT
 			}
 
 			const bool bRequiresInput = !bIsOut || bIsReference;
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+			const TSharedPtr<FJsonValue>* ArgumentValue = Arguments->Values.Find(UE::FSharedString(*Parameter->GetName()));
+#else
 			const TSharedPtr<FJsonValue>* ArgumentValue = Arguments->Values.Find(Parameter->GetName());
+#endif
 			if (bRequiresInput)
 			{
 				if (!ArgumentValue)
