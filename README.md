@@ -40,6 +40,7 @@ Preferred endpoints:
 - `POST /blueprint/graph/apply`
 - `GET /blueprint/graph/read`
 - `POST /blueprint/compile_save`
+- `POST /material/texture_samples/set`
 - `POST /actor/spawn`
 - `POST /actor/destroy`
 - `POST /editor/level/audit`
@@ -559,6 +560,19 @@ Example agent flow:
 4. Use the appropriate action endpoint, such as `POST /object/set_property`, `POST /object/call_function`, or a Blueprint/editor route, based on the discovered capabilities.
 
 Animation authoring and AnimGraph edits are Unreal forward-axis aware.
+
+Material texture repair can be performed without Python through `POST /material/texture_samples/set`.
+The route supports Texture Sample and Texture Object expressions, recompiles the material, and saves it by default:
+
+```json
+{
+	"material": "/Game/Materials/M_Wall",
+	"textures": {
+		"MaterialExpressionTextureSample_0": "/Game/Textures/T_Wall_A",
+		"MaterialExpressionTextureObject_0": "/Game/Textures/T_Wall_N"
+	}
+}
+```
 
 - `POST /asset/create` with `class: /Script/Engine.AnimSequence` accepts optional `forward_axis: "X" | "Y" | "Z"` and remaps incoming track translations and rotations into Unreal's `+X` forward frame before writing keys.
 - `POST /blueprint/graph/apply` accepts optional `forward_axis` on AnimGraph node specs and remaps vector, rotator, quaternion, and transform properties into Unreal's `+X` forward frame before property import.

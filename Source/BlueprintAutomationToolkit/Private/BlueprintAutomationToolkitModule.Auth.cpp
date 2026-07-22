@@ -625,6 +625,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("blueprintGraphApply"), true);
 	Capabilities->SetBoolField(TEXT("compileSaveBlueprint"), true);
 	Capabilities->SetBoolField(TEXT("saveAsset"), true);
+	Capabilities->SetBoolField(TEXT("materialTextureSamples"), true);
 	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
 	Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
 	Capabilities->SetBoolField(TEXT("extensibleCommands"), true);
@@ -666,6 +667,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/read")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/material/texture_samples/set")));
 	Data->SetArrayField(TEXT("canonicalRoutes"), Routes);
 
 	TArray<FBATAutomationCommandInfo> CommandInfos;
@@ -728,6 +730,7 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("readGraph"), TEXT("/blueprint/graph/read"));
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
 	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
+	PreferredRoutes->SetStringField(TEXT("setMaterialTextureSamples"), TEXT("/material/texture_samples/set"));
 	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
 
 	TSharedPtr<FJsonObject> Capabilities;
@@ -817,6 +820,7 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/material/texture_samples/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/create"), ESearchCase::CaseSensitive)
@@ -913,6 +917,7 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/material/texture_samples/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/pcg/spawn_spheres"), ESearchCase::CaseSensitive))
 	{
 		return PM2(EBATPermission::Editor, EBATPermission::Filesystem);

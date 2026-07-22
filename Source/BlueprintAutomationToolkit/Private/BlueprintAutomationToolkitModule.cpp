@@ -11,6 +11,7 @@
 #include "Commands/Editor/FocusEditorTargetCommand.h"
 #include "Commands/Editor/LevelEditorCommands.h"
 #include "Commands/Editor/SelectEditorTargetCommand.h"
+#include "Commands/Material/SetMaterialTextureSamplesCommand.h"
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/DescribeObjectCommand.h"
 #include "Commands/Reflection/GetObjectCommand.h"
@@ -2507,6 +2508,15 @@ void FBlueprintAutomationToolkitModule::RegisterAutomationCommands()
 		EBATAutomationPermission::Editor,
 		false,
 		false,
+		false
+	});
+	RegisterBuiltInAutomationCommand({
+		TEXT("/material/texture_samples/set"),
+		[]() -> TUniquePtr<FAutomationCommand> { return MakeUnique<FSetMaterialTextureSamplesCommand>(); },
+		EBATAutomationPermissionTier::Edit,
+		EBATAutomationPermission::Editor | EBATAutomationPermission::Filesystem,
+		true,
+		true,
 		false
 	});
 	RegisterBuiltInAutomationCommand({

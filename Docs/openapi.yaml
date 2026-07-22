@@ -433,6 +433,57 @@ paths:
       responses:
         '200':
           description: Save result
+  /material/texture_samples/set:
+    post:
+      summary: Assign textures to material texture expressions and save the material
+      description: |
+        Updates texture-bearing material expressions by their UObject names. Both Texture Sample and
+        Texture Object expressions are supported. All material expressions and texture assets are
+        resolved before the material is changed. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [material]
+              properties:
+                material:
+                  type: string
+                  description: Material package or object path.
+                textures:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Map from material expression UObject name to texture package or object path.
+                assignments:
+                  type: array
+                  items:
+                    type: object
+                    required: [expression, texture]
+                    properties:
+                      expression:
+                        type: string
+                      texture:
+                        type: string
+                recompile:
+                  type: boolean
+                  default: true
+                save:
+                  type: boolean
+                  default: true
+              anyOf:
+                - required: [textures]
+                - required: [assignments]
+      responses:
+        '200':
+          description: Updated material texture expressions, compile state, and save state
+        '400':
+          description: Invalid material assignment request
+        '404':
+          description: Material, texture expression, or texture asset was not found
+        '409':
+          description: Material edits are blocked while PIE is running
   /asset/create:
     post:
       summary: Create an asset instance from a UObject class

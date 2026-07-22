@@ -4,6 +4,7 @@
 
 #include "Commands/Reflection/CallFunctionCommand.h"
 #include "Commands/Reflection/SetPropertyCommand.h"
+#include "Commands/Material/SetMaterialTextureSamplesCommand.h"
 #include "Commands/AutomationCommand.h"
 #include "Core/ForwardAxis.h"
 #include "Domain/Requests/AssetSaveRequest.h"
@@ -59,6 +60,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingSupportsGraphAnalysisT
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetDuplicateServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.DuplicateServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, "BlueprintAutomationToolkit.Assets.CreateServiceRejectsInvalidClass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATMaterialTextureSamplesCommandRejectsMissingMaterialTest, "BlueprintAutomationToolkit.Materials.TextureSamplesRejectMissingMaterial", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsActorOverlapEventTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsActorOverlapEvent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -242,6 +244,7 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/apply"), Spec.Contains(TEXT("/blueprint/graph/apply:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/read"), Spec.Contains(TEXT("/blueprint/graph/read:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/compile_save"), Spec.Contains(TEXT("/blueprint/compile_save:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /material/texture_samples/set"), Spec.Contains(TEXT("/material/texture_samples/set:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents compileDiagnostics"), Spec.Contains(TEXT("compileDiagnostics"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents nodeValidation"), Spec.Contains(TEXT("nodeValidation"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents includeNodeProperties"), Spec.Contains(TEXT("includeNodeProperties"), ESearchCase::CaseSensitive));
@@ -468,6 +471,7 @@ bool FBATPieEditBlockRouteClassificationTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("/blueprint/set-defaults is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/set-defaults")));
 	TestTrue(TEXT("/blueprint/pin/connect is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/pin/connect")));
 	TestTrue(TEXT("/blueprint/compile_save is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/compile_save")));
+	TestTrue(TEXT("/material/texture_samples/set is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/material/texture_samples/set")));
 
 	TestFalse(TEXT("/blueprint/schema remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/schema")));
 	TestFalse(TEXT("/blueprint/graph/read remains allowed during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/blueprint/graph/read")));
@@ -718,6 +722,21 @@ bool FBATAssetSaveServiceRejectsEmptyRequestTest::RunTest(const FString& Paramet
 	TestFalse(TEXT("Asset save service should reject an empty request"), Result.bSuccess);
 	TestEqual(TEXT("Asset save service should report bad_args for an empty request"), Result.ErrorCode, FString(TEXT("bad_args")));
 	TestEqual(TEXT("Asset save service should use HTTP 400 for an empty request"), Result.StatusCode, 400);
+	return true;
+}
+
+bool FBATMaterialTextureSamplesCommandRejectsMissingMaterialTest::RunTest(const FString& Parameters)
+{
+	FAutomationContext Context;
+	Context.RequestId = TEXT("material-texture-samples-missing-material");
+	Context.Endpoint = TEXT("/material/texture_samples/set");
+	Context.Body = MakeShared<FJsonObject>();
+
+	FSetMaterialTextureSamplesCommand Command;
+	const FAutomationResult Result = Command.Execute(Context);
+	TestFalse(TEXT("Material texture command rejects a missing material path"), Result.bSuccess);
+	TestEqual(TEXT("Material texture command reports missing_material"), Result.ErrorCode, FString(TEXT("missing_material")));
+	TestEqual(TEXT("Material texture command uses HTTP 400 for a missing material path"), Result.StatusCode, 400);
 	return true;
 }
 
