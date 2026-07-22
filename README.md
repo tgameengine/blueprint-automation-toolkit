@@ -1197,6 +1197,23 @@ Sets a pin’s default value as a string (for pins that support a literal defaul
 { "blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor", "node_guid": "...", "pin": "InString", "value": "Hello" }
 ```
 
+Object and class pins accept a mounted asset or class object path. BAT resolves
+the path, verifies that it is compatible with the pin type, and assigns the
+pin's `DefaultObject` rather than storing an invalid string literal:
+
+```json
+{
+	"blueprint": "/Game/Blueprints/BP_TestActor.BP_TestActor",
+	"node_guid": "...",
+	"pin": "Sound",
+	"value": "/Game/Audio/SW_Impact.SW_Impact"
+}
+```
+
+Successful object assignments return `default_kind: "object"` and the resolved
+object path. An unresolved or incompatible object path returns
+`pin_default_object_not_found` without modifying the pin.
+
 #### `POST /blueprint/node/describe`
 
 Returns node metadata + pins (useful to discover pin names for connecting).

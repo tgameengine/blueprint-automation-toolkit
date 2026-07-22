@@ -4454,12 +4454,70 @@ BlueprintGraphsRoute = Router->BindRoute(
 						Graph->Modify();
 					}
 
-					Pin->DefaultValue = DefaultValue;
+					const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
+					const bool bClassLikePin = Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class
+						|| Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass;
+					const bool bObjectLikePin = Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object
+						|| Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class
+						|| Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject
+						|| Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass;
+
+					UObject* ResolvedDefaultObject = nullptr;
+					if (bObjectLikePin && DefaultValue.StartsWith(TEXT("/")))
+					{
+						if (bClassLikePin)
+						{
+							UClass* ResolvedClass = nullptr;
+							if (TryResolveClassReference(DefaultValue, ResolvedClass))
+							{
+								UClass* RequiredMetaClass = Cast<UClass>(Pin->PinType.PinSubCategoryObject.Get());
+								if (!RequiredMetaClass || ResolvedClass->IsChildOf(RequiredMetaClass))
+								{
+									ResolvedDefaultObject = ResolvedClass;
+								}
+							}
+						}
+						else
+						{
+							UClass* RequiredClass = Cast<UClass>(Pin->PinType.PinSubCategoryObject.Get());
+							TryResolveObjectReference(DefaultValue, RequiredClass, ResolvedDefaultObject);
+						}
+
+						if (!ResolvedDefaultObject)
+						{
+							ThreadResult = FAutomationResult::Error(
+								TEXT("pin_default_object_not_found"),
+								FString::Printf(TEXT("Could not resolve a compatible object for pin '%s': %s"), *PinName, *DefaultValue),
+								(int32)EHttpServerResponseCodes::BadRequest);
+							return;
+						}
+
+						Pin->DefaultObject = ResolvedDefaultObject;
+						Pin->DefaultValue.Reset();
+						Pin->DefaultTextValue = FText::GetEmpty();
+						if (K2Schema)
+						{
+							K2Schema->TrySetDefaultObject(*Pin, ResolvedDefaultObject);
+						}
+					}
+					else if (K2Schema)
+					{
+						K2Schema->TrySetDefaultValue(*Pin, DefaultValue);
+					}
+					else
+					{
+						Pin->DefaultValue = DefaultValue;
+					}
 					FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
 					TSharedRef<FJsonObject> Obj = MakeShared<FJsonObject>();
 					Obj->SetBoolField(TEXT("ok"), true);
 					Obj->SetStringField(TEXT("blueprint"), ObjectPath);
+					Obj->SetStringField(TEXT("default_kind"), ResolvedDefaultObject ? TEXT("object") : TEXT("value"));
+					if (ResolvedDefaultObject)
+					{
+						Obj->SetStringField(TEXT("resolved_object"), ResolvedDefaultObject->GetPathName());
+					}
 					ThreadResult = FAutomationResult::Ok(MakeShared<FJsonValueObject>(Obj));
 				}, 10.0);
 
