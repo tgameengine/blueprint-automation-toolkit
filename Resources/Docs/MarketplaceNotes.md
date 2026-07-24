@@ -1,4 +1,4 @@
-# Marketplace Notes: Secure Editor Bridge
+# Fab Review Notes: Secure Editor Bridge
 
 This document summarizes the plugin security posture and safe defaults for marketplace review.
 
@@ -33,9 +33,17 @@ Default behavior is intentionally conservative:
 ## Distribution model
 
 - Plugin source is available on GitHub at no cost under a proprietary license with a free use grant.
-- The Marketplace listing provides a packaged, pre-built binary for convenience at $14.99.
-- Both versions are feature-identical. The Marketplace version ships under the standard UE Marketplace EULA.
+- The Fab listing provides a packaged, pre-built binary for convenience at $14.99.
+- Both versions are feature-identical. Distribution through Fab is governed by the license terms selected for the Fab listing.
 - No feature gating, no time-limited trials, no telemetry.
+
+## Dependencies and runtime scope
+
+- Module type: `EditorNoCommandlet`, allowlisted for the Editor target only.
+- Required built-in Unreal Engine plugins: `PCG`, `GeometryProcessing`, and `GeometryScripting`.
+- BAT uses only Unreal Engine modules; it has no external SDK, third-party DLL, separate service, package-manager dependency, or required internet connection.
+- The HTTP server runs in the Unreal Editor process, listens on loopback only, and is disabled by default.
+- The plugin is not a runtime gameplay dependency and is not included in packaged games.
 
 ## Pricing
 

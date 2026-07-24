@@ -1,6 +1,13 @@
 Copyright (c) 2026 murataka
 All rights reserved.
 
+SCOPE
+
+This license governs copies obtained from the official GitHub repository.
+Copies acquired through Fab are governed by the license terms selected for the
+Fab listing. If those terms conflict with this file, the applicable Fab terms
+control for the Fab-acquired copy.
+
 GRANT OF USE
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -11,7 +18,7 @@ the following conditions:
 1. REDISTRIBUTION PROHIBITED — The Software may not be redistributed,
    sublicensed, repackaged, or sold as a standalone product or as part of a
    competing product. Users must obtain the Software exclusively from the
-   official GitHub repository or the Unreal Engine Marketplace listing.
+   official GitHub repository or the Fab listing.
 
 2. MODIFICATION FOR PERSONAL USE — Users may modify the Software for use in
    their own projects. Modified versions may not be distributed publicly.

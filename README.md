@@ -9,9 +9,33 @@ The primary use case is a local AI agent driving Unreal Editor through a small s
 | Source | Cost | What you get |
 |--------|------|--------------|
 | **GitHub** | Free | Source code. Clone and build from source against your UE project. |
-| **UE Marketplace** | $14.99 | Packaged binary. One-click install, Vault integration, engine version management. |
+| **Fab** | $14.99 | Packaged binary. Launcher installation and engine version management. |
 
-Both versions are identical in features. The Marketplace listing is a convenience option.
+Both versions are identical in features. The Fab listing is a convenience option.
+
+## Requirements and Dependencies
+
+Blueprint Automation Toolkit is an editor-only C++ plugin. It is loaded as an
+`EditorNoCommandlet` module and is not included in packaged games.
+
+Required Unreal Engine plugins:
+
+- `PCG`
+- `GeometryProcessing`
+- `GeometryScripting`
+
+These are Unreal Engine plugins and are enabled automatically through
+`BlueprintAutomationToolkit.uplugin`. BAT does not require an external SDK,
+third-party DLL, separate service, package manager, or internet connection.
+The HTTP server runs inside Unreal Editor and accepts loopback connections only.
+
+The plugin also uses Unreal Engine's built-in editor, Blueprint, geometry,
+HTTP/JSON, Slate, asset, and material modules. Source installations require a
+C++ toolchain supported by the target Unreal Engine version. Fab builds include
+compiled Win64 editor binaries for Unreal Engine 5.5, 5.6, 5.7, and 5.8.
+
+If the plugin does not load, verify that the three required engine plugins are
+present in the engine installation and enabled for the project.
 
 ## License
 

@@ -64,6 +64,9 @@
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "HAL/PlatformTime.h"
+#include "InputKeyEventArgs.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Widgets/Input/SButton.h"
@@ -1465,7 +1468,18 @@ namespace
 			Ar.Logf(TEXT("%s: missing PlayerInput"), OpName);
 			return false;
 		}
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+		PC->PlayerInput->InputKey(FInputKeyEventArgs(
+			/*Viewport*/ nullptr,
+			FInputDeviceId::CreateFromInternalId(0),
+			Key,
+			EventType,
+			1.0f,
+			/*bIsTouchEvent*/ false,
+			FPlatformTime::Cycles64()));
+#else
 		PC->PlayerInput->InputKey(FInputKeyParams(Key, EventType, 1.0, /*bGamepadOverride*/ false));
+#endif
 		Ar.Logf(TEXT("%s: %s"), OpName, *Trimmed);
 		return true;
 	}
@@ -3151,7 +3165,11 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 	// Force-disable restore+save of open asset editors for these runs.
 	if (FApp::IsUnattended())
 	{
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+		FCoreDelegates::GetOnPostEngineInit().AddLambda([]()
+#else
 		FCoreDelegates::OnPostEngineInit.AddLambda([]()
+#endif
 		{
 			if (GEditor)
 			{

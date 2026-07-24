@@ -1,25 +1,28 @@
-# UE Marketplace Submission Checklist
+# Fab Submission Checklist
 
 ## Pre-Submission
 
-- [ ] Version bumped to 1.0.0 in .uplugin
-- [ ] `IsBetaVersion` and `IsExperimentalVersion` set to `false`
-- [ ] `CreatedByURL`, `DocsURL`, `SupportURL` populated
-- [ ] Plugin builds clean against UE 5.5 (Win64 Development Editor)
-- [ ] No compiler warnings in plugin source
-- [ ] All automation tests pass
+- [x] Version bumped to 1.0.0 in .uplugin
+- [x] `IsBetaVersion` and `IsExperimentalVersion` set to `false`
+- [x] `CreatedByURL`, `DocsURL`, `SupportURL` populated
+- [x] Required engine plugins disclosed: PCG, GeometryProcessing, GeometryScripting
+- [x] Plugin Browser icon included as `Resources/Icon128.png` (128x128 PNG)
+- [x] Final BuildPlugin package contains `.uplugin`, `Source`, `Config`, `Content`, and `Resources`
+- [x] Plugin builds clean against UE 5.5, 5.6, 5.7, and 5.8 (Win64 Development Editor)
+- [x] No compiler warnings in plugin source
+- [x] All 49 automation tests pass in a clean UE 5.5 host project
 
-## Marketplace Listing Content
+## Fab Listing Content
 
 - [ ] **Title:** Blueprint Automation Toolkit
 - [ ] **Short description:** Editor-only localhost automation bridge for AI agents to control Blueprints and Unreal Editor through a typed HTTP API.
 - [ ] **Long description:** (see below)
 - [ ] **Category:** Code Plugins > Developer
 - [ ] **Price:** $14.99
-- [ ] **Supported engine versions:** 5.5 (add more as tested)
+- [x] **Supported engine versions:** 5.5, 5.6, 5.7, 5.8
 - [ ] **Supported platforms:** Editor only (Win64)
 
-### Long Description (copy-paste for Marketplace)
+### Long Description (copy-paste for Fab)
 
 Blueprint Automation Toolkit is a secure, editor-only HTTP bridge that lets AI agents and external tools control Unreal Editor programmatically through a typed localhost API.
 
@@ -54,9 +57,16 @@ Other editor plugins can register custom automation commands at startup via the 
 
 The canonical agent workflow is: discover → inspect → resolve → mutate → compile → save. Agents can call GET /engine/discover to learn what's available, then use a consistent set of JSON endpoints to accomplish any editor task.
 
-**What you get on Marketplace**
+**Requirements and dependencies**
 
-Pre-built binary plugin — install from your Vault, enable, and go. No compilation needed. The same plugin is also available free on GitHub (source code, build from source) at github.com/tgameengine/blueprint-automation-toolkit.
+• Editor-only Code Plugin (`EditorNoCommandlet`); it is not included in packaged games
+• Requires the built-in PCG, GeometryProcessing, and GeometryScripting engine plugins
+• No external SDKs, third-party DLLs, background services, package managers, or internet connection
+• The local HTTP server runs inside Unreal Editor and is disabled by default
+
+**What you get on Fab**
+
+Pre-built binary plugin — install it for a supported engine version, enable it, and go. No compilation is needed for the packaged Win64 editor build. The same plugin is also available free on GitHub (source code, build from source) at github.com/tgameengine/blueprint-automation-toolkit.
 
 **Key endpoints**
 
@@ -73,7 +83,8 @@ Pre-built binary plugin — install from your Vault, enable, and go. No compilat
 
 ## Required Assets
 
-- [ ] Icon (284x284 PNG)
+- [ ] Fab listing thumbnail
+- [x] Plugin Browser icon (`Resources/Icon128.png`, 128x128 PNG)
 - [ ] Screenshots (1920x1080, at least 3):
   - API in action (HTTP client calling endpoints)
   - Blueprint before/after automation
@@ -83,5 +94,5 @@ Pre-built binary plugin — install from your Vault, enable, and go. No compilat
 ## Post-Submission
 
 - [ ] Monitor Epic review feedback
-- [ ] Update `MarketplaceURL` in .uplugin once listing is live
+- [ ] Update `MarketplaceURL` in .uplugin with the Fab listing URL once live
 - [ ] Announce on GitHub, UE forums, Reddit, X

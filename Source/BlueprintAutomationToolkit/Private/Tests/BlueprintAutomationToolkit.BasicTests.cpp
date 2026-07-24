@@ -1574,7 +1574,7 @@ bool FBATReflectionInvalidTargetsTest::RunTest(const FString& Parameters)
 	const FAutomationResult BadFunctionResult = FunctionService.CallFunction(Module, TEXT("bad-function-test"), BadFunctionBody);
 	DestroyReflectionTestObject(Object.Get());
 
-	const bool bMissingObject = !MissingObjectResult.bSuccess && MissingObjectResult.ErrorCode == TEXT("not_found");
+	const bool bMissingObject = !MissingObjectResult.bSuccess && MissingObjectResult.ErrorCode == TEXT("ObjectNotFound");
 	const bool bMissingProperty = !BadPropertyResult.bSuccess && BadPropertyResult.ErrorCode == TEXT("PropertyNotFound");
 	const bool bMissingFunction = !BadFunctionResult.bSuccess && BadFunctionResult.ErrorCode == TEXT("FunctionNotFound");
 	return TestTrue(TEXT("Reflection invalid target errors are reported"), bMissingObject && bMissingProperty && bMissingFunction);
