@@ -34,6 +34,9 @@
       "Name": "BlueprintAutomationToolkit",
       "Type": "EditorNoCommandlet",
       "LoadingPhase": "Default",
+      "PlatformAllowList": [
+        "Win64"
+      ],
       "TargetAllowList": [
         "Editor"
       ]

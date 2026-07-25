@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Commands/Blueprint/ReadGraphCommand.h"
 
 #include "Core/EditorExecution.h"

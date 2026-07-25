@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 
 #include "Core/ForwardAxis.h"

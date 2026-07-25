@@ -1,0 +1,12 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.5",
+  "Category": "Samples",
+  "Description": "Minimal host project for evaluating Blueprint Automation Toolkit without redistributing the plugin.",
+  "Plugins": [
+    {
+      "Name": "BlueprintAutomationToolkit",
+      "Enabled": true
+    }
+  ]
+}

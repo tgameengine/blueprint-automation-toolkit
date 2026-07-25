@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "BlueprintAutomationToolkitModule.h"

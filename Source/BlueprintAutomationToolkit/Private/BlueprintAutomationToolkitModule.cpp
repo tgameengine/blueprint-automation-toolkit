@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "BlueprintAutomationToolkitModule.h"
 
 #include "Auth/TokenAuthMiddleware.h"
@@ -648,7 +650,11 @@ namespace
 		}
 
 		TArray<UObject*> Objects;
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+		GetObjectsWithOuter(Package, Objects, EGetObjectsFlags::IncludeNestedObjects);
+#else
 		GetObjectsWithOuter(Package, Objects, /*bIncludeNestedObjects*/ true);
+#endif
 
 		int32 TotalChanges = 0;
 		int32 ExampleCount = 0;
@@ -708,7 +714,11 @@ namespace
 		}
 
 		TArray<UObject*> Objects;
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+		GetObjectsWithOuter(Package, Objects, EGetObjectsFlags::IncludeNestedObjects);
+#else
 		GetObjectsWithOuter(Package, Objects, /*bIncludeNestedObjects*/ true);
+#endif
 
 		int32 TotalChanges = 0;
 		int32 ExampleCount = 0;
@@ -777,7 +787,11 @@ namespace
 		}
 
 		TArray<UObject*> Objects;
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+		GetObjectsWithOuter(Package, Objects, EGetObjectsFlags::IncludeNestedObjects);
+#else
 		GetObjectsWithOuter(Package, Objects, /*bIncludeNestedObjects*/ true);
+#endif
 
 		int32 HitCount = 0;
 		for (UObject* Obj : Objects)

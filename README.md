@@ -13,6 +13,10 @@ The primary use case is a local AI agent driving Unreal Editor through a small s
 
 Both versions are identical in features. The Fab listing is a convenience option.
 
+The minimal example host project is available from the
+[v1.0.0 release](https://github.com/tgameengine/blueprint-automation-toolkit/releases/tag/v1.0.0).
+It enables BAT as a dependency but does not redistribute the plugin.
+
 ## Requirements and Dependencies
 
 Blueprint Automation Toolkit is an editor-only C++ plugin. It is loaded as an

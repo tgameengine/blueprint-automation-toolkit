@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Services/BlueprintGraphService.h"
 
 #include "Commands/AutomationCommand.h"

@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Http/HttpRequestUtils.h"
 
 #include "Dom/JsonObject.h"

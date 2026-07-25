@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #pragma once
 
 #include "Services/Reflection/ReflectionTypes.h"

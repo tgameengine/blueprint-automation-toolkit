@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Services/BlueprintGraph/BlueprintGraphLinkService.h"
 
 #include "EdGraph/EdGraph.h"

@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Tests/BATReflectionTestTypes.h"
 
 int32 UBATReflectionTestObject::AddToHealth(int32 Delta)

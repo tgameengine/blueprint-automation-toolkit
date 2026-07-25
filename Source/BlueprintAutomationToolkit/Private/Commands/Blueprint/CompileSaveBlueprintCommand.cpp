@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Commands/Blueprint/CompileSaveBlueprintCommand.h"
 
 #include "Core/EditorExecution.h"

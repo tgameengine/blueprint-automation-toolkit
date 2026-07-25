@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Commands/CommandDispatcher.h"
 
 bool FCommandDispatcher::Register(FBATAutomationCommandRegistration Registration, bool bBuiltIn, FString* OutError)

@@ -7,20 +7,25 @@
 - [x] `CreatedByURL`, `DocsURL`, `SupportURL` populated
 - [x] Required engine plugins disclosed: PCG, GeometryProcessing, GeometryScripting
 - [x] Plugin Browser icon included as `Resources/Icon128.png` (128x128 PNG)
-- [x] Final BuildPlugin package contains `.uplugin`, `Source`, `Config`, `Content`, and `Resources`
+- [x] Final source-only package contains `.uplugin`, `Source`, `Config`, `Content`, `Docs`, and `Resources`
+- [x] Final submission package excludes generated `Binaries` and `Intermediate` folders
+- [x] Every module declares `PlatformAllowList: Win64`
+- [x] Every `.h` and `.cpp` file starts with the AkaSoft 2026 copyright notice
 - [x] Plugin builds clean against UE 5.5, 5.6, 5.7, and 5.8 (Win64 Development Editor)
 - [x] No compiler warnings in plugin source
 - [x] All 49 automation tests pass in a clean UE 5.5 host project
+- [x] Example project depends on BAT without redistributing the plugin
 
 ## Fab Listing Content
 
 - [ ] **Title:** Blueprint Automation Toolkit
 - [ ] **Short description:** Editor-only localhost automation bridge for AI agents to control Blueprints and Unreal Editor through a typed HTTP API.
-- [ ] **Long description:** (see below)
+- [x] **Long description:** (see below)
 - [ ] **Category:** Code Plugins > Developer
 - [ ] **Price:** $14.99
 - [x] **Supported engine versions:** 5.5, 5.6, 5.7, 5.8
 - [ ] **Supported platforms:** Editor only (Win64)
+- [x] **Technical information:** See `FabTechnicalInformation.md`
 
 ### Long Description (copy-paste for Fab)
 

@@ -1,3 +1,5 @@
+// Copyright 2026 AkaSoft. All Rights Reserved.
+
 #include "Commands/GetActorInfoCommand.h"
 
 #include "Services/ActorService.h"
