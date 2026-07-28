@@ -766,17 +766,22 @@ FAutomationResult FLevelSaveCommand::Execute(FAutomationContext& Context)
 		Context.Body->TryGetBoolField(TEXT("saveContentPackages"), bSaveContentPackages);
 
 		World->MarkPackageDirty();
-		const bool bSaved = FEditorFileUtils::SaveDirtyPackages(
+		const FString MapPackageName = World->GetOutermost()->GetName();
+		const bool bMapSaved = UEditorLoadingAndSavingUtils::SaveMap(World, MapPackageName);
+		const bool bContentSaved = !bSaveContentPackages || FEditorFileUtils::SaveDirtyPackages(
 			/*bPromptUserToSave*/ false,
-			/*bSaveMapPackages*/ true,
-			/*bSaveContentPackages*/ bSaveContentPackages,
+			/*bSaveMapPackages*/ false,
+			/*bSaveContentPackages*/ true,
 			/*bFastSave*/ false,
 			/*bNotifyNoPackagesSaved*/ false,
 			/*bCanBeDeclined*/ false);
+		const bool bSaved = bMapSaved && bContentSaved;
 
 		TSharedRef<FJsonObject> Data = MakeShared<FJsonObject>();
 		SetWorldSummary(Data, World);
 		Data->SetBoolField(TEXT("saved"), bSaved);
+		Data->SetBoolField(TEXT("mapSaved"), bMapSaved);
+		Data->SetBoolField(TEXT("contentPackagesSaved"), bContentSaved);
 		Data->SetBoolField(TEXT("saveContentPackages"), bSaveContentPackages);
 		Result = bSaved
 			? BAT::Reflection::MakeStructuredSuccess(Context.RequestId, Data)

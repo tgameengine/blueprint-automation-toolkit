@@ -296,6 +296,47 @@ paths:
       responses:
         '200':
           description: Level save result
+  /editor/level/create:
+    post:
+      summary: Create and save a new editor map
+      description: Creates a blank map or a map based on an optional template. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                map:
+                  type: string
+                mapPackage:
+                  type: string
+                package:
+                  type: string
+                path:
+                  type: string
+                overwrite:
+                  type: boolean
+                  default: false
+                saveExistingMap:
+                  type: boolean
+                  default: true
+                saveBeforeCreate:
+                  type: boolean
+                  description: Alias for saveExistingMap.
+                template:
+                  type: string
+                templateMap:
+                  type: string
+                  description: Alias for template.
+              anyOf:
+                - required: [map]
+                - required: [mapPackage]
+                - required: [package]
+                - required: [path]
+      responses:
+        '200':
+          description: Map creation result
   /editor/level/load:
     post:
       summary: Load an editor map by package or filename

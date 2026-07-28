@@ -15,6 +15,7 @@
 #include "Dom/JsonValue.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
+#include "Engine/World.h"
 #include "Factories/AnimSequenceFactory.h"
 #include "Modules/ModuleManager.h"
 #include "Misc/PackageName.h"
@@ -70,12 +71,15 @@ namespace
 			return false;
 		}
 
-		const FString Filename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+		UWorld* WorldInPackage = UWorld::FindWorldInPackage(Package);
+		const FString Filename = FPackageName::LongPackageNameToFilename(
+			PackageName,
+			WorldInPackage ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		SaveArgs.SaveFlags = SAVE_NoError;
 		Package->MarkPackageDirty();
-		return UPackage::SavePackage(Package, ObjectToSave, *Filename, SaveArgs);
+		return UPackage::SavePackage(Package, WorldInPackage ? static_cast<UObject*>(WorldInPackage) : ObjectToSave, *Filename, SaveArgs);
 	}
 
 	static void ApplyForwardAxisToVectorKeys(TArray<FVector>& Keys, const FQuat& AxisToUnrealQuat)

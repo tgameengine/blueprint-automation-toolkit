@@ -13,12 +13,18 @@ The primary use case is a local AI agent driving Unreal Editor through a small s
 
 Both versions are identical in features. The Fab listing is a convenience option.
 
-The minimal example host project is available from the
+The complete example host project is included in
+[`Examples/BATExampleProject`](Examples/BATExampleProject). It contains a
+Codex-generated showcase map and three verified Blueprint assets while keeping
+the plugin itself as an external dependency. A packaged copy of the original
+minimal host is also available from the
 [v1.0.0 release](https://github.com/tgameengine/blueprint-automation-toolkit/releases/tag/v1.0.0).
-It enables BAT as a dependency but does not redistribute the plugin.
 
 For copy-ready, multi-step agent workflows, see
-[Advanced Prompt Examples](Docs/AdvancedPromptExamples.md).
+[Advanced Prompt Examples](Docs/AdvancedPromptExamples.md). For prompts that
+were actually executed in Unreal Editor, their condensed BAT outputs, and the
+included artifacts, see
+[Codex Executed Examples](Docs/CodexExecutedExamples.md).
 
 ## Requirements and Dependencies
 
@@ -955,7 +961,6 @@ Response:
 - `/Script/Engine.InstancedStaticMeshComponent`
 - `/Script/Engine.HierarchicalInstancedStaticMeshComponent`
 - `/Script/Engine.SplineComponent`
-- `/Script/Engine.SplineMeshComponent`
 
 For ISM/HISM entries, optional `from_spline` can generate instances procedurally from an existing spline component template:
 
@@ -985,18 +990,9 @@ Notes for `from_spline`:
 - `align_to_tangent` defaults to `true`.
 - `offset`/`rotation`/`scale` are local per-instance adjustments.
 
-Blueprint-only spline corridor mode:
-
-- For `class: "/Script/Engine.SplineMeshComponent"`, provide `from_spline.component` and `static_mesh`.
-- BAT generates `UserConstructionScript` nodes (Blueprint graph only) that dynamically add spline mesh components along spline point segments via `Add Spline Mesh Component`.
-- No runtime module/code is required for this path.
-- Optional `from_spline` tuning fields for spline meshes:
-	- `offset`: `[x,y,z]` or `{ "x":..., "y":..., "z":... }`
-	- `scale_start`: `[x,y]` or `{ "x":..., "y":... }`
-	- `scale_end`: `[x,y]` or `{ "x":..., "y":... }`
-	- `roll_start_degrees`: number
-	- `roll_end_degrees`: number
-	- `forward_axis`: `"X" | "Y" | "Z"`
+`SplineMeshComponent` is not currently supported by `components_apply`.
+Requests for that class return an explicit component error. A spline component
+can still drive ISM/HISM instance generation through `from_spline`.
 
 For spline entries:
 

@@ -90,7 +90,7 @@ Acceptance evidence:
 
 ## 4. Create a Spline-Driven Modular Corridor Blueprint
 
-> Create `/Game/BAT_Demos/BP_BAT_ModularCorridor` as an Actor Blueprint. Add a spline component named `CorridorSpline` with five editable curve points forming a gentle S-shaped path. Add a hierarchical instanced static mesh component named `FloorHISM` that places `/Engine/BasicShapes/Cube.Cube` along the spline every 300 Unreal units, aligned to the tangent, with a thin floor-like scale and a 50-unit vertical offset. Add a spline mesh component configuration for corridor side segments using the same spline. Compile, inspect the generated components and construction logic, and save only when the component list, spline points, generated instances, and compile diagnostics match the request.
+> Create `/Game/BAT_Demos/BP_BAT_ModularCorridor` as an Actor Blueprint. Add a spline component named `CorridorSpline` with five editable curve points forming a gentle S-shaped path. Add a hierarchical instanced static mesh component named `FloorHISM` that places `/Engine/BasicShapes/Cube.Cube` along the spline every 300 Unreal units, aligned to the tangent, with a thin floor-like scale and a 50-unit vertical offset. Compile, inspect the generated components and instance configuration, and save only when the component list, spline points, generated instances, and compile diagnostics match the request. Do not request `SplineMeshComponent` through `components_apply`; that class is not supported by this operation.
 
 Typical BAT flow:
 
@@ -102,7 +102,7 @@ Typical BAT flow:
 
 Acceptance evidence:
 
-- `CorridorSpline`, `FloorHISM`, and the requested spline mesh configuration exist.
+- `CorridorSpline` and `FloorHISM` exist.
 - The spline contains five points.
 - Instance spacing and tangent alignment match the prompt.
 - Compilation succeeds with zero errors.
@@ -205,24 +205,23 @@ Acceptance evidence:
 - The duplicate saves successfully.
 - Read-back proves the source asset was not modified.
 
-## 10. Migrate a Blueprint Component Safely
+## 10. Reconfigure an Existing Mesh Component Safely
 
-> Inspect `/Game/Blueprints/BP_LegacyLamp.BP_LegacyLamp` and list its components. Replace the legacy point-light component named `OldLampLight` with the supported target light component. Reapply its explicitly requested relative transform and do not remove or replace any other component. If the discovered replacement schema cannot represent an attachment that must be preserved, stop before changing the asset and report that limitation. Otherwise, compile without saving, query the component list again, and confirm that exactly one replacement occurred. Save only if the old component is gone, the new component exists with the requested transform, and compiler diagnostics contain zero errors.
+> Inspect `/Game/Blueprints/BP_LegacyLamp.BP_LegacyLamp` and list its components. Find the existing allowlisted static mesh component named `LampMesh` and update it in place with `/blueprint/apply` using `components.set`: assign `/Engine/BasicShapes/Sphere.Sphere`, set the explicitly requested relative transform, and keep the component name and all unrelated components unchanged. Compile without saving, query the component list again, and save only if `LampMesh` still exists exactly once, no unrelated component changed, and compiler diagnostics contain zero errors.
 
 Typical BAT flow:
 
 - `POST /blueprint/schema`
-- `POST /blueprint/components/replace`
+- `POST /blueprint/apply` with `components.set`
 - `POST /blueprint/compile_save`
 - `POST /blueprint/schema`
 - `POST /blueprint/compile_save` with saving enabled
 
 Acceptance evidence:
 
-- Exactly one component is replaced.
+- `LampMesh` is updated in place and retains its name.
 - Unrelated components remain unchanged.
 - The requested relative transform is verified.
-- A required attachment is either representable or reported before mutation.
 - Compilation succeeds with zero errors.
 
 ## 11. Author an Animation Asset With Explicit Forward-Axis Conversion

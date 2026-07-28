@@ -2,7 +2,7 @@
   "FileVersion": 3,
   "EngineAssociation": "5.5",
   "Category": "Samples",
-  "Description": "Minimal host project for evaluating Blueprint Automation Toolkit without redistributing the plugin.",
+  "Description": "Executable Blueprint Automation Toolkit example with Codex-generated map and Blueprint assets.",
   "Plugins": [
     {
       "Name": "BlueprintAutomationToolkit",

@@ -107,12 +107,15 @@ namespace
 			return false;
 		}
 
-		const FString Filename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+		UWorld* WorldInPackage = UWorld::FindWorldInPackage(Package);
+		const FString Filename = FPackageName::LongPackageNameToFilename(
+			PackageName,
+			WorldInPackage ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		SaveArgs.SaveFlags = SAVE_NoError;
 		Package->MarkPackageDirty();
-		return UPackage::SavePackage(Package, ObjectToSave, *Filename, SaveArgs);
+		return UPackage::SavePackage(Package, WorldInPackage ? static_cast<UObject*>(WorldInPackage) : ObjectToSave, *Filename, SaveArgs);
 	}
 
 	static bool TryParseVector(const TSharedPtr<FJsonValue>& JsonValue, FVector& OutVector)
