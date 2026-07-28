@@ -25,6 +25,8 @@ For copy-ready, multi-step agent workflows, see
 were actually executed in Unreal Editor, their condensed BAT outputs, and the
 included artifacts, see
 [Codex Executed Examples](Docs/CodexExecutedExamples.md).
+For end-to-end model, animation, texture, repair, validation, and evidence
+automation, see the [AI Asset Pipeline guide](Docs/AssetPipeline.md).
 
 ## Requirements and Dependencies
 
@@ -47,6 +49,12 @@ HTTP/JSON, Slate, asset, and material modules. Source installations require a
 C++ toolchain supported by the target Unreal Engine version. Fab builds include
 compiled Win64 editor binaries for Unreal Engine 5.5, 5.6, 5.7, and 5.8.
 
+The asset pipeline dispatches through Unreal's active importers. FBX, OBJ, and
+common image formats are available in standard editor installations. glTF/GLB,
+USD, Alembic, or project-specific formats may require their corresponding
+optional Unreal importer plugin to be enabled. BAT itself still has no external
+SDK, DCC application, or encoder dependency.
+
 If the plugin does not load, verify that the three required engine plugins are
 present in the engine installation and enabled for the project.
 
@@ -65,7 +73,8 @@ The preferred workflow is:
 6. Compile or validate changes and inspect diagnostics
 7. Audit, load, save, or clean level actors with `POST /editor/level/*`
 8. Persist assets or Blueprints with `POST /asset/save` or `POST /blueprint/compile_save`
-9. Drive editor selection or focus with `POST /editor/select` and `POST /editor/focus`
+9. Import, repair, validate, and prove source assets with `POST /asset/pipeline/execute`
+10. Drive editor selection or focus with `POST /editor/select` and `POST /editor/focus`
 
 Compile-related routes return structured diagnostics with normalized `warnings` and `errors` entries built from Unreal's compiler log and policy layer.
 
@@ -75,6 +84,13 @@ The internal services stay layered, and the public API is intentionally small an
 
 Preferred endpoints:
 
+- `GET /asset/import/formats`
+- `POST /asset/import`
+- `POST /asset/inspect`
+- `POST /asset/configure`
+- `POST /asset/validate`
+- `POST /asset/pipeline/execute`
+- `POST /asset/showcase/capture`
 - `POST /blueprint/graph/apply`
 - `GET /blueprint/graph/read`
 - `POST /blueprint/compile_save`
@@ -112,6 +128,51 @@ Example:
   "maxDelete": 20
 }
 ```
+
+Asset pipeline example:
+
+```json
+{
+  "async": true,
+  "rollback_on_failure": true,
+  "steps": [
+    {
+      "op": "import",
+      "payload": {
+        "source": "SourceArt/Characters/Octopus.fbx",
+        "destination": "/Game/Characters/Octopus",
+        "expected_type": "SkeletalMesh",
+        "options": {
+          "import_type": "skeletal_mesh",
+          "import_animations": true,
+          "import_materials": true,
+          "import_textures": true,
+          "create_physics_asset": true
+        }
+      }
+    },
+    {
+      "op": "repair",
+      "payload": {
+        "path": "$imported",
+        "mode": "safe_auto"
+      }
+    },
+    {
+      "op": "validate",
+      "payload": {
+        "path": "$imported",
+        "profile": "fab"
+      }
+    }
+  ]
+}
+```
+
+The complete request model, security boundaries, typed FBX options, custom
+importer adapters, validation rules, rollback semantics, and screenshot/frame
+evidence workflow are documented in
+[Docs/AssetPipeline.md](Docs/AssetPipeline.md).
 
 ## Extending It
 
@@ -344,6 +405,8 @@ Typical success response:
 - Resolve assets and objects, inspect reflected properties/functions, read current values, and mutate safe editor objects.
 - Create and modify Blueprint assets and Blueprint graphs in the editor.
 - Inspect and update asset references that participate in animation and skeletal workflows where generic editor semantics are exposed.
+- Import source models and related assets through Unreal's registered importers, fingerprint them, repair common configuration problems, and validate them with structured issues.
+- Place Static or Skeletal Mesh assets in the current editor level and capture a PNG still or deterministic animation frame sequence as verification evidence.
 - Compile Blueprints explicitly, validate references, and save assets explicitly.
 - Select and focus editor targets, with optional advanced surfaces gated behind explicit policy.
 
@@ -354,6 +417,8 @@ Typical success response:
 - Arbitrary editor UI automation (Slate widgets, menus, details panels).
 - Deterministic gameplay guarantees (depends on map, pawn/controller, focus, input mappings, and frame timing).
 - Multiplayer/network testing harness behavior.
+- Generating a 3D model from a text prompt by itself; BAT imports a file produced by a DCC or generation system.
+- Launching Blender, FFmpeg, shell commands, or arbitrary external executables from the asset pipeline.
 
 ## Security model
 
@@ -371,6 +436,12 @@ Typical success response:
 	- Safe mode ON: commands must pass strict allow-list checks and Python is blocked.
 	- Safe mode OFF: broader commands are allowed, but separator/injection blocklist still applies.
 	- Python requires both `bAllowPythonExec=true` and safe mode OFF.
+- Asset pipeline policy:
+	- Import sources are restricted to configured roots, extensions, per-file limits, and an aggregate batch-size limit.
+	- External glTF buffer/image sidecars must remain local and inside an allowed root.
+	- Import destinations are restricted to `/Game`.
+	- Evidence output is restricted beneath the project's `Saved` directory.
+	- Custom factory/options adapters accept only import-related classes and editor-visible properties.
 
 Optional advanced routes such as `/ai/exec` are not part of the core editor bridge workflow and may be disabled or hidden by policy.
 

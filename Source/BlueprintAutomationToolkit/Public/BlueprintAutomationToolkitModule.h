@@ -30,6 +30,7 @@ class IHttpRouter;
 class SDockTab;
 class FCommandDispatcher;
 class FTokenAuthMiddleware;
+class FAssetPipelineService;
 namespace BAT::Transport
 {
 	bool ValidateAndHandleRequest(class FBlueprintAutomationToolkitModule& Module, const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TCHAR* Endpoint);
@@ -117,6 +118,7 @@ public:
 
 private:
 	friend class FTokenAuthMiddleware;
+	friend class FAssetPipelineService;
 	friend bool BAT::Transport::ValidateAndHandleRequest(FBlueprintAutomationToolkitModule& Module, const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TCHAR* Endpoint);
 
 	void BindRoutes();
@@ -137,6 +139,7 @@ private:
 	void BindAssetCreateRoute();
 	void BindAssetDuplicateRoute();
 	void BindAssetSaveRoute();
+	void BindAssetPipelineRoutes();
 	void BindActionsRoutes();
 	void BindBlueprintAssetsRoutes();
 	void BindBlueprintGraphRoutes();
@@ -414,6 +417,13 @@ private:
 	FHttpRouteHandle AssetDuplicateRoute;
 	FHttpRouteHandle AssetSaveRoute;
 	FHttpRouteHandle AssetCreateRoute;
+	FHttpRouteHandle AssetImportFormatsRoute;
+	FHttpRouteHandle AssetImportRoute;
+	FHttpRouteHandle AssetInspectRoute;
+	FHttpRouteHandle AssetConfigureRoute;
+	FHttpRouteHandle AssetValidateRoute;
+	FHttpRouteHandle AssetPipelineExecuteRoute;
+	FHttpRouteHandle AssetShowcaseCaptureRoute;
 	FHttpRouteHandle PcgSpawnSpheresRoute;
 	FHttpRouteHandle ActionsListRoute;
 	FHttpRouteHandle ActionsRunRoute;

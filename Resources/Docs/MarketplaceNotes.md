@@ -4,7 +4,9 @@ This document summarizes the plugin security posture and safe defaults for marke
 
 Product framing for review:
 
-- Secure AI control of Unreal Editor assets, Blueprints, animation references, skeleton data, and editor state through a typed localhost API.
+- Secure AI control of Unreal Editor source-asset import, inspection, repair,
+  validation, evidence capture, Blueprints, animation references, skeleton
+  data, and editor state through a typed localhost API.
 - Editor-only, localhost-only, bearer-token-authenticated, policy-gated automation bridge.
 - Optional advanced capabilities such as exec or Python are disabled by default and are not the core product surface.
 
@@ -16,6 +18,19 @@ Product framing for review:
 - Optional environment override: `BAT_AUTH_TOKEN`.
 - Forwarded proxy headers (`x-forwarded-for`) are rejected.
 - Request body limits and rate limiting are enforced for all `/ai/*` endpoints.
+- Asset import sources are restricted to configured roots, extensions,
+  per-file size limits, and an aggregate per-request batch limit; destinations
+  are restricted to `/Game`.
+- Existing filesystem paths are checked at their resolved on-disk location to
+  prevent junction/symlink escapes from configured roots or `Saved`.
+- External glTF buffer/image sidecars must be local, exist, satisfy the size
+  limit, and remain inside an allowed source root.
+- Other format-specific dependency resolution is owned by the active Unreal
+  importer. BAT does not install or download importer code; projects should
+  enable only importer plugins they trust.
+- Asset evidence output is restricted beneath the project's `Saved` directory.
+- Import, configure, pipeline, and showcase/capture routes require both
+  `editor` and `filesystem` permissions and are blocked during PIE.
 
 ## Secure defaults
 
@@ -43,6 +58,12 @@ Default behavior is intentionally conservative:
 - Module type: `EditorNoCommandlet`, allowlisted for the Editor target only.
 - Required built-in Unreal Engine plugins: `PCG`, `GeometryProcessing`, and `GeometryScripting`.
 - BAT uses only Unreal Engine modules; it has no external SDK, third-party DLL, separate service, package-manager dependency, or required internet connection.
+- FBX/OBJ use typed BAT import options. glTF/GLB, USD, Alembic, and other
+  allowlisted formats use the importer active in that Unreal installation;
+  optional formats may require their corresponding built-in Unreal plugin.
+- BAT imports existing source files. It does not generate models, launch a DCC,
+  invoke a shell, or bundle/run a video encoder.
+- Multi-frame evidence is emitted as PNG files plus a JSON manifest.
 - The HTTP server runs in the Unreal Editor process, listens on loopback only, and is disabled by default.
 - The plugin is not a runtime gameplay dependency and is not included in packaged games.
 

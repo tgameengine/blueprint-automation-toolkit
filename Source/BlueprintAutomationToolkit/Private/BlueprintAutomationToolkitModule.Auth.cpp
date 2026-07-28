@@ -30,6 +30,7 @@
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "ScopedTransaction.h"
+#include "Services/AssetPipelineService.h"
 #include "Serialization/JsonSerializer.h"
 #include "FileHelpers.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -627,6 +628,12 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("blueprintGraphApply"), true);
 	Capabilities->SetBoolField(TEXT("compileSaveBlueprint"), true);
 	Capabilities->SetBoolField(TEXT("saveAsset"), true);
+	Capabilities->SetBoolField(TEXT("assetImport"), true);
+	Capabilities->SetBoolField(TEXT("assetInspect"), true);
+	Capabilities->SetBoolField(TEXT("assetConfigure"), true);
+	Capabilities->SetBoolField(TEXT("assetValidate"), true);
+	Capabilities->SetBoolField(TEXT("assetPipeline"), true);
+	Capabilities->SetBoolField(TEXT("assetShowcaseCapture"), true);
 	Capabilities->SetBoolField(TEXT("materialTextureSamples"), true);
 	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
 	Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
@@ -670,6 +677,13 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/material/texture_samples/set")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/import/formats")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/import")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/inspect")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/configure")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/validate")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/pipeline/execute")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/showcase/capture")));
 	Data->SetArrayField(TEXT("canonicalRoutes"), Routes);
 
 	TArray<FBATAutomationCommandInfo> CommandInfos;
@@ -733,6 +747,12 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
 	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
 	PreferredRoutes->SetStringField(TEXT("setMaterialTextureSamples"), TEXT("/material/texture_samples/set"));
+	PreferredRoutes->SetStringField(TEXT("importAsset"), TEXT("/asset/import"));
+	PreferredRoutes->SetStringField(TEXT("inspectAsset"), TEXT("/asset/inspect"));
+	PreferredRoutes->SetStringField(TEXT("configureAsset"), TEXT("/asset/configure"));
+	PreferredRoutes->SetStringField(TEXT("validateAsset"), TEXT("/asset/validate"));
+	PreferredRoutes->SetStringField(TEXT("executeAssetPipeline"), TEXT("/asset/pipeline/execute"));
+	PreferredRoutes->SetStringField(TEXT("captureAssetShowcase"), TEXT("/asset/showcase/capture"));
 	Data->SetObjectField(TEXT("preferredRoutes"), PreferredRoutes);
 
 	TSharedPtr<FJsonObject> Capabilities;
@@ -822,6 +842,10 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/import"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/configure"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/pipeline/execute"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/showcase/capture"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/material/texture_samples/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/object/set_property"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/actor/destroy"), ESearchCase::CaseSensitive)
@@ -878,6 +902,15 @@ uint32 FBlueprintAutomationToolkitModule::GetRequestRequiredPermissions(const FS
 			RequiredPermissions |= static_cast<uint32>(EBATPermission::Python);
 		}
 	}
+	if (Endpoint.Equals(TEXT("/jobs/submit"), ESearchCase::CaseSensitive) && BodyObj.IsValid())
+	{
+		FString Kind;
+		if (BodyObj->TryGetStringField(TEXT("kind"), Kind)
+			&& Kind.Equals(TEXT("asset.pipeline"), ESearchCase::CaseSensitive))
+		{
+			RequiredPermissions |= static_cast<uint32>(EBATPermission::Filesystem);
+		}
+	}
 
 	return RequiredPermissions;
 }
@@ -919,10 +952,20 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 		|| Endpoint.Equals(TEXT("/asset/create"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/delete"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/asset/save"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/import"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/configure"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/pipeline/execute"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/showcase/capture"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/material/texture_samples/set"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/pcg/spawn_spheres"), ESearchCase::CaseSensitive))
 	{
 		return PM2(EBATPermission::Editor, EBATPermission::Filesystem);
+	}
+	if (Endpoint.Equals(TEXT("/asset/import/formats"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/inspect"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/asset/validate"), ESearchCase::CaseSensitive))
+	{
+		return PM(EBATPermission::Editor);
 	}
 	if (Endpoint.Equals(TEXT("/actions/list"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/actions/run"), ESearchCase::CaseSensitive))
@@ -1190,7 +1233,8 @@ bool FBlueprintAutomationToolkitModule::ValidateRequestSchema(const FString& End
 			TEXT("editor.layout.apply"),
 			TEXT("plan.apply"),
 			TEXT("blueprint.create"),
-			TEXT("blueprint.save")
+			TEXT("blueprint.save"),
+			TEXT("asset.pipeline")
 		};
 		if (!AllowedKinds.Contains(Kind))
 		{
@@ -1680,7 +1724,7 @@ void FBlueprintAutomationToolkitModule::ExecuteJob(const FString& JobId)
 	}
 	if (!ErrCode.IsEmpty())
 	{
-		CompleteJobFailure(JobId, ErrCode, ErrMessage);
+		CompleteJobFailure(JobId, ErrCode, ErrMessage, Result);
 		AppendJobLog(JobId, FString::Printf(TEXT("job_failed:%s"), *ErrCode));
 		return;
 	}
@@ -2243,6 +2287,34 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::ExecuteJobByKind(cons
 			return nullptr;
 		}
 		return Response;
+	}
+
+	if (Kind.Equals(TEXT("asset.pipeline"), ESearchCase::CaseSensitive))
+	{
+		const FAssetPipelineService Service;
+		const FAutomationResult PipelineResult = Service.ExecutePipeline(*this, Payload, JobId);
+		if (!PipelineResult.bSuccess)
+		{
+			OutCode = PipelineResult.ErrorCode.IsEmpty() ? TEXT("asset_pipeline_failed") : PipelineResult.ErrorCode;
+			OutMessage = PipelineResult.ErrorMessage.IsEmpty() ? TEXT("Asset pipeline failed.") : PipelineResult.ErrorMessage;
+			return nullptr;
+		}
+		if (!PipelineResult.Data.IsValid() || PipelineResult.Data->Type != EJson::Object)
+		{
+			OutCode = TEXT("asset_pipeline_invalid_result");
+			OutMessage = TEXT("Asset pipeline returned a non-object result.");
+			return nullptr;
+		}
+		const TSharedPtr<FJsonObject> PipelineObject = PipelineResult.Data->AsObject();
+		bool bPipelineOk = true;
+		if (PipelineObject.IsValid() && PipelineObject->TryGetBoolField(TEXT("ok"), bPipelineOk) && !bPipelineOk)
+		{
+			OutCode = PipelineResult.ErrorCode.IsEmpty() ? TEXT("asset_pipeline_failed") : PipelineResult.ErrorCode;
+			OutMessage = PipelineResult.ErrorMessage.IsEmpty()
+				? TEXT("One or more asset pipeline steps failed. Inspect the job result steps for details.")
+				: PipelineResult.ErrorMessage;
+		}
+		return PipelineObject;
 	}
 
 	OutCode = TEXT("unsupported_job_kind");

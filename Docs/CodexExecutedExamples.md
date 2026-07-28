@@ -418,15 +418,27 @@ of the generated swim sequence. The 34-bone Skeleton Tree is expanded at left,
 all tentacle bones are drawn over the skeletal mesh, the viewport reports 4,912
 triangles and 30 fps, and the timeline exposes the 41 sampled frames.
 
-### Source preparation boundary
+### Source preparation boundary and current replay
 
-BAT does not currently expose a model-import endpoint. Codex therefore prepared
-the deterministic glTF skeletal mesh plus base-color and normal-map source
-files, then imported them with Unreal's unattended content pipeline. The
-included source manifest reports 34 bones: root, body, and eight four-bone
-tentacle chains. Animation authoring, object resolution, relationship reads,
-texture-profile inspection, asset focus, and the final nine-asset save were
-performed through typed BAT routes.
+At the time this original screenshot and recording were produced, BAT did not
+yet expose a model-import endpoint. Codex prepared the deterministic glTF
+skeletal mesh plus base-color and normal-map source files, then used Unreal's
+unattended content pipeline for that one import boundary. The included source
+manifest reports 34 bones: root, body, and eight four-bone tentacle chains.
+Animation authoring, object resolution, relationship reads, texture-profile
+inspection, asset focus, and the final nine-asset save were performed through
+typed BAT routes.
+
+Current BAT versions now expose that missing boundary through
+`GET /asset/import/formats`, `POST /asset/import`, and
+`POST /asset/pipeline/execute`. The same committed
+`SK_Octopus.gltf` source, its `.bin` buffer, and both texture sidecars are
+covered by the real
+`BlueprintAutomationToolkit.AssetPipeline.AnimatedModelRoundTrip` UE 5.5
+automation test. The test imports through BAT, asserts that the primary object
+is a `SkeletalMesh`, confirms companion object paths are returned, and removes
+the unsaved test assets afterward. This makes the original result reproducible
+without an out-of-band Unreal import command.
 
 ### BAT route trace
 
@@ -435,6 +447,12 @@ performed through typed BAT routes.
 `GET /object/get_property` for mesh and animation relationships →
 `GET /object/describe` for texture profiles →
 `POST /editor/focus` → `POST /asset/save`
+
+Current end-to-end replay:
+
+`GET /asset/import/formats` → `POST /asset/import` →
+`POST /asset/configure` → `POST /asset/validate` →
+`POST /asset/inspect` → `POST /asset/showcase/capture`
 
 ### BAT verification output (condensed)
 
@@ -468,6 +486,13 @@ performed through typed BAT routes.
   "textureProfiles": {
     "T_Octopus_BaseColor": {"sRGB": true},
     "T_Octopus_Normal": {"sRGB": false, "flipGreenChannel": true}
+  },
+  "currentAssetPipelineVerification": {
+    "source": "Examples/BATExampleProject/SourceArt/AnimatedOctopus/SK_Octopus.gltf",
+    "expectedType": "SkeletalMesh",
+    "primaryType": "SkeletalMesh",
+    "sidecarsValidated": true,
+    "test": "BlueprintAutomationToolkit.AssetPipeline.AnimatedModelRoundTrip"
   },
   "focusMode": "asset",
   "save": {"savedCount": 9, "errors": []}

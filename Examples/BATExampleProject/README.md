@@ -24,7 +24,10 @@ The corresponding Unreal Editor animation recording is available on
 under `../../Docs/Videos/CodexExecutedExamples`.
 The octopus glTF and texture inputs are retained under
 `SourceArt/AnimatedOctopus` so the import boundary remains reproducible and
-auditable.
+auditable through BAT's current `/asset/import` and `/asset/pipeline/execute`
+routes. See the
+[`AI Asset Pipeline` guide](../../Docs/AssetPipeline.md) for the complete
+dry-run, import, repair, validation, inspection, showcase, and evidence flow.
 
 1. Install Blueprint Automation Toolkit for your Unreal Engine version.
 2. Copy this project outside the plugin directory if you want to modify it.

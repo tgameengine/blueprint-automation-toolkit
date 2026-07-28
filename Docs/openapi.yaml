@@ -607,6 +607,141 @@ paths:
       responses:
         '200':
           description: Create result
+  /asset/import/formats:
+    get:
+      summary: Discover asset import formats and security limits
+      description: Returns the configured source roots, extension allowlist, per-file and batch size limits, common FBX modes, and pipeline feature flags.
+      responses:
+        '200':
+          description: Import capabilities and active allowlists
+  /asset/import:
+    post:
+      summary: Import model, animation, texture, audio, or interchange source files
+      description: |
+        Imports through Unreal's registered editor importers. Source files must be inside an Asset Import
+        Allowed Root, use an allowed extension, and remain below the configured size limit. Relative sources
+        resolve from the project directory and destinations are restricted to `/Game`.
+
+        FBX receives typed convenience options. Other formats use the active Unreal importer (for example
+        Interchange for glTF/GLB). Advanced callers can provide allowlisted `factory_class`, `options_class`,
+        `factory_properties`, and `options_properties`. BAT stores a source MD5 fingerprint on every imported
+        asset so `skip_unchanged` is idempotent. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetImportRequest'
+      responses:
+        '200':
+          description: Dry-run or all sources were unchanged
+        '201':
+          description: Imported asset result and created object paths
+        '403':
+          description: Source path or adapter denied by the asset pipeline policy
+        '413':
+          description: The combined primary-source batch size exceeded the configured limit
+        '422':
+          description: Importer failed or returned an unexpected asset type
+  /asset/inspect:
+    post:
+      summary: Inspect imported assets and their Unreal relationships
+      description: |
+        Returns normalized type-specific information for Static Meshes, Skeletal Meshes, animations,
+        textures, materials, Skeletons, and Physics Assets. Dependency and referencer queries use the
+        Asset Registry. This read-only route remains available during PIE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTargetRequest'
+      responses:
+        '200':
+          description: Asset inspection snapshot
+        '404':
+          description: At least one asset was not found
+  /asset/configure:
+    post:
+      summary: Repair or configure imported assets
+      description: |
+        Supports automated reimport, material-slot assignment, texture color/compression settings,
+        Static Mesh build settings, Nanite, generated box collision, Skeleton assignment, and Physics
+        Asset creation. `mode: safe_auto` applies conservative normal-map and missing-collision/physics
+        fixes. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetConfigureRequest'
+      responses:
+        '200':
+          description: Applied actions and save state
+        '400':
+          description: Configuration field, slot, or asset type is invalid
+        '422':
+          description: Reimport or repair failed
+  /asset/validate:
+    post:
+      summary: Validate assets with default, production, strict, or Fab rules
+      description: |
+        Produces per-asset error/warning issues, suggested repair actions, and a score. Strict, production,
+        and Fab profiles require collision for Static Meshes, Physics Assets for Skeletal Meshes, valid
+        skeletons and animation samples, assigned material slots, and BAT source provenance. This read-only
+        route remains available during PIE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetValidateRequest'
+      responses:
+        '200':
+          description: Validation passed without errors
+        '422':
+          description: Validation completed with one or more errors
+  /asset/pipeline/execute:
+    post:
+      summary: Execute an ordered agent-oriented asset pipeline
+      description: |
+        Runs up to 50 `import`, `inspect`, `configure`/`repair`, `validate`, and `showcase`/`capture` steps.
+        Later steps may omit targets to consume the preceding import result or use `path: "$imported"`.
+        `dry_run` propagates to mutating operations. On failure BAT can delete assets newly created by the
+        current run; replaced assets and already-saved configuration edits are intentionally outside that
+        rollback scope. Set `async: true` to return a job ID and poll `/jobs/{jobId}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetPipelineRequest'
+      responses:
+        '200':
+          description: Synchronous pipeline result
+        '202':
+          description: Asynchronous pipeline job accepted
+        '422':
+          description: One or more pipeline steps failed
+  /asset/showcase/capture:
+    post:
+      summary: Place a mesh in the editor and capture verification evidence
+      description: |
+        Spawns a Static Mesh or Skeletal Mesh actor, optionally binds an AnimSequence, focuses the active
+        editor viewport, and writes a PNG still or deterministic PNG animation sequence beneath the project's
+        Saved directory. Multi-frame results include a manifest and are codec-independent source evidence
+        for an external video encoder; BAT does not launch arbitrary executables.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetShowcaseCaptureRequest'
+      responses:
+        '201':
+          description: Showcase actor and evidence paths
+        '503':
+          description: Editor world or active viewport is unavailable
   /actions/list:
     get:
       summary: List registered BAT actions
@@ -1152,6 +1287,308 @@ components:
       scheme: bearer
       bearerFormat: token
   schemas:
+    AssetTargetRequest:
+      type: object
+      properties:
+        path:
+          type: string
+        target:
+          type: string
+        paths:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        include_dependencies:
+          type: boolean
+          default: true
+        include_referencers:
+          type: boolean
+          default: false
+      anyOf:
+        - required: [path]
+        - required: [target]
+        - required: [paths]
+    AssetImportOptions:
+      type: object
+      properties:
+        import_type:
+          type: string
+          enum: [auto, static_mesh, skeletal_mesh, animation]
+          default: auto
+        import_mesh:
+          type: boolean
+        import_animations:
+          type: boolean
+        import_materials:
+          type: boolean
+        import_textures:
+          type: boolean
+        create_physics_asset:
+          type: boolean
+        import_morph_targets:
+          type: boolean
+        combine_meshes:
+          type: boolean
+        convert_scene:
+          type: boolean
+        convert_scene_unit:
+          type: boolean
+        force_front_x_axis:
+          type: boolean
+        skeleton:
+          type: string
+          description: Existing Skeleton object or package path, required for animation-only FBX import.
+    AssetImportSource:
+      oneOf:
+        - type: string
+        - type: object
+          properties:
+            source:
+              type: string
+            file:
+              type: string
+            destination_name:
+              type: string
+            expected_type:
+              type: string
+              description: Requires at least one imported asset of this class/type. Companion assets are allowed.
+            factory_class:
+              type: string
+            options_class:
+              type: string
+            options:
+              $ref: '#/components/schemas/AssetImportOptions'
+            factory_properties:
+              type: object
+              additionalProperties: true
+            options_properties:
+              type: object
+              additionalProperties: true
+          anyOf:
+            - required: [source]
+            - required: [file]
+    AssetImportRequest:
+      type: object
+      properties:
+        source:
+          type: string
+        file:
+          type: string
+        sources:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AssetImportSource'
+        destination:
+          type: string
+          pattern: '^/Game(?:/.*)?$'
+        destination_path:
+          type: string
+          pattern: '^/Game(?:/.*)?$'
+        destination_name:
+          type: string
+        expected_type:
+          type: string
+          description: Requires at least one imported asset of this class/type. Companion assets are allowed.
+        replace_existing:
+          type: boolean
+          default: false
+        replace_existing_settings:
+          type: boolean
+          default: false
+        skip_unchanged:
+          type: boolean
+          default: true
+        save:
+          type: boolean
+          default: true
+        dry_run:
+          type: boolean
+          default: false
+        factory_class:
+          type: string
+        options_class:
+          type: string
+        options:
+          $ref: '#/components/schemas/AssetImportOptions'
+        factory_properties:
+          type: object
+          additionalProperties: true
+        options_properties:
+          type: object
+          additionalProperties: true
+      allOf:
+        - anyOf:
+            - required: [source]
+            - required: [file]
+            - required: [sources]
+        - anyOf:
+            - required: [destination]
+            - required: [destination_path]
+    AssetConfigureRequest:
+      allOf:
+        - $ref: '#/components/schemas/AssetTargetRequest'
+        - type: object
+          properties:
+            mode:
+              type: string
+              enum: [explicit, safe_auto]
+              default: explicit
+            dry_run:
+              type: boolean
+              default: false
+            save:
+              type: boolean
+              default: true
+            reimport:
+              type: boolean
+              default: false
+            material_assignments:
+              type: object
+              additionalProperties:
+                type: string
+              description: Map from slot name, imported slot name, or numeric index to Material asset path.
+            texture:
+              type: object
+              properties:
+                srgb:
+                  type: boolean
+                compression_settings:
+                  type: integer
+                  description: Unreal TextureCompressionSettings enum numeric value.
+            static_mesh:
+              type: object
+              properties:
+                recompute_normals:
+                  type: boolean
+                recompute_tangents:
+                  type: boolean
+                generate_lightmap_uvs:
+                  type: boolean
+                nanite:
+                  type: boolean
+                create_box_collision:
+                  type: boolean
+                build:
+                  type: boolean
+            skeletal_mesh:
+              type: object
+              properties:
+                skeleton:
+                  type: string
+                create_physics_asset:
+                  type: boolean
+    AssetValidationRules:
+      type: object
+      properties:
+        require_materials:
+          type: boolean
+          default: true
+        require_source_metadata:
+          type: boolean
+          description: When true, missing BAT source fingerprint metadata is an error.
+        require_collision:
+          type: boolean
+        require_nanite:
+          type: boolean
+          description: When true, disabled Nanite is an error.
+        require_physics_asset:
+          type: boolean
+          description: Requires an assigned Physics Asset containing at least one skeletal body.
+        minimum_bones:
+          type: integer
+          minimum: 1
+          default: 1
+    AssetValidateRequest:
+      allOf:
+        - $ref: '#/components/schemas/AssetTargetRequest'
+        - type: object
+          properties:
+            profile:
+              type: string
+              enum: [default, production, strict, fab]
+              default: default
+            rules:
+              $ref: '#/components/schemas/AssetValidationRules'
+    AssetPipelineStep:
+      type: object
+      required: [op]
+      properties:
+        op:
+          type: string
+          enum: [import, inspect, configure, repair, validate, showcase, capture]
+        payload:
+          type: object
+          additionalProperties: true
+      description: 'Fields may be placed directly on the step or under payload. Use `path: "$imported"` to consume the latest import context.'
+    AssetPipelineRequest:
+      type: object
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AssetPipelineStep'
+        async:
+          type: boolean
+          default: false
+        dry_run:
+          type: boolean
+          default: false
+        rollback_on_failure:
+          type: boolean
+          default: true
+        continue_on_error:
+          type: boolean
+          default: false
+    AssetShowcaseCaptureRequest:
+      type: object
+      required: [asset]
+      properties:
+        asset:
+          type: string
+          description: Static Mesh or Skeletal Mesh asset path.
+        animation:
+          type: string
+          description: Optional AnimSequence for a Skeletal Mesh showcase.
+        actor_label:
+          type: string
+        location:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: number
+        rotation:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: number
+        scale:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: number
+        capture:
+          type: boolean
+          default: true
+        output_folder:
+          type: string
+          description: Relative directory beneath the project's Saved directory.
+        frame_count:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        fps:
+          type: integer
+          minimum: 1
+          maximum: 120
     LevelActorFilterRequest:
       type: object
       properties:

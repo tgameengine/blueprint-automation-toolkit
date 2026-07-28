@@ -284,6 +284,41 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(AssetCreateRoute);
 		AssetCreateRoute.Reset();
 	}
+	if (AssetImportFormatsRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetImportFormatsRoute);
+		AssetImportFormatsRoute.Reset();
+	}
+	if (AssetImportRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetImportRoute);
+		AssetImportRoute.Reset();
+	}
+	if (AssetInspectRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetInspectRoute);
+		AssetInspectRoute.Reset();
+	}
+	if (AssetConfigureRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetConfigureRoute);
+		AssetConfigureRoute.Reset();
+	}
+	if (AssetValidateRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetValidateRoute);
+		AssetValidateRoute.Reset();
+	}
+	if (AssetPipelineExecuteRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetPipelineExecuteRoute);
+		AssetPipelineExecuteRoute.Reset();
+	}
+	if (AssetShowcaseCaptureRoute.IsValid())
+	{
+		Router->UnbindRoute(AssetShowcaseCaptureRoute);
+		AssetShowcaseCaptureRoute.Reset();
+	}
 	if (PcgSpawnSpheresRoute.IsValid())
 	{
 		Router->UnbindRoute(PcgSpawnSpheresRoute);

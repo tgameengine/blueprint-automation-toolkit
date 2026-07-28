@@ -22,6 +22,7 @@
 #include "Services/BlueprintGraph/BlueprintGraphValidationService.h"
 #include "Http/HttpRequestUtils.h"
 #include "Services/AssetService.h"
+#include "Services/AssetPipelineService.h"
 #include "Transport/RequestParsing.h"
 #include "Services/Reflection/ReflectionFunctionService.h"
 #include "Services/Reflection/ReflectionObjectResolver.h"
@@ -32,12 +33,15 @@
 #include "Serialization/JsonSerializer.h"
 
 #include "Engine/EngineTypes.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "HAL/FileManager.h"
+#include "ObjectTools.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiSpecExistsTest, "BlueprintAutomationToolkit.OpenApi.SpecExists", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -62,6 +66,17 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATGraphReadQueryParsingSupportsGraphAnalysisT
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetDuplicateServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.DuplicateServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetCreateServiceRejectsInvalidClassTest, "BlueprintAutomationToolkit.Assets.CreateServiceRejectsInvalidClass", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetSaveServiceRejectsEmptyRequestTest, "BlueprintAutomationToolkit.Assets.SaveServiceRejectsEmptyRequest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineOpenApiPathsTest, "BlueprintAutomationToolkit.AssetPipeline.OpenApiPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelinePermissionMapTest, "BlueprintAutomationToolkit.AssetPipeline.PermissionMap", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineRejectsInvalidDestinationTest, "BlueprintAutomationToolkit.AssetPipeline.RejectsInvalidDestination", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineRejectsMissingStepsTest, "BlueprintAutomationToolkit.AssetPipeline.RejectsMissingSteps", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineDescribesFormatsTest, "BlueprintAutomationToolkit.AssetPipeline.DescribesFormats", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineTextureRoundTripTest, "BlueprintAutomationToolkit.AssetPipeline.TextureRoundTrip", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineRejectsEscapingGltfSidecarTest, "BlueprintAutomationToolkit.AssetPipeline.RejectsEscapingGltfSidecar", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineAnimatedModelRoundTripTest, "BlueprintAutomationToolkit.AssetPipeline.AnimatedModelRoundTrip", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineValidationStopsPipelineTest, "BlueprintAutomationToolkit.AssetPipeline.ValidationStopsPipeline", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineDryRunSkipsDependentMutationsTest, "BlueprintAutomationToolkit.AssetPipeline.DryRunSkipsDependentMutations", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATAssetPipelineBatchFailureRollsBackNewAssetsTest, "BlueprintAutomationToolkit.AssetPipeline.BatchFailureRollsBackNewAssets", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATMaterialTextureSamplesCommandRejectsMissingMaterialTest, "BlueprintAutomationToolkit.Materials.TextureSamplesRejectMissingMaterial", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATForwardAxisAliasesNormalizeTest, "BlueprintAutomationToolkit.Geometry.ForwardAxisAliasesNormalize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyRequestAcceptsSignedForwardAxisTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyRequestAcceptsSignedForwardAxis", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -1616,6 +1631,422 @@ bool FBATResponseExportWritesFileTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Exported response includes string payload"), Root->TryGetStringField(TEXT("data"), DataValue) && DataValue == TEXT("ok"));
 
 	IFileManager::Get().Delete(*OutputPath, false, true, true);
+	return true;
+}
+
+bool FBATAssetPipelineOpenApiPathsTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!TestTrue(TEXT("Blueprint Automation Toolkit plugin is discoverable"), Plugin.IsValid()))
+	{
+		return false;
+	}
+
+	FString Spec;
+	const FString OpenApiPath = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"));
+	if (!TestTrue(TEXT("Asset pipeline OpenAPI document is readable"), FFileHelper::LoadFileToString(Spec, *OpenApiPath)))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("OpenAPI contains /asset/import/formats"), Spec.Contains(TEXT("/asset/import/formats:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/import"), Spec.Contains(TEXT("/asset/import:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/inspect"), Spec.Contains(TEXT("/asset/inspect:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/configure"), Spec.Contains(TEXT("/asset/configure:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/validate"), Spec.Contains(TEXT("/asset/validate:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/pipeline/execute"), Spec.Contains(TEXT("/asset/pipeline/execute:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /asset/showcase/capture"), Spec.Contains(TEXT("/asset/showcase/capture:"), ESearchCase::CaseSensitive));
+	return true;
+}
+
+bool FBATAssetPipelinePermissionMapTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const uint32 EditorMask = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Editor);
+	const uint32 FilesystemMask = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
+
+	TestEqual(TEXT("Import requires editor and filesystem"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/import")), EditorMask | FilesystemMask);
+	TestEqual(TEXT("Configure requires editor and filesystem"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/configure")), EditorMask | FilesystemMask);
+	TestEqual(TEXT("Pipeline requires editor and filesystem"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/pipeline/execute")), EditorMask | FilesystemMask);
+	TestEqual(TEXT("Showcase capture requires editor and filesystem"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/showcase/capture")), EditorMask | FilesystemMask);
+	TestEqual(TEXT("Format discovery is read-only editor access"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/import/formats")), EditorMask);
+	TestEqual(TEXT("Inspect is read-only editor access"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/inspect")), EditorMask);
+	TestEqual(TEXT("Validate is read-only editor access"), Module.Test_GetRouteRequiredPermissions(TEXT("/asset/validate")), EditorMask);
+
+	TSharedRef<FJsonObject> JobBody = MakeShared<FJsonObject>();
+	JobBody->SetStringField(TEXT("kind"), TEXT("asset.pipeline"));
+	JobBody->SetObjectField(TEXT("payload"), MakeShared<FJsonObject>());
+	TestEqual(TEXT("Asset pipeline jobs add filesystem permission"), Module.Test_GetRequestRequiredPermissions(TEXT("/jobs/submit"), JobBody), EditorMask | FilesystemMask);
+
+	TestTrue(TEXT("Import is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/import")));
+	TestTrue(TEXT("Configure is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/configure")));
+	TestTrue(TEXT("Pipeline is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/pipeline/execute")));
+	TestTrue(TEXT("Showcase capture is blocked during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/showcase/capture")));
+	TestFalse(TEXT("Inspect remains available during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/inspect")));
+	TestFalse(TEXT("Validate remains available during PIE"), Module.Test_IsEditorAssetMutationBlockedDuringPie(TEXT("/asset/validate")));
+	return true;
+}
+
+bool FBATAssetPipelineRejectsInvalidDestinationTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetStringField(TEXT("source"), TEXT("SourceArt/placeholder.fbx"));
+	Request->SetStringField(TEXT("destination"), TEXT("/Engine/BATDenied"));
+
+	const FAutomationResult Result = Service.ImportAssets(Module, Request);
+	TestFalse(TEXT("Invalid destination is rejected"), Result.bSuccess);
+	TestEqual(TEXT("Invalid destination returns bad_destination"), Result.ErrorCode, FString(TEXT("bad_destination")));
+	return true;
+}
+
+bool FBATAssetPipelineRejectsMissingStepsTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	const FAutomationResult Result = Service.ExecutePipeline(Module, MakeShared<FJsonObject>());
+	TestFalse(TEXT("Pipeline without steps is rejected"), Result.bSuccess);
+	TestEqual(TEXT("Missing steps returns bad_args"), Result.ErrorCode, FString(TEXT("bad_args")));
+	return true;
+}
+
+bool FBATAssetPipelineDescribesFormatsTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	const FAutomationResult Result = Service.DescribeImportFormats(Module);
+	if (!TestTrue(TEXT("Format discovery succeeds"), Result.bSuccess))
+	{
+		return false;
+	}
+	const TSharedPtr<FJsonObject> Root = GetStructuredRoot(Result);
+	if (!TestTrue(TEXT("Format discovery returns an object"), Root.IsValid()))
+	{
+		return false;
+	}
+	const TArray<TSharedPtr<FJsonValue>>* Extensions = nullptr;
+	TestTrue(TEXT("Format discovery includes allowed extensions"), Root->TryGetArrayField(TEXT("allowedExtensions"), Extensions) && Extensions && Extensions->Num() > 0);
+	bool bDryRun = false;
+	TestTrue(TEXT("Format discovery advertises dry-run support"), Root->TryGetBoolField(TEXT("dryRun"), bDryRun) && bDryRun);
+	return true;
+}
+
+bool FBATAssetPipelineTextureRoundTripTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!TestTrue(TEXT("Plugin exists for the import round trip"), Plugin.IsValid()))
+	{
+		return false;
+	}
+
+	const FString Source = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Icon128.png"));
+	if (!TestTrue(TEXT("Round-trip source texture exists"), IFileManager::Get().FileExists(*Source)))
+	{
+		return false;
+	}
+
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	TSharedRef<FJsonObject> ImportRequest = MakeShared<FJsonObject>();
+	ImportRequest->SetStringField(TEXT("source"), Source);
+	ImportRequest->SetStringField(TEXT("destination"), TEXT("/Game/__BAT_Automation/AssetPipeline"));
+	ImportRequest->SetStringField(TEXT("destination_name"), TEXT("T_BATAssetPipelineRoundTrip"));
+	ImportRequest->SetBoolField(TEXT("replace_existing"), true);
+	ImportRequest->SetBoolField(TEXT("skip_unchanged"), false);
+	ImportRequest->SetBoolField(TEXT("save"), false);
+
+	const FAutomationResult ImportResult = Service.ImportAssets(Module, ImportRequest);
+	if (!TestTrue(TEXT("Texture import succeeds"), ImportResult.bSuccess))
+	{
+		AddError(ImportResult.ErrorMessage);
+		return false;
+	}
+	const TSharedPtr<FJsonObject> ImportRoot = GetStructuredRoot(ImportResult);
+	const TArray<TSharedPtr<FJsonValue>>* ImportedPaths = nullptr;
+	if (!TestTrue(TEXT("Import returns an object path"), ImportRoot.IsValid()
+		&& ImportRoot->TryGetArrayField(TEXT("importedObjectPaths"), ImportedPaths)
+		&& ImportedPaths
+		&& ImportedPaths->Num() > 0))
+	{
+		return false;
+	}
+
+	const FString ImportedPath = (*ImportedPaths)[0]->AsString();
+	TSharedRef<FJsonObject> InspectRequest = MakeShared<FJsonObject>();
+	InspectRequest->SetStringField(TEXT("path"), ImportedPath);
+	TestTrue(TEXT("Imported texture can be inspected"), Service.InspectAssets(Module, InspectRequest).bSuccess);
+
+	TSharedRef<FJsonObject> ValidateRequest = MakeShared<FJsonObject>();
+	ValidateRequest->SetStringField(TEXT("path"), ImportedPath);
+	TestTrue(TEXT("Imported texture can be validated"), Service.ValidateAssets(Module, ValidateRequest).bSuccess);
+
+	TArray<UObject*> ImportedObjects;
+	for (const TSharedPtr<FJsonValue>& PathValue : *ImportedPaths)
+	{
+		if (UObject* Object = LoadObject<UObject>(nullptr, *PathValue->AsString()))
+		{
+			ImportedObjects.Add(Object);
+		}
+	}
+	if (ImportedObjects.Num() > 0)
+	{
+		ObjectTools::DeleteObjectsUnchecked(ImportedObjects);
+	}
+	return true;
+}
+
+bool FBATAssetPipelineRejectsEscapingGltfSidecarTest::RunTest(const FString& Parameters)
+{
+	const FString TestDir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("BATTests"), TEXT("AssetPipeline"));
+	const FString Source = FPaths::Combine(TestDir, TEXT("EscapingSidecar.gltf"));
+	const FString OutsideSidecar = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(), TEXT(".."), TEXT("BATOutsideAssetPipelineTest.bin")));
+	IFileManager::Get().MakeDirectory(*TestDir, true);
+	if (!TestTrue(TEXT("Out-of-root sidecar fixture can be written"), FFileHelper::SaveStringToFile(TEXT("BAT!"), *OutsideSidecar)))
+	{
+		return false;
+	}
+	const FString Gltf = TEXT("{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"../../../../BATOutsideAssetPipelineTest.bin\",\"byteLength\":4}]}");
+	if (!TestTrue(TEXT("Security test glTF can be written"), FFileHelper::SaveStringToFile(Gltf, *Source)))
+	{
+		IFileManager::Get().Delete(*OutsideSidecar, false, true, true);
+		return false;
+	}
+
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetStringField(TEXT("source"), Source);
+	Request->SetStringField(TEXT("destination"), TEXT("/Game/__BAT_Automation/AssetPipeline"));
+	Request->SetBoolField(TEXT("dry_run"), true);
+	const FAutomationResult Result = Service.ImportAssets(Module, Request);
+
+	TestFalse(TEXT("An out-of-root glTF sidecar is rejected"), Result.bSuccess);
+	TestEqual(TEXT("Escaping glTF sidecar uses source_denied"), Result.ErrorCode, FString(TEXT("source_denied")));
+	TestTrue(TEXT("Failure explains the allowed-root boundary"), Result.ErrorMessage.Contains(TEXT("outside Asset Import Allowed Roots")));
+	IFileManager::Get().Delete(*Source, false, true, true);
+	IFileManager::Get().Delete(*OutsideSidecar, false, true, true);
+	return true;
+}
+
+bool FBATAssetPipelineAnimatedModelRoundTripTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!TestTrue(TEXT("Plugin exists for the animated-model round trip"), Plugin.IsValid()))
+	{
+		return false;
+	}
+	const FString Source = FPaths::Combine(
+		Plugin->GetBaseDir(),
+		TEXT("Examples"),
+		TEXT("BATExampleProject"),
+		TEXT("SourceArt"),
+		TEXT("AnimatedOctopus"),
+		TEXT("SK_Octopus.gltf"));
+	if (!IFileManager::Get().FileExists(*Source))
+	{
+		AddWarning(TEXT("Animated octopus SourceArt is not included in this packaged test installation; model round-trip skipped."));
+		return true;
+	}
+
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetStringField(TEXT("source"), Source);
+	Request->SetStringField(TEXT("destination"), TEXT("/Game/__BAT_Automation/AnimatedModelRoundTrip"));
+	Request->SetStringField(TEXT("expected_type"), TEXT("SkeletalMesh"));
+	Request->SetBoolField(TEXT("replace_existing"), true);
+	Request->SetBoolField(TEXT("skip_unchanged"), false);
+	Request->SetBoolField(TEXT("save"), false);
+
+	const FAutomationResult Result = Service.ImportAssets(Module, Request);
+	if (!TestTrue(TEXT("Animated glTF model import succeeds"), Result.bSuccess))
+	{
+		AddError(Result.ErrorMessage);
+		return false;
+	}
+	const TSharedPtr<FJsonObject> Root = GetStructuredRoot(Result);
+	const TArray<TSharedPtr<FJsonValue>>* ImportedPaths = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* PrimaryPaths = nullptr;
+	if (!TestTrue(TEXT("Animated model import reports all and primary object paths"), Root.IsValid()
+		&& Root->TryGetArrayField(TEXT("importedObjectPaths"), ImportedPaths) && ImportedPaths && ImportedPaths->Num() > 1
+		&& Root->TryGetArrayField(TEXT("primaryObjectPaths"), PrimaryPaths) && PrimaryPaths && PrimaryPaths->Num() == 1))
+	{
+		return false;
+	}
+
+	UObject* Primary = LoadObject<UObject>(nullptr, *(*PrimaryPaths)[0]->AsString());
+	TestTrue(TEXT("Animated model primary asset is a Skeletal Mesh"), Primary && Primary->IsA<USkeletalMesh>());
+
+	TArray<UObject*> ImportedObjects;
+	for (const TSharedPtr<FJsonValue>& PathValue : *ImportedPaths)
+	{
+		if (UObject* Object = LoadObject<UObject>(nullptr, *PathValue->AsString()))
+		{
+			ImportedObjects.AddUnique(Object);
+		}
+	}
+	if (ImportedObjects.Num() > 0)
+	{
+		ObjectTools::DeleteObjectsUnchecked(ImportedObjects);
+	}
+	return true;
+}
+
+bool FBATAssetPipelineValidationStopsPipelineTest::RunTest(const FString& Parameters)
+{
+	UStaticMesh* EmptyMesh = NewObject<UStaticMesh>(GetTransientPackage(), TEXT("BATEmptyValidationMesh"));
+	if (!TestNotNull(TEXT("Transient empty Static Mesh can be created"), EmptyMesh))
+	{
+		return false;
+	}
+
+	TSharedRef<FJsonObject> ValidatePayload = MakeShared<FJsonObject>();
+	ValidatePayload->SetStringField(TEXT("path"), EmptyMesh->GetPathName());
+	TSharedRef<FJsonObject> Rules = MakeShared<FJsonObject>();
+	Rules->SetBoolField(TEXT("require_materials"), false);
+	ValidatePayload->SetObjectField(TEXT("rules"), Rules);
+	TSharedRef<FJsonObject> ValidateStep = MakeShared<FJsonObject>();
+	ValidateStep->SetStringField(TEXT("op"), TEXT("validate"));
+	ValidateStep->SetObjectField(TEXT("payload"), ValidatePayload);
+	TSharedRef<FJsonObject> InspectStep = MakeShared<FJsonObject>();
+	InspectStep->SetStringField(TEXT("op"), TEXT("inspect"));
+	InspectStep->SetStringField(TEXT("path"), EmptyMesh->GetPathName());
+
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetArrayField(TEXT("steps"), {
+		MakeShared<FJsonValueObject>(ValidateStep),
+		MakeShared<FJsonValueObject>(InspectStep)
+	});
+	Request->SetBoolField(TEXT("continue_on_error"), false);
+
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	const FAutomationResult Result = Service.ExecutePipeline(Module, Request);
+	const TSharedPtr<FJsonObject> Root = GetStructuredRoot(Result);
+	bool bPipelineOk = true;
+	double FailureCount = 0.0;
+	double StepCount = 0.0;
+	TestTrue(TEXT("Validation-gated pipeline returns structured data"), Result.bSuccess && Root.IsValid());
+	TestEqual(TEXT("Structured pipeline failure reports the canonical error code"), Result.ErrorCode, FString(TEXT("asset_pipeline_failed")));
+	TestTrue(TEXT("Validation failure marks pipeline as failed"), Root.IsValid() && Root->TryGetBoolField(TEXT("ok"), bPipelineOk) && !bPipelineOk);
+	TestTrue(TEXT("Validation failure is counted"), Root.IsValid() && Root->TryGetNumberField(TEXT("failureCount"), FailureCount) && FailureCount == 1.0);
+	TestTrue(TEXT("Pipeline stops before the next step"), Root.IsValid() && Root->TryGetNumberField(TEXT("stepCount"), StepCount) && StepCount == 1.0);
+
+	const FString JobId = TEXT("asset-pipeline-validation-gate-test");
+	Module.Test_AddOrUpdateJob(
+		JobId,
+		TEXT("asset-pipeline-validation-gate-request"),
+		TEXT("asset.pipeline"),
+		FBlueprintAutomationToolkitModule::EAutomationTestJobState::Queued,
+		false,
+		Request);
+	Module.Test_ExecuteJob(JobId);
+	FBlueprintAutomationToolkitModule::FAutomationTestJobSnapshot Snapshot;
+	TestTrue(TEXT("Asynchronous-style validation-gated job remains queryable"), Module.Test_GetJobSnapshot(JobId, Snapshot));
+	TestEqual(TEXT("Validation-gated job is marked failed"), Snapshot.State, FBlueprintAutomationToolkitModule::EAutomationTestJobState::Failed);
+	TestTrue(TEXT("Validation-gated job logs its failure"), Snapshot.Logs.ContainsByPredicate([](const FString& Line)
+	{
+		return Line.Contains(TEXT("job_failed:asset_pipeline_failed"));
+	}));
+	EmptyMesh->MarkAsGarbage();
+	return true;
+}
+
+bool FBATAssetPipelineDryRunSkipsDependentMutationsTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!TestTrue(TEXT("Plugin exists for pipeline dry-run"), Plugin.IsValid()))
+	{
+		return false;
+	}
+	const FString Source = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Icon128.png"));
+
+	TSharedRef<FJsonObject> ImportPayload = MakeShared<FJsonObject>();
+	ImportPayload->SetStringField(TEXT("source"), Source);
+	ImportPayload->SetStringField(TEXT("destination"), TEXT("/Game/__BAT_Automation/AssetPipelineDryRun"));
+	ImportPayload->SetStringField(TEXT("destination_name"), TEXT("T_BATDryRunMustNotExist"));
+	TSharedRef<FJsonObject> ImportStep = MakeShared<FJsonObject>();
+	ImportStep->SetStringField(TEXT("op"), TEXT("import"));
+	ImportStep->SetObjectField(TEXT("payload"), ImportPayload);
+
+	TSharedRef<FJsonObject> RepairStep = MakeShared<FJsonObject>();
+	RepairStep->SetStringField(TEXT("op"), TEXT("repair"));
+	RepairStep->SetStringField(TEXT("path"), TEXT("$imported"));
+	RepairStep->SetStringField(TEXT("mode"), TEXT("safe_auto"));
+	TSharedRef<FJsonObject> ShowcaseStep = MakeShared<FJsonObject>();
+	ShowcaseStep->SetStringField(TEXT("op"), TEXT("showcase"));
+	ShowcaseStep->SetBoolField(TEXT("capture"), true);
+
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetBoolField(TEXT("dry_run"), true);
+	Request->SetArrayField(TEXT("steps"), {
+		MakeShared<FJsonValueObject>(ImportStep),
+		MakeShared<FJsonValueObject>(RepairStep),
+		MakeShared<FJsonValueObject>(ShowcaseStep)
+	});
+
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	const FAutomationResult Result = Service.ExecutePipeline(Module, Request);
+	const TSharedPtr<FJsonObject> Root = GetStructuredRoot(Result);
+	double StepCount = 0.0;
+	double FailureCount = -1.0;
+	const TArray<TSharedPtr<FJsonValue>>* CreatedPaths = nullptr;
+	TestTrue(TEXT("Full pipeline dry-run succeeds"), Result.bSuccess && Root.IsValid());
+	TestTrue(TEXT("Dry-run reports every planned step"), Root.IsValid() && Root->TryGetNumberField(TEXT("stepCount"), StepCount) && StepCount == 3.0);
+	TestTrue(TEXT("Dependent dry-run skips are not failures"), Root.IsValid() && Root->TryGetNumberField(TEXT("failureCount"), FailureCount) && FailureCount == 0.0);
+	TestTrue(TEXT("Dry-run creates no object paths"), Root.IsValid()
+		&& Root->TryGetArrayField(TEXT("createdObjectPaths"), CreatedPaths)
+		&& CreatedPaths
+		&& CreatedPaths->Num() == 0);
+	TestNull(TEXT("Dry-run destination asset does not exist"), FindObject<UObject>(nullptr, TEXT("/Game/__BAT_Automation/AssetPipelineDryRun/T_BATDryRunMustNotExist.T_BATDryRunMustNotExist")));
+
+	UStaticMesh* PreviewMesh = NewObject<UStaticMesh>(GetTransientPackage(), TEXT("BATDryRunShowcaseMesh"));
+	TSharedRef<FJsonObject> ShowcaseRequest = MakeShared<FJsonObject>();
+	ShowcaseRequest->SetStringField(TEXT("asset"), PreviewMesh->GetPathName());
+	ShowcaseRequest->SetBoolField(TEXT("dry_run"), true);
+	ShowcaseRequest->SetBoolField(TEXT("capture"), true);
+	ShowcaseRequest->SetStringField(TEXT("output_folder"), TEXT("BATTests/DryRunPreview"));
+	const FAutomationResult ShowcaseResult = Service.CreateShowcaseAndCapture(Module, ShowcaseRequest);
+	const TSharedPtr<FJsonObject> ShowcaseRoot = GetStructuredRoot(ShowcaseResult);
+	bool bWouldSpawn = false;
+	bool bWouldCapture = false;
+	TestTrue(TEXT("Explicit showcase dry-run succeeds without a viewport"), ShowcaseResult.bSuccess && ShowcaseRoot.IsValid());
+	TestTrue(TEXT("Showcase dry-run reports actor preview"), ShowcaseRoot.IsValid() && ShowcaseRoot->TryGetBoolField(TEXT("wouldSpawnActor"), bWouldSpawn) && bWouldSpawn);
+	TestTrue(TEXT("Showcase dry-run reports capture preview"), ShowcaseRoot.IsValid() && ShowcaseRoot->TryGetBoolField(TEXT("wouldCapture"), bWouldCapture) && bWouldCapture);
+	PreviewMesh->MarkAsGarbage();
+	return true;
+}
+
+bool FBATAssetPipelineBatchFailureRollsBackNewAssetsTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!TestTrue(TEXT("Plugin exists for batch rollback"), Plugin.IsValid()))
+	{
+		return false;
+	}
+	const FString ValidSource = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Icon128.png"));
+	const FString MissingSource = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("BAT_Missing_Rollback_Source.png"));
+
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetArrayField(TEXT("sources"), {
+		MakeShared<FJsonValueString>(ValidSource),
+		MakeShared<FJsonValueString>(MissingSource)
+	});
+	Request->SetStringField(TEXT("destination"), TEXT("/Game/__BAT_Automation/AssetPipelineRollback"));
+	Request->SetStringField(TEXT("destination_name"), TEXT("T_BATMustRollback"));
+	Request->SetBoolField(TEXT("replace_existing"), true);
+	Request->SetBoolField(TEXT("skip_unchanged"), false);
+	Request->SetBoolField(TEXT("save"), false);
+
+	FBlueprintAutomationToolkitModule Module;
+	const FAssetPipelineService Service;
+	const FAutomationResult Result = Service.ImportAssets(Module, Request);
+	TestFalse(TEXT("Batch fails when a later source is missing"), Result.bSuccess);
+	TestEqual(TEXT("Missing later source reports source_denied"), Result.ErrorCode, FString(TEXT("source_denied")));
+	TestTrue(TEXT("Failure reports best-effort cleanup"), Result.ErrorMessage.Contains(TEXT("Rolled back 1 newly created asset")));
+	TestNull(TEXT("Earlier batch asset is removed"), FindObject<UObject>(nullptr, TEXT("/Game/__BAT_Automation/AssetPipelineRollback/T_BATMustRollback.T_BATMustRollback")));
 	return true;
 }
 

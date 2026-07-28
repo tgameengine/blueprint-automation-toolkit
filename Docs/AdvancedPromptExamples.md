@@ -286,6 +286,103 @@ Acceptance evidence:
 - Optional project-specific fields are skipped safely when absent.
 - Read-back matches the requested target state.
 
+## 14. Import, Repair, and Prove an Animated Octopus
+
+> Discover BAT's current asset-import roots, extensions, size limit, and active routes. Dry-run `SourceArt/AnimatedOctopus/SK_Octopus.gltf` into `/Game/BAT_Demos/Octopus`. If the source passes policy, import it with materials and textures, preserving every generated Skeleton and animation relationship. Inspect all imported objects, apply only safe automatic repairs, and validate with the Fab profile. Stop before showcase creation if validation has errors. Otherwise place the verified Skeletal Mesh in the current editor level, bind its swim animation, label the actor `BAT_Verified_Animated_Octopus`, focus it, and capture 90 deterministic evidence frames at 30 FPS. Return every created asset path, Skeleton, Physics Asset, animation duration, bone count, material slot, validation issue, screenshot path, frame manifest, and rollback action.
+
+Typical BAT flow:
+
+- `GET /asset/import/formats`
+- `POST /asset/import` with `dry_run: true`
+- `POST /asset/pipeline/execute` with `async: true`
+- `GET /jobs/{jobId}`
+- `POST /asset/inspect`
+- `POST /asset/validate`
+- `POST /asset/showcase/capture`
+
+Acceptance evidence:
+
+- The source is inside an allowed root and has a stable fingerprint.
+- Imported object paths and type-specific relationships resolve.
+- Fab validation contains zero errors before capture.
+- The screenshot and frame manifest exist beneath the project `Saved` directory.
+
+## 15. Idempotent Environment Batch Import
+
+> Import every approved model and texture listed in `SourceArt/Ruins/import-manifest.json` into `/Game/Environment/Ruins` without overwriting user-authored settings. Use `skip_unchanged` and report which sources were imported, unchanged, or rejected. For Static Meshes only, generate lightmap UVs, enable Nanite when the source contains more than 50,000 LOD0 vertices, and create bounds-based collision only when no simple collision exists. Preserve material slot names. Validate with the production profile, inspect dependencies, save only passing assets, and delete only assets newly created by this run if a required step fails.
+
+Typical BAT flow:
+
+- `GET /asset/import/formats`
+- `POST /asset/import`
+- `POST /asset/inspect`
+- `POST /asset/configure`
+- `POST /asset/validate`
+- `POST /asset/save`
+
+Acceptance evidence:
+
+- Re-running the prompt imports no unchanged source.
+- Existing assets are never silently replaced.
+- Vertex-driven Nanite decisions are reported per mesh.
+- Rollback lists only newly created object paths.
+
+## 16. Retarget-Safe Animation-Only FBX Import
+
+> Resolve and inspect `/Game/Characters/Hero/SKEL_Hero.SKEL_Hero` before importing anything. Dry-run `SourceArt/Animations/Hero_Combat.fbx` as animation-only content into `/Game/Characters/Hero/Animations`, using the resolved Skeleton and disabling mesh, material, and texture import. Import only if the Skeleton is valid. Inspect every returned AnimSequence, require positive duration and sampled key counts, validate all Skeleton references, and report any animation that does not use the requested Skeleton. Do not create a replacement Skeleton or Skeletal Mesh.
+
+Typical BAT flow:
+
+- `POST /asset/inspect`
+- `POST /asset/import` with `options.import_type: "animation"`
+- `POST /asset/validate`
+- `POST /asset/inspect`
+
+Acceptance evidence:
+
+- The request includes the exact existing Skeleton path.
+- No mesh, material, texture, or new Skeleton is created.
+- Every animation has playable samples and the expected Skeleton.
+
+## 17. Diagnose and Repair a Broken Skeletal Asset Set
+
+> Inspect the Skeletal Mesh, Skeleton, Physics Asset, materials, textures, and animations beneath `/Game/MarketplaceCreature`. Produce a baseline table of missing references, material slots, bone count, morph targets, Physics Asset presence, animation durations, texture dimensions, and source fingerprints. Apply conservative repairs only: create a missing Physics Asset, mark normal-named textures as non-sRGB normal maps, and assign materials only where an explicit slot-to-material mapping is supplied. Reinspect and run strict validation. Save only assets whose final validation has no errors, and report unresolved issues without inventing replacements.
+
+Typical BAT flow:
+
+- `POST /asset/inspect`
+- `POST /asset/validate`
+- `POST /asset/configure` with `mode: "safe_auto"`
+- `POST /asset/inspect`
+- `POST /asset/validate`
+- `POST /asset/save`
+
+Acceptance evidence:
+
+- Baseline and final inspection values are both retained.
+- Every automatic repair appears in the applied action list.
+- Unmapped material slots remain explicit errors.
+- No source file or user-authored asset is deleted.
+
+## 18. Custom Importer Adapter With a Policy Gate
+
+> Discover the active import policy and verify `.myasset` is allowlisted before using the project's custom importer. Dry-run the source, then import through `/Script/MyImporter.MyAssetFactory` with `/Script/MyImporter.MyImportOptions`. Set only the documented editor-visible adapter properties. Reject the operation if either class is abstract, unrelated to import, or any requested property is not editor-visible. Inspect and validate the resulting Unreal object, and report the exact factory/options class, accepted properties, rejected properties, and created object paths.
+
+Typical BAT flow:
+
+- `GET /asset/import/formats`
+- `POST /asset/import` with `dry_run: true`
+- `POST /asset/import` with `factory_class` and `options_class`
+- `POST /asset/inspect`
+- `POST /asset/validate`
+
+Acceptance evidence:
+
+- Extension, root, and size policy pass before adapter allocation.
+- Only import-related adapter classes are instantiated.
+- No hidden or unsupported property is changed.
+- The resulting asset resolves and validates.
+
 ## Prompt Design Pattern
 
 Complex BAT prompts are most reliable when they contain five explicit parts:

@@ -416,6 +416,8 @@ void FBlueprintAutomationToolkitModule::BindAssetRoutes()
 
 	BindAssetCreateRoute();
 
+	BindAssetPipelineRoutes();
+
 	PcgSpawnSpheresRoute = Router->BindRoute(
 		FHttpPath(TEXT("/pcg/spawn_spheres")),
 		EHttpServerRequestVerbs::VERB_POST,
