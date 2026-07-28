@@ -6,6 +6,13 @@ Blueprint Automation Toolkit (BAT) API, translated each prompt into typed
 localhost requests, inspected the resulting editor state, and reported the
 evidence below.
 
+Every example now follows the same evidence order:
+**Codex prompt → Unreal Editor result screenshot → BAT route trace → structured
+verification output**. The screenshots were captured from the live UE 5.5.4
+editor immediately after the corresponding prompt reached its demonstrable
+result state. The PIE screenshot was captured during the bounded play phase;
+the final API read-back below verifies that PIE was stopped afterward.
+
 ## Test Environment
 
 - Unreal Engine: `5.5.4-0+UE5` source build
@@ -29,6 +36,13 @@ token is redacted and is not stored in this repository.
 > `BAT_CodexExamples/Showcase`, tag it `BAT_CodexExample`, audit the result, and
 > save only if no actor or property is rejected.
 
+### Unreal Editor result
+
+![The generated ten-actor showcase selected in the Unreal Editor viewport, with all ten actors visible in the World Outliner.](Images/CodexExecutedExamples/01-showcase-map.png)
+
+The viewport and World Outliner show the generated floor, six pillars,
+centerpiece, and two lights.
+
 ### BAT route trace
 
 `GET /engine/discover` → `GET /ai/capabilities` →
@@ -36,7 +50,7 @@ token is redacted and is not stored in this repository.
 `GET /jobs/{jobId}` → `POST /editor/level/audit` →
 `POST /editor/level/save`
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
@@ -84,12 +98,20 @@ Included artifact:
 > inspect the schema and graph links, and save only when compilation has no
 > errors.
 
+### Unreal Editor result
+
+![The generated telemetry Blueprint EventGraph in Unreal Editor, showing Event BeginPlay connected to Print String with the requested message.](Images/CodexExecutedExamples/02-telemetry-blueprint.png)
+
+The Blueprint editor shows the generated execution link and the exact
+`BAT Codex beacon ready` string. The Components, Functions, and Variables
+panels also expose the other generated members.
+
 ### BAT route trace
 
 `POST /blueprint/apply` → `POST /blueprint/compile_save` →
 `POST /blueprint/schema` → `GET /blueprint/graph/links`
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
@@ -136,6 +158,14 @@ Included artifact:
 > Compile, list the resulting components, and save only with zero compiler
 > errors.
 
+### Unreal Editor result
+
+![The generated spline bridge Blueprint in Unreal Editor, showing the curved BridgeSpline and its HISM deck instances.](Images/CodexExecutedExamples/03-spline-bridge.png)
+
+The Blueprint viewport shows the five-point spline and the bridge deck
+generated from `DeckHISM`; both component names are visible in the Components
+panel.
+
 ### BAT route trace
 
 `POST /blueprint/create` → `GET /jobs/{jobId}` →
@@ -143,7 +173,7 @@ Included artifact:
 `POST /blueprint/compile_save` → `POST /blueprint/apply` with
 `components.list`
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
@@ -179,6 +209,14 @@ Included artifact:
 > perform the real deletion only if the counts match, then audit again to prove
 > that zero matching actors remain.
 
+### Unreal Editor result
+
+![The Unreal Editor World Outliner filtered for BAT_CODEX_TEMP_ after cleanup, reporting no matching actors.](Images/CodexExecutedExamples/04-guarded-cleanup.png)
+
+The post-cleanup Outliner filter reports `No matching actors (10 total)`. The
+structured read-back below proves that the guarded scope contained three
+actors before deletion and zero afterward.
+
 ### BAT route trace
 
 `POST /ai/editor/layout/apply` → `GET /jobs/{jobId}` →
@@ -186,7 +224,7 @@ Included artifact:
 with `dryRun: true` → `POST /editor/level/destroy_actors` with
 `dryRun: false` → `POST /editor/level/audit`
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
@@ -228,13 +266,20 @@ This example intentionally leaves no asset behind.
 > List the source and destination components afterward and prove that both
 > still contain exactly one component named `BeaconMesh`.
 
+### Unreal Editor result
+
+![The configured telemetry Blueprint variant in Unreal Editor, showing the single BeaconMesh component rendered as the requested sphere.](Images/CodexExecutedExamples/05-configured-variant.png)
+
+The duplicate's Blueprint viewport shows the sphere result while the Components
+panel shows one component named `BeaconMesh`.
+
 ### BAT route trace
 
 `POST /asset/duplicate` → `POST /blueprint/apply` with `components.set` →
 `POST /blueprint/compile_save` → `POST /blueprint/apply` with
 `components.list` for source and destination
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
@@ -274,12 +319,20 @@ Included artifact:
 > contains `BP_Codex`, report the count per generated class, and save the map
 > only if all three resolve.
 
+### Unreal Editor result
+
+![The Unreal Editor map with the generated spline bridge, cone beacon, and sphere beacon selected together, and all three listed in the World Outliner.](Images/CodexExecutedExamples/06-generated-blueprints-map.png)
+
+The viewport shows the bridge, cone beacon, and configured sphere beacon
+selected together. The World Outliner and Details panel both report three
+selected generated actors.
+
 ### BAT route trace
 
 `POST /actor/spawn` three times → `POST /editor/level/audit` →
 `POST /editor/level/save`
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
@@ -307,13 +360,22 @@ The three actors are included in `BAT_CodexShowcase.umap`.
 > verify that the final state reports PIE stopped. Do not mutate editor assets
 > while PIE is active.
 
+### Unreal Editor result
+
+![The generated showcase running in Play In Editor, with active pause and stop controls, a Play In Editor world, and runtime actors visible in the World Outliner.](Images/CodexExecutedExamples/07-pie-lifecycle.png)
+
+This screenshot was captured during the bounded PIE phase. The active pause and
+stop controls, `Play In Editor` world label, and runtime-only actors provide
+visual evidence of the running state; the final read-back below confirms the
+guaranteed stop completed.
+
 ### BAT route trace
 
 `GET /ai/capabilities` → `POST /pie/start` →
 `GET /ai/capabilities` → `POST /pie/stop` →
 `GET /ai/capabilities`
 
-### Actual output (condensed)
+### BAT verification output (condensed)
 
 ```json
 {
