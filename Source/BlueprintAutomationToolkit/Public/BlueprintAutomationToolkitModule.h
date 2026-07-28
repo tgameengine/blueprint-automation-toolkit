@@ -114,6 +114,7 @@ public:
 	void Test_SetReflectionPropertyAllowList(const TArray<FString>& Values);
 	void Test_SetReflectionPropertyDenyList(const TArray<FString>& Values);
 	void Test_NotifySettingChanged();
+	bool Test_ExecuteBlueprintPatch(const TSharedPtr<FJsonObject>& BodyObj, bool bApply, int32& InOutTotalInstances, TSharedRef<FJsonObject>& OutResult, TArray<TSharedPtr<class FJsonValue>>& OutErrors) const;
 #endif
 
 private:

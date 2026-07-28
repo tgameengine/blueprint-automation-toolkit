@@ -32,15 +32,23 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
+#include "Components/SplineComponent.h"
+#include "Components/SplineMeshComponent.h"
+#include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/EngineTypes.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
+#include "GameFramework/Actor.h"
 #include "HttpServerRequest.h"
 #include "HttpServerResponse.h"
 #include "HAL/FileManager.h"
+#include "Kismet2/KismetEditorUtilities.h"
 #include "ObjectTools.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -91,6 +99,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNode
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyResultIncludesNodeValidationTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyResultIncludesNodeValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATSplineMeshComponentPatchTest, "BlueprintAutomationToolkit.Blueprint.SplineMeshComponentPatch", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionListPropertiesTest, "BlueprintAutomationToolkit.Reflection.ListProperties", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -261,6 +270,9 @@ bool FBATOpenApiHasBlueprintPlanPathsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/apply"), Spec.Contains(TEXT("/blueprint/graph/apply:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/graph/read"), Spec.Contains(TEXT("/blueprint/graph/read:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /blueprint/compile_save"), Spec.Contains(TEXT("/blueprint/compile_save:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /blueprint/set-defaults"), Spec.Contains(TEXT("/blueprint/set-defaults:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents SplineMeshComponent"), Spec.Contains(TEXT("/Script/Engine.SplineMeshComponent"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents Spline Mesh source sampling"), Spec.Contains(TEXT("SplineMeshFromSpline"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /material/texture_samples/set"), Spec.Contains(TEXT("/material/texture_samples/set:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents compileDiagnostics"), Spec.Contains(TEXT("compileDiagnostics"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents nodeValidation"), Spec.Contains(TEXT("nodeValidation"), ESearchCase::CaseSensitive));
@@ -1278,6 +1290,191 @@ bool FBATBlueprintGraphApplyResultIncludesNodeValidationTest::RunTest(const FStr
 	TestTrue(TEXT("Node validation issue includes code"), IssueObj->TryGetStringField(TEXT("code"), Code));
 	TestEqual(TEXT("Node validation issue preserves nodeId"), NodeId, FString(TEXT("bat_pose_node")));
 	return TestEqual(TEXT("Node validation issue preserves code"), Code, FString(TEXT("modify_bone_missing_bone")));
+}
+
+bool FBATSplineMeshComponentPatchTest::RunTest(const FString& Parameters)
+{
+	const FName BlueprintName = MakeUniqueObjectName(
+		GetTransientPackage(),
+		UBlueprint::StaticClass(),
+		TEXT("BAT_SplineMeshComponentPatch"));
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+		AActor::StaticClass(),
+		GetTransientPackage(),
+		BlueprintName,
+		BPTYPE_Normal,
+		UBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass(),
+		NAME_None);
+	if (!TestNotNull(TEXT("Transient Blueprint should be created"), Blueprint))
+	{
+		return false;
+	}
+
+	USplineComponent* SourceSpline = nullptr;
+	if (Blueprint->SimpleConstructionScript)
+	{
+		USCS_Node* SourceSplineNode = Blueprint->SimpleConstructionScript->CreateNode(
+			USplineComponent::StaticClass(),
+			FName(TEXT("RoadSourceSpline")));
+		if (SourceSplineNode)
+		{
+			Blueprint->SimpleConstructionScript->AddNode(SourceSplineNode);
+			SourceSpline = Cast<USplineComponent>(SourceSplineNode->ComponentTemplate);
+		}
+	}
+	if (!TestNotNull(TEXT("Source SplineComponent template should be created"), SourceSpline))
+	{
+		return false;
+	}
+	SourceSpline->ClearSplinePoints(false);
+	SourceSpline->AddSplinePoint(FVector::ZeroVector, ESplineCoordinateSpace::Local, false);
+	SourceSpline->AddSplinePoint(FVector(300.0, 100.0, 25.0), ESplineCoordinateSpace::Local, false);
+	SourceSpline->AddSplinePoint(FVector(700.0, 250.0, 50.0), ESplineCoordinateSpace::Local, false);
+	SourceSpline->UpdateSpline();
+
+	auto Vector3 = [](double X, double Y, double Z) -> TSharedPtr<FJsonValue>
+	{
+		TArray<TSharedPtr<FJsonValue>> Values;
+		Values.Add(MakeShared<FJsonValueNumber>(X));
+		Values.Add(MakeShared<FJsonValueNumber>(Y));
+		Values.Add(MakeShared<FJsonValueNumber>(Z));
+		return MakeShared<FJsonValueArray>(Values);
+	};
+	auto Vector2 = [](double X, double Y) -> TSharedPtr<FJsonValue>
+	{
+		TArray<TSharedPtr<FJsonValue>> Values;
+		Values.Add(MakeShared<FJsonValueNumber>(X));
+		Values.Add(MakeShared<FJsonValueNumber>(Y));
+		return MakeShared<FJsonValueArray>(Values);
+	};
+
+	TSharedRef<FJsonObject> AddOp = MakeShared<FJsonObject>();
+	AddOp->SetStringField(TEXT("op"), TEXT("components.add"));
+	AddOp->SetStringField(TEXT("name"), TEXT("RoadSplineMesh"));
+	AddOp->SetStringField(TEXT("class"), TEXT("/Script/Engine.SplineMeshComponent"));
+
+	TSharedRef<FJsonObject> SetOp = MakeShared<FJsonObject>();
+	SetOp->SetStringField(TEXT("op"), TEXT("components.set"));
+	SetOp->SetStringField(TEXT("name"), TEXT("RoadSplineMesh"));
+	SetOp->SetStringField(TEXT("static_mesh"), TEXT("/Engine/BasicShapes/Cube.Cube"));
+	SetOp->SetField(TEXT("start_position"), Vector3(0.0, 0.0, 0.0));
+	SetOp->SetField(TEXT("end_position"), Vector3(400.0, 100.0, 0.0));
+	SetOp->SetField(TEXT("start_scale"), Vector2(1.5, 0.75));
+	SetOp->SetField(TEXT("end_scale"), Vector2(2.0, 1.0));
+	SetOp->SetNumberField(TEXT("start_roll_degrees"), 45.0);
+	SetOp->SetNumberField(TEXT("end_roll_degrees"), 90.0);
+	SetOp->SetStringField(TEXT("forward_axis"), TEXT("Y"));
+	SetOp->SetField(TEXT("spline_up_dir"), Vector3(0.0, 0.0, 1.0));
+	SetOp->SetBoolField(TEXT("smooth_interp_roll_scale"), true);
+	SetOp->SetBoolField(TEXT("allow_spline_editing_per_instance"), true);
+	SetOp->SetStringField(TEXT("collision_enabled"), TEXT("QueryOnly"));
+	SetOp->SetBoolField(TEXT("generate_overlap_events"), true);
+	SetOp->SetBoolField(TEXT("cast_shadow"), false);
+
+	TSharedRef<FJsonObject> AddSampledOp = MakeShared<FJsonObject>();
+	AddSampledOp->SetStringField(TEXT("op"), TEXT("components.add"));
+	AddSampledOp->SetStringField(TEXT("name"), TEXT("SampledSplineMesh"));
+	AddSampledOp->SetStringField(TEXT("class"), TEXT("/Script/Engine.SplineMeshComponent"));
+
+	const float SourceSplineLength = SourceSpline->GetSplineLength();
+	const double SampleStartDistance = SourceSplineLength * 0.2;
+	const double SampleEndDistance = SourceSplineLength * 0.8;
+	const double SampleTangentScale = 0.5;
+	TSharedRef<FJsonObject> FromSpline = MakeShared<FJsonObject>();
+	FromSpline->SetStringField(TEXT("component"), TEXT("RoadSourceSpline"));
+	FromSpline->SetNumberField(TEXT("start_distance"), SampleStartDistance);
+	FromSpline->SetNumberField(TEXT("end_distance"), SampleEndDistance);
+	FromSpline->SetNumberField(TEXT("tangent_scale"), SampleTangentScale);
+
+	TSharedRef<FJsonObject> SetSampledOp = MakeShared<FJsonObject>();
+	SetSampledOp->SetStringField(TEXT("op"), TEXT("components.set"));
+	SetSampledOp->SetStringField(TEXT("name"), TEXT("SampledSplineMesh"));
+	SetSampledOp->SetObjectField(TEXT("from_spline"), FromSpline);
+
+	TArray<TSharedPtr<FJsonValue>> Ops;
+	Ops.Add(MakeShared<FJsonValueObject>(AddOp));
+	Ops.Add(MakeShared<FJsonValueObject>(SetOp));
+	Ops.Add(MakeShared<FJsonValueObject>(AddSampledOp));
+	Ops.Add(MakeShared<FJsonValueObject>(SetSampledOp));
+
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("blueprint"), Blueprint->GetPathName());
+	Body->SetArrayField(TEXT("ops"), Ops);
+
+	FBlueprintAutomationToolkitModule Module;
+	int32 TotalInstances = 0;
+	TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	TArray<TSharedPtr<FJsonValue>> Errors;
+	if (!TestTrue(
+		TEXT("SplineMesh component patch should succeed"),
+		Module.Test_ExecuteBlueprintPatch(Body, true, TotalInstances, Result, Errors)))
+	{
+		return false;
+	}
+	if (!TestEqual(TEXT("SplineMesh component patch should have no errors"), Errors.Num(), 0))
+	{
+		return false;
+	}
+
+	USplineMeshComponent* SplineMesh = nullptr;
+	USplineMeshComponent* SampledSplineMesh = nullptr;
+	if (Blueprint->SimpleConstructionScript)
+	{
+		for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+		{
+			if (Node && Node->GetVariableName() == FName(TEXT("RoadSplineMesh")))
+			{
+				SplineMesh = Cast<USplineMeshComponent>(Node->ComponentTemplate);
+			}
+			else if (Node && Node->GetVariableName() == FName(TEXT("SampledSplineMesh")))
+			{
+				SampledSplineMesh = Cast<USplineMeshComponent>(Node->ComponentTemplate);
+			}
+		}
+	}
+	if (!TestNotNull(TEXT("SplineMesh component template should exist"), SplineMesh))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("Static mesh should be assigned"), SplineMesh->GetStaticMesh() != nullptr);
+	TestTrue(TEXT("Start position should match"), SplineMesh->GetStartPosition().Equals(FVector::ZeroVector));
+	TestTrue(TEXT("End position should match"), SplineMesh->GetEndPosition().Equals(FVector(400.0, 100.0, 0.0)));
+	TestTrue(TEXT("Missing start tangent should derive from endpoints"), SplineMesh->GetStartTangent().Equals(FVector(400.0, 100.0, 0.0)));
+	TestTrue(TEXT("Missing end tangent should derive from endpoints"), SplineMesh->GetEndTangent().Equals(FVector(400.0, 100.0, 0.0)));
+	TestTrue(TEXT("Start scale should match"), SplineMesh->GetStartScale().Equals(FVector2D(1.5, 0.75)));
+	TestTrue(TEXT("End scale should match"), SplineMesh->GetEndScale().Equals(FVector2D(2.0, 1.0)));
+	TestTrue(TEXT("Start roll degrees should convert to radians"), FMath::IsNearlyEqual(SplineMesh->GetStartRoll(), PI / 4.0f));
+	TestTrue(TEXT("End roll degrees should convert to radians"), FMath::IsNearlyEqual(SplineMesh->GetEndRoll(), PI / 2.0f));
+	TestEqual(TEXT("Forward axis should match"), SplineMesh->GetForwardAxis(), ESplineMeshAxis::Y);
+	TestTrue(TEXT("Spline up direction should match"), SplineMesh->GetSplineUpDir().Equals(FVector::UpVector));
+	TestTrue(TEXT("Smooth interpolation should be enabled"), SplineMesh->bSmoothInterpRollScale != 0);
+	TestTrue(TEXT("Per-instance editing should be enabled"), SplineMesh->bAllowSplineEditingPerInstance != 0);
+	TestEqual(TEXT("Collision mode should match"), SplineMesh->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+	TestTrue(TEXT("Overlap events should be enabled"), SplineMesh->GetGenerateOverlapEvents());
+	TestFalse(TEXT("Cast shadow should be disabled"), SplineMesh->CastShadow);
+
+	if (!TestNotNull(TEXT("Sampled SplineMesh component template should exist"), SampledSplineMesh))
+	{
+		return false;
+	}
+	const FVector ExpectedSampleStart = SourceSpline->GetLocationAtDistanceAlongSpline(
+		(float)SampleStartDistance,
+		ESplineCoordinateSpace::Local);
+	const FVector ExpectedSampleEnd = SourceSpline->GetLocationAtDistanceAlongSpline(
+		(float)SampleEndDistance,
+		ESplineCoordinateSpace::Local);
+	const FVector ExpectedStartTangent = SourceSpline->GetTangentAtDistanceAlongSpline(
+		(float)SampleStartDistance,
+		ESplineCoordinateSpace::Local) * (float)SampleTangentScale;
+	const FVector ExpectedEndTangent = SourceSpline->GetTangentAtDistanceAlongSpline(
+		(float)SampleEndDistance,
+		ESplineCoordinateSpace::Local) * (float)SampleTangentScale;
+	TestTrue(TEXT("Sampled start position should match source spline"), SampledSplineMesh->GetStartPosition().Equals(ExpectedSampleStart));
+	TestTrue(TEXT("Sampled end position should match source spline"), SampledSplineMesh->GetEndPosition().Equals(ExpectedSampleEnd));
+	TestTrue(TEXT("Sampled start tangent should match source spline"), SampledSplineMesh->GetStartTangent().Equals(ExpectedStartTangent));
+	return TestTrue(TEXT("Sampled end tangent should match source spline"), SampledSplineMesh->GetEndTangent().Equals(ExpectedEndTangent));
 }
 
 bool FBATCanceledJobRemainsCanceledTest::RunTest(const FString& Parameters)

@@ -1882,6 +1882,16 @@ void FBlueprintAutomationToolkitModule::Test_ExecuteJob(const FString& JobId)
 {
 	ExecuteJob(JobId);
 }
+
+bool FBlueprintAutomationToolkitModule::Test_ExecuteBlueprintPatch(
+	const TSharedPtr<FJsonObject>& BodyObj,
+	bool bApply,
+	int32& InOutTotalInstances,
+	TSharedRef<FJsonObject>& OutResult,
+	TArray<TSharedPtr<FJsonValue>>& OutErrors) const
+{
+	return ExecuteBlueprintPatch(BodyObj, bApply, InOutTotalInstances, OutResult, OutErrors);
+}
 #endif
 
 TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::ExecuteJobByKind(const FString& JobId, const FString& Kind, const TSharedPtr<FJsonObject>& Payload, FString& OutCode, FString& OutMessage)

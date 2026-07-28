@@ -513,10 +513,14 @@ Included project artifacts:
 
 ## Observed Boundaries and Corrections
 
-- `components_apply` supports `SplineComponent`, `InstancedStaticMeshComponent`,
-  and `HierarchicalInstancedStaticMeshComponent`. It explicitly rejects
-  `SplineMeshComponent`; the README and advanced prompt guide were corrected to
-  match the implementation.
+- The original spline-bridge capture used `SplineComponent` plus
+  `HierarchicalInstancedStaticMeshComponent`. At capture time,
+  `components_apply` rejected `SplineMeshComponent`. Current BAT versions also
+  support `SplineMeshComponent` through `components_apply`, `components.set`,
+  and `/blueprint/components/replace`, including explicit endpoints/tangents or
+  a local-space range sampled from another spline component. The historical
+  screenshot remains an HISM result and is not relabeled as Spline Mesh
+  evidence.
 - Updating an existing component with `components.set` preserved the component
   name and source asset. It is used in the verified variant example instead of
   a remove-and-add replacement.

@@ -90,7 +90,7 @@ Acceptance evidence:
 
 ## 4. Create a Spline-Driven Modular Corridor Blueprint
 
-> Create `/Game/BAT_Demos/BP_BAT_ModularCorridor` as an Actor Blueprint. Add a spline component named `CorridorSpline` with five editable curve points forming a gentle S-shaped path. Add a hierarchical instanced static mesh component named `FloorHISM` that places `/Engine/BasicShapes/Cube.Cube` along the spline every 300 Unreal units, aligned to the tangent, with a thin floor-like scale and a 50-unit vertical offset. Compile, inspect the generated components and instance configuration, and save only when the component list, spline points, generated instances, and compile diagnostics match the request. Do not request `SplineMeshComponent` through `components_apply`; that class is not supported by this operation.
+> Create `/Game/BAT_Demos/BP_BAT_ModularCorridor` as an Actor Blueprint. Add a spline component named `CorridorSpline` with five editable curve points forming a gentle S-shaped path. Add a hierarchical instanced static mesh component named `FloorHISM` that places `/Engine/BasicShapes/Cube.Cube` along the spline every 300 Unreal units, aligned to the tangent, with a thin floor-like scale and a 50-unit vertical offset. Add `CorridorSkin` as a `SplineMeshComponent`, use the same cube mesh, and deform it over the 0–1200 distance range sampled from `CorridorSpline`; use X as the forward axis, Z as the spline-up direction, smooth roll/scale interpolation, QueryAndPhysics collision, and a thin start/end scale. Compile, inspect the component schema and generated configuration, and save only when the spline, HISM instances, Spline Mesh endpoints/tangents, and compiler diagnostics match the request.
 
 Typical BAT flow:
 
@@ -103,8 +103,12 @@ Typical BAT flow:
 Acceptance evidence:
 
 - `CorridorSpline` and `FloorHISM` exist.
+- `CorridorSkin` exists as a `SplineMeshComponent` and references
+  `CorridorSpline` through its applied local-space range.
 - The spline contains five points.
 - Instance spacing and tangent alignment match the prompt.
+- The Spline Mesh forward axis, up direction, collision mode, scales, endpoints,
+  and tangents match the request.
 - Compilation succeeds with zero errors.
 
 ## 5. Generate and Validate a PCG Test Area

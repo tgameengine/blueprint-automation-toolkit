@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Blueprint Automation Toolkit Editor Bridge
-  version: 0.3.1
+  version: 0.3.2
   description: |
     Secure typed localhost automation bridge for Unreal Editor.
     The canonical agent flow is discover -> inspect -> resolve -> mutate -> compile or validate -> inspect diagnostics -> save or focus.
@@ -928,6 +928,37 @@ paths:
       responses:
         '202':
           description: Job created
+  /blueprint/set-defaults:
+    post:
+      summary: Set Blueprint class defaults and apply allowlisted component templates
+      description: Supports SplineMeshComponent with direct endpoints/tangents or a local-space range sampled from a SplineComponent. Returns 409 pie_edit_blocked while PIE is running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blueprint, defaults]
+              properties:
+                blueprint:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+                defaults:
+                  type: object
+                  additionalProperties: true
+                components_apply:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/BlueprintComponentApplySpec'
+                compile:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Defaults and component-template apply result
+        '400':
+          $ref: '#/components/responses/Error400'
   /blueprint/create:
     post:
       summary: Submit blueprint creation job
@@ -1063,6 +1094,50 @@ paths:
                     type: number
                 num_custom_data_floats:
                   type: integer
+                start_position:
+                  $ref: '#/components/schemas/Vector3'
+                start_tangent:
+                  $ref: '#/components/schemas/Vector3'
+                end_position:
+                  $ref: '#/components/schemas/Vector3'
+                end_tangent:
+                  $ref: '#/components/schemas/Vector3'
+                from_spline:
+                  $ref: '#/components/schemas/SplineMeshFromSpline'
+                start_scale:
+                  $ref: '#/components/schemas/Vector2'
+                end_scale:
+                  $ref: '#/components/schemas/Vector2'
+                start_roll:
+                  type: number
+                  description: Start roll in radians; mutually exclusive with start_roll_degrees.
+                start_roll_degrees:
+                  type: number
+                end_roll:
+                  type: number
+                  description: End roll in radians; mutually exclusive with end_roll_degrees.
+                end_roll_degrees:
+                  type: number
+                start_offset:
+                  $ref: '#/components/schemas/Vector2'
+                end_offset:
+                  $ref: '#/components/schemas/Vector2'
+                forward_axis:
+                  type: string
+                  enum: [X, Y, Z]
+                spline_up_dir:
+                  $ref: '#/components/schemas/Vector3'
+                smooth_interp_roll_scale:
+                  type: boolean
+                allow_spline_editing_per_instance:
+                  type: boolean
+                collision_enabled:
+                  type: string
+                  enum: [NoCollision, QueryOnly, PhysicsOnly, QueryAndPhysics]
+                generate_overlap_events:
+                  type: boolean
+                cast_shadow:
+                  type: boolean
                 compile:
                   type: boolean
                   description: Compile the Blueprint after replacement.
@@ -1287,6 +1362,158 @@ components:
       scheme: bearer
       bearerFormat: token
   schemas:
+    Vector2:
+      oneOf:
+        - type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+        - type: object
+          required: [x, y]
+          properties:
+            x:
+              type: number
+            y:
+              type: number
+    Vector3:
+      oneOf:
+        - type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: number
+        - type: object
+          required: [x, y, z]
+          properties:
+            x:
+              type: number
+            y:
+              type: number
+            z:
+              type: number
+    SplineMeshFromSpline:
+      type: object
+      required: [component]
+      properties:
+        component:
+          type: string
+          description: SplineComponent template name in the same Blueprint.
+        start_distance:
+          type: number
+          default: 0
+        end_distance:
+          type: number
+          description: Defaults to the source spline length and must be greater than start_distance.
+        tangent_scale:
+          type: number
+          minimum: 0
+          default: 1
+        step:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          description: ISM/HISM sampling interval; ignored by SplineMeshComponent.
+        align_to_tangent:
+          type: boolean
+          default: true
+          description: ISM/HISM option; ignored by SplineMeshComponent.
+        offset:
+          $ref: '#/components/schemas/Vector3'
+        rotation:
+          $ref: '#/components/schemas/Vector3'
+        scale:
+          $ref: '#/components/schemas/Vector3'
+    BlueprintComponentApplySpec:
+      type: object
+      required: [class, name]
+      additionalProperties: true
+      properties:
+        class:
+          type: string
+          enum:
+            - /Script/Engine.InstancedStaticMeshComponent
+            - /Script/Engine.HierarchicalInstancedStaticMeshComponent
+            - /Script/Engine.SplineComponent
+            - /Script/Engine.SplineMeshComponent
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        static_mesh:
+          type: string
+        material0:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vector3'
+        point_type:
+          type: string
+          enum: [Linear, Curve, Constant, CurveClamped, CurveCustomTangent]
+        closed_loop:
+          type: boolean
+        instances:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        from_spline:
+          $ref: '#/components/schemas/SplineMeshFromSpline'
+        start_position:
+          $ref: '#/components/schemas/Vector3'
+        start_tangent:
+          $ref: '#/components/schemas/Vector3'
+        end_position:
+          $ref: '#/components/schemas/Vector3'
+        end_tangent:
+          $ref: '#/components/schemas/Vector3'
+        start_scale:
+          $ref: '#/components/schemas/Vector2'
+        end_scale:
+          $ref: '#/components/schemas/Vector2'
+        start_roll:
+          type: number
+          description: Radians.
+        start_roll_degrees:
+          type: number
+        end_roll:
+          type: number
+          description: Radians.
+        end_roll_degrees:
+          type: number
+        start_offset:
+          $ref: '#/components/schemas/Vector2'
+        end_offset:
+          $ref: '#/components/schemas/Vector2'
+        forward_axis:
+          type: string
+          enum: [X, Y, Z]
+        spline_up_dir:
+          $ref: '#/components/schemas/Vector3'
+        smooth_interp_roll_scale:
+          type: boolean
+        allow_spline_editing_per_instance:
+          type: boolean
+        collision_enabled:
+          type: string
+          enum: [NoCollision, QueryOnly, PhysicsOnly, QueryAndPhysics]
+        generate_overlap_events:
+          type: boolean
+        cast_shadow:
+          type: boolean
+        properties:
+          type: object
+          properties:
+            relative_location:
+              $ref: '#/components/schemas/Vector3'
+            relative_rotation:
+              $ref: '#/components/schemas/Vector3'
+            relative_scale3d:
+              $ref: '#/components/schemas/Vector3'
+            mobility:
+              type: string
+              enum: [Static, Stationary, Movable]
     AssetTargetRequest:
       type: object
       properties:

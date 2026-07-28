@@ -18,7 +18,7 @@ The complete example host project is included in
 Codex-generated showcase map and three verified Blueprint assets while keeping
 the plugin itself as an external dependency. A packaged copy of the original
 minimal host is also available from the
-[v1.0.0 release](https://github.com/tgameengine/blueprint-automation-toolkit/releases/tag/v1.0.0).
+[v1.0.1 release](https://github.com/tgameengine/blueprint-automation-toolkit/releases/tag/v1.0.1).
 
 For copy-ready, multi-step agent workflows, see
 [Advanced Prompt Examples](Docs/AdvancedPromptExamples.md). For prompts that
@@ -1032,6 +1032,7 @@ Response:
 - `/Script/Engine.InstancedStaticMeshComponent`
 - `/Script/Engine.HierarchicalInstancedStaticMeshComponent`
 - `/Script/Engine.SplineComponent`
+- `/Script/Engine.SplineMeshComponent`
 
 For ISM/HISM entries, optional `from_spline` can generate instances procedurally from an existing spline component template:
 
@@ -1061,9 +1062,47 @@ Notes for `from_spline`:
 - `align_to_tangent` defaults to `true`.
 - `offset`/`rotation`/`scale` are local per-instance adjustments.
 
-`SplineMeshComponent` is not currently supported by `components_apply`.
-Requests for that class return an explicit component error. A spline component
-can still drive ISM/HISM instance generation through `from_spline`.
+`SplineMeshComponent` entries accept either explicit curve geometry or a range
+sampled from a `SplineComponent` in the same Blueprint:
+
+```json
+{
+	"class": "/Script/Engine.SplineMeshComponent",
+	"name": "RoadSegment",
+	"static_mesh": "/Engine/BasicShapes/Cube.Cube",
+	"from_spline": {
+		"component": "CorridorSpline",
+		"start_distance": 0,
+		"end_distance": 1200,
+		"tangent_scale": 1.0
+	},
+	"start_scale": [1.0, 0.25],
+	"end_scale": [1.25, 0.25],
+	"start_roll_degrees": 0,
+	"end_roll_degrees": 8,
+	"forward_axis": "X",
+	"spline_up_dir": [0, 0, 1],
+	"smooth_interp_roll_scale": true,
+	"collision_enabled": "QueryAndPhysics",
+	"generate_overlap_events": false,
+	"cast_shadow": true
+}
+```
+
+Direct geometry uses `start_position`, `end_position`, and optional
+`start_tangent`/`end_tangent`. When both tangents are omitted, BAT derives them
+from the two endpoints. `start_scale`, `end_scale`, `start_offset`, and
+`end_offset` are two-component vectors. `start_roll`/`end_roll` use radians;
+the `_degrees` aliases are provided for AI-friendly requests. `forward_axis`
+accepts `X`, `Y`, or `Z`.
+
+`from_spline` positions and tangents are evaluated in the source spline's local
+space. The range is clamped to the spline length and must have
+`end_distance > start_distance`; `tangent_scale` defaults to `1.0`.
+
+The same Spline Mesh fields are supported by `/blueprint/apply`
+`components.set` and by `/blueprint/components/replace`. This allows an
+existing segment to be reshaped without removing the component.
 
 For spline entries:
 

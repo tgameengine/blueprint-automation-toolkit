@@ -4,6 +4,8 @@
 
 - Typed localhost HTTP API for Unreal Editor automation
 - Blueprint graph inspection, editing, compilation, and saving
+- Spline, ISM/HISM, and Spline Mesh Blueprint component authoring, including
+  endpoint/tangent deformation and local-space sampling from a source spline
 - Reflected UObject property inspection and mutation
 - Exposed UFunction invocation
 - Editor-world actor spawning and destruction

@@ -302,6 +302,52 @@ namespace
 		return false;
 	}
 
+	static bool TryParseVector2(const TSharedPtr<FJsonValue>& Value, FVector2D& OutVec)
+	{
+		if (!Value.IsValid())
+		{
+			return false;
+		}
+
+		if (Value->Type == EJson::Array)
+		{
+			const TArray<TSharedPtr<FJsonValue>>& Arr = Value->AsArray();
+			if (Arr.Num() == 2 && Arr[0].IsValid() && Arr[1].IsValid()
+				&& Arr[0]->Type == EJson::Number && Arr[1]->Type == EJson::Number)
+			{
+				OutVec.X = (float)Arr[0]->AsNumber();
+				OutVec.Y = (float)Arr[1]->AsNumber();
+				return true;
+			}
+			return false;
+		}
+
+		if (Value->Type == EJson::Object)
+		{
+			const TSharedPtr<FJsonObject> Obj = Value->AsObject();
+			if (!Obj.IsValid())
+			{
+				return false;
+			}
+
+			double X = 0.0;
+			double Y = 0.0;
+			if (!(Obj->TryGetNumberField(TEXT("x"), X) || Obj->TryGetNumberField(TEXT("X"), X)))
+			{
+				return false;
+			}
+			if (!(Obj->TryGetNumberField(TEXT("y"), Y) || Obj->TryGetNumberField(TEXT("Y"), Y)))
+			{
+				return false;
+			}
+
+			OutVec = FVector2D((float)X, (float)Y);
+			return true;
+		}
+
+		return false;
+	}
+
 	static bool TryParseRotator(const TSharedPtr<FJsonValue>& Value, FRotator& OutRot)
 	{
 		if (!Value.IsValid())
@@ -1183,6 +1229,467 @@ namespace
 		return Cast<USplineComponent>(FindOrCreateSceneTemplate(Blueprint, ComponentName, USplineComponent::StaticClass()));
 	}
 
+	struct FBATSplineMeshPatch
+	{
+		bool bSetCurve = false;
+		FVector StartPosition = FVector::ZeroVector;
+		FVector StartTangent = FVector::ZeroVector;
+		FVector EndPosition = FVector::ZeroVector;
+		FVector EndTangent = FVector::ZeroVector;
+		TOptional<FVector2D> StartScale;
+		TOptional<FVector2D> EndScale;
+		TOptional<float> StartRollRadians;
+		TOptional<float> EndRollRadians;
+		TOptional<FVector2D> StartOffset;
+		TOptional<FVector2D> EndOffset;
+		TOptional<ESplineMeshAxis::Type> ForwardAxis;
+		TOptional<FVector> SplineUpDirection;
+		TOptional<bool> bSmoothInterpRollScale;
+		TOptional<bool> bAllowSplineEditingPerInstance;
+		TOptional<ECollisionEnabled::Type> CollisionEnabled;
+		TOptional<bool> bGenerateOverlapEvents;
+		TOptional<bool> bCastShadow;
+	};
+
+	static bool TryParseSplineMeshAxis(const FString& AxisString, ESplineMeshAxis::Type& OutAxis)
+	{
+		FString Axis = AxisString;
+		Axis.TrimStartAndEndInline();
+		if (Axis.Equals(TEXT("X"), ESearchCase::IgnoreCase)
+			|| Axis.Equals(TEXT("ESplineMeshAxis::X"), ESearchCase::IgnoreCase))
+		{
+			OutAxis = ESplineMeshAxis::X;
+			return true;
+		}
+		if (Axis.Equals(TEXT("Y"), ESearchCase::IgnoreCase)
+			|| Axis.Equals(TEXT("ESplineMeshAxis::Y"), ESearchCase::IgnoreCase))
+		{
+			OutAxis = ESplineMeshAxis::Y;
+			return true;
+		}
+		if (Axis.Equals(TEXT("Z"), ESearchCase::IgnoreCase)
+			|| Axis.Equals(TEXT("ESplineMeshAxis::Z"), ESearchCase::IgnoreCase))
+		{
+			OutAxis = ESplineMeshAxis::Z;
+			return true;
+		}
+		return false;
+	}
+
+	static bool TryParsePortableCollisionEnabled(const FString& CollisionString, ECollisionEnabled::Type& OutCollision)
+	{
+		FString Value = CollisionString;
+		Value.TrimStartAndEndInline();
+		if (Value.Equals(TEXT("NoCollision"), ESearchCase::IgnoreCase))
+		{
+			OutCollision = ECollisionEnabled::NoCollision;
+			return true;
+		}
+		if (Value.Equals(TEXT("QueryOnly"), ESearchCase::IgnoreCase))
+		{
+			OutCollision = ECollisionEnabled::QueryOnly;
+			return true;
+		}
+		if (Value.Equals(TEXT("PhysicsOnly"), ESearchCase::IgnoreCase))
+		{
+			OutCollision = ECollisionEnabled::PhysicsOnly;
+			return true;
+		}
+		if (Value.Equals(TEXT("QueryAndPhysics"), ESearchCase::IgnoreCase))
+		{
+			OutCollision = ECollisionEnabled::QueryAndPhysics;
+			return true;
+		}
+		return false;
+	}
+
+	static bool HasSplineMeshCurveField(const TSharedPtr<FJsonObject>& EntryObj)
+	{
+		return EntryObj.IsValid()
+			&& (EntryObj->HasField(TEXT("start_position"))
+				|| EntryObj->HasField(TEXT("start_tangent"))
+				|| EntryObj->HasField(TEXT("end_position"))
+				|| EntryObj->HasField(TEXT("end_tangent")));
+	}
+
+	static bool IsSplineMeshPatchField(const FString& Key)
+	{
+		return Key.Equals(TEXT("start_position"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("start_tangent"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("end_position"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("end_tangent"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("from_spline"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("start_scale"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("end_scale"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("start_roll"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("start_roll_degrees"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("end_roll"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("end_roll_degrees"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("start_offset"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("end_offset"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("forward_axis"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("spline_up_dir"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("smooth_interp_roll_scale"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("allow_spline_editing_per_instance"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("collision_enabled"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("generate_overlap_events"), ESearchCase::IgnoreCase)
+			|| Key.Equals(TEXT("cast_shadow"), ESearchCase::IgnoreCase);
+	}
+
+	static bool TryBuildSplineMeshPatch(
+		UBlueprint* Blueprint,
+		const USplineMeshComponent* Component,
+		const TSharedPtr<FJsonObject>& EntryObj,
+		bool bRequireCurve,
+		FBATSplineMeshPatch& OutPatch,
+		FString& OutError)
+	{
+		OutPatch = FBATSplineMeshPatch();
+		OutError.Reset();
+		if (!EntryObj.IsValid())
+		{
+			OutError = TEXT("spline mesh entry must be an object");
+			return false;
+		}
+
+		const USplineMeshComponent* Defaults = Component ? Component : GetDefault<USplineMeshComponent>();
+		OutPatch.StartPosition = Defaults->GetStartPosition();
+		OutPatch.StartTangent = Defaults->GetStartTangent();
+		OutPatch.EndPosition = Defaults->GetEndPosition();
+		OutPatch.EndTangent = Defaults->GetEndTangent();
+
+		const bool bHasDirectCurve = HasSplineMeshCurveField(EntryObj);
+		const bool bHasFromSplineField = EntryObj->HasField(TEXT("from_spline"));
+		const TSharedPtr<FJsonObject>* FromSplineObjPtr = nullptr;
+		const bool bHasFromSpline = EntryObj->TryGetObjectField(TEXT("from_spline"), FromSplineObjPtr)
+			&& FromSplineObjPtr && FromSplineObjPtr->IsValid();
+		if (bHasFromSplineField && !bHasFromSpline)
+		{
+			OutError = TEXT("from_spline must be an object");
+			return false;
+		}
+		if (bHasFromSpline && bHasDirectCurve)
+		{
+			OutError = TEXT("from_spline cannot be combined with direct spline curve fields");
+			return false;
+		}
+
+		if (bHasFromSpline)
+		{
+			if (!Blueprint)
+			{
+				OutError = TEXT("from_spline requires a Blueprint context");
+				return false;
+			}
+
+			const TSharedPtr<FJsonObject> FromSplineObj = *FromSplineObjPtr;
+			FString SplineComponentName;
+			if (!FromSplineObj->TryGetStringField(TEXT("component"), SplineComponentName)
+				|| SplineComponentName.TrimStartAndEnd().IsEmpty())
+			{
+				OutError = TEXT("from_spline requires 'component' name");
+				return false;
+			}
+
+			USplineComponent* SourceSpline = Cast<USplineComponent>(
+				FindSceneTemplateByName(Blueprint, SplineComponentName, USplineComponent::StaticClass()));
+			if (!SourceSpline)
+			{
+				OutError = TEXT("from_spline component not found or not a SplineComponent");
+				return false;
+			}
+
+			const float SplineLength = SourceSpline->GetSplineLength();
+			double StartDistance = 0.0;
+			double EndDistance = (double)SplineLength;
+			double TangentScale = 1.0;
+			if (FromSplineObj->HasField(TEXT("start_distance"))
+				&& !FromSplineObj->TryGetNumberField(TEXT("start_distance"), StartDistance))
+			{
+				OutError = TEXT("from_spline.start_distance must be a number");
+				return false;
+			}
+			if (FromSplineObj->HasField(TEXT("end_distance"))
+				&& !FromSplineObj->TryGetNumberField(TEXT("end_distance"), EndDistance))
+			{
+				OutError = TEXT("from_spline.end_distance must be a number");
+				return false;
+			}
+			if (FromSplineObj->HasField(TEXT("tangent_scale"))
+				&& !FromSplineObj->TryGetNumberField(TEXT("tangent_scale"), TangentScale))
+			{
+				OutError = TEXT("from_spline.tangent_scale must be a number");
+				return false;
+			}
+			if (TangentScale < 0.0)
+			{
+				OutError = TEXT("from_spline.tangent_scale must be >= 0");
+				return false;
+			}
+
+			const float Start = FMath::Clamp((float)StartDistance, 0.0f, SplineLength);
+			const float End = FMath::Clamp((float)EndDistance, 0.0f, SplineLength);
+			if (End <= Start + KINDA_SMALL_NUMBER)
+			{
+				OutError = TEXT("from_spline.end_distance must be greater than start_distance");
+				return false;
+			}
+
+			OutPatch.StartPosition = SourceSpline->GetLocationAtDistanceAlongSpline(Start, ESplineCoordinateSpace::Local);
+			OutPatch.StartTangent = SourceSpline->GetTangentAtDistanceAlongSpline(Start, ESplineCoordinateSpace::Local) * (float)TangentScale;
+			OutPatch.EndPosition = SourceSpline->GetLocationAtDistanceAlongSpline(End, ESplineCoordinateSpace::Local);
+			OutPatch.EndTangent = SourceSpline->GetTangentAtDistanceAlongSpline(End, ESplineCoordinateSpace::Local) * (float)TangentScale;
+			OutPatch.bSetCurve = true;
+		}
+		else if (bHasDirectCurve)
+		{
+			bool bHasStartPosition = false;
+			bool bHasStartTangent = false;
+			bool bHasEndPosition = false;
+			bool bHasEndTangent = false;
+
+			auto ParseCurveVector = [&EntryObj, &OutError](const TCHAR* Field, FVector& OutValue, bool& bOutPresent) -> bool
+			{
+				const TSharedPtr<FJsonValue>* Value = EntryObj->Values.Find(Field);
+				if (!Value)
+				{
+					return true;
+				}
+				bOutPresent = true;
+				if (!TryParseVector3(*Value, OutValue))
+				{
+					OutError = FString::Printf(TEXT("%s must be a three-component vector"), Field);
+					return false;
+				}
+				return true;
+			};
+
+			if (!ParseCurveVector(TEXT("start_position"), OutPatch.StartPosition, bHasStartPosition)
+				|| !ParseCurveVector(TEXT("start_tangent"), OutPatch.StartTangent, bHasStartTangent)
+				|| !ParseCurveVector(TEXT("end_position"), OutPatch.EndPosition, bHasEndPosition)
+				|| !ParseCurveVector(TEXT("end_tangent"), OutPatch.EndTangent, bHasEndTangent))
+			{
+				return false;
+			}
+			if (bRequireCurve && (!bHasStartPosition || !bHasEndPosition))
+			{
+				OutError = TEXT("spline mesh entry requires start_position and end_position");
+				return false;
+			}
+
+			const FVector DefaultTangent = OutPatch.EndPosition - OutPatch.StartPosition;
+			if (!bHasStartTangent && bHasStartPosition && bHasEndPosition)
+			{
+				OutPatch.StartTangent = DefaultTangent;
+			}
+			if (!bHasEndTangent && bHasStartPosition && bHasEndPosition)
+			{
+				OutPatch.EndTangent = DefaultTangent;
+			}
+			OutPatch.bSetCurve = true;
+		}
+		else if (bRequireCurve)
+		{
+			OutError = TEXT("spline mesh entry requires direct curve fields or from_spline");
+			return false;
+		}
+
+		auto ParseVector2Field = [&EntryObj, &OutError](const TCHAR* Field, TOptional<FVector2D>& OutValue) -> bool
+		{
+			const TSharedPtr<FJsonValue>* Value = EntryObj->Values.Find(Field);
+			if (!Value)
+			{
+				return true;
+			}
+			FVector2D Parsed;
+			if (!TryParseVector2(*Value, Parsed))
+			{
+				OutError = FString::Printf(TEXT("%s must be a two-component vector"), Field);
+				return false;
+			}
+			OutValue = Parsed;
+			return true;
+		};
+		if (!ParseVector2Field(TEXT("start_scale"), OutPatch.StartScale)
+			|| !ParseVector2Field(TEXT("end_scale"), OutPatch.EndScale)
+			|| !ParseVector2Field(TEXT("start_offset"), OutPatch.StartOffset)
+			|| !ParseVector2Field(TEXT("end_offset"), OutPatch.EndOffset))
+		{
+			return false;
+		}
+
+		auto ParseRoll = [&EntryObj, &OutError](const TCHAR* RadiansField, const TCHAR* DegreesField, TOptional<float>& OutValue) -> bool
+		{
+			const bool bHasRadians = EntryObj->HasField(RadiansField);
+			const bool bHasDegrees = EntryObj->HasField(DegreesField);
+			if (bHasRadians && bHasDegrees)
+			{
+				OutError = FString::Printf(TEXT("%s and %s are mutually exclusive"), RadiansField, DegreesField);
+				return false;
+			}
+
+			double Parsed = 0.0;
+			if (bHasRadians)
+			{
+				if (!EntryObj->TryGetNumberField(RadiansField, Parsed))
+				{
+					OutError = FString::Printf(TEXT("%s must be a number"), RadiansField);
+					return false;
+				}
+				OutValue = (float)Parsed;
+			}
+			else if (bHasDegrees)
+			{
+				if (!EntryObj->TryGetNumberField(DegreesField, Parsed))
+				{
+					OutError = FString::Printf(TEXT("%s must be a number"), DegreesField);
+					return false;
+				}
+				OutValue = FMath::DegreesToRadians((float)Parsed);
+			}
+			return true;
+		};
+		if (!ParseRoll(TEXT("start_roll"), TEXT("start_roll_degrees"), OutPatch.StartRollRadians)
+			|| !ParseRoll(TEXT("end_roll"), TEXT("end_roll_degrees"), OutPatch.EndRollRadians))
+		{
+			return false;
+		}
+
+		if (EntryObj->HasField(TEXT("forward_axis")))
+		{
+			FString AxisString;
+			ESplineMeshAxis::Type Axis = ESplineMeshAxis::X;
+			if (!EntryObj->TryGetStringField(TEXT("forward_axis"), AxisString)
+				|| !TryParseSplineMeshAxis(AxisString, Axis))
+			{
+				OutError = TEXT("forward_axis must be X, Y, or Z");
+				return false;
+			}
+			OutPatch.ForwardAxis = Axis;
+		}
+
+		if (const TSharedPtr<FJsonValue>* UpValue = EntryObj->Values.Find(TEXT("spline_up_dir")))
+		{
+			FVector UpDirection;
+			if (!TryParseVector3(*UpValue, UpDirection) || UpDirection.IsNearlyZero())
+			{
+				OutError = TEXT("spline_up_dir must be a non-zero three-component vector");
+				return false;
+			}
+			OutPatch.SplineUpDirection = UpDirection.GetSafeNormal();
+		}
+
+		auto ParseBoolField = [&EntryObj, &OutError](const TCHAR* Field, TOptional<bool>& OutValue) -> bool
+		{
+			if (!EntryObj->HasField(Field))
+			{
+				return true;
+			}
+			bool bParsed = false;
+			if (!EntryObj->TryGetBoolField(Field, bParsed))
+			{
+				OutError = FString::Printf(TEXT("%s must be a boolean"), Field);
+				return false;
+			}
+			OutValue = bParsed;
+			return true;
+		};
+		if (!ParseBoolField(TEXT("smooth_interp_roll_scale"), OutPatch.bSmoothInterpRollScale)
+			|| !ParseBoolField(TEXT("allow_spline_editing_per_instance"), OutPatch.bAllowSplineEditingPerInstance)
+			|| !ParseBoolField(TEXT("generate_overlap_events"), OutPatch.bGenerateOverlapEvents)
+			|| !ParseBoolField(TEXT("cast_shadow"), OutPatch.bCastShadow))
+		{
+			return false;
+		}
+
+		if (EntryObj->HasField(TEXT("collision_enabled")))
+		{
+			FString CollisionString;
+			ECollisionEnabled::Type Collision = ECollisionEnabled::NoCollision;
+			if (!EntryObj->TryGetStringField(TEXT("collision_enabled"), CollisionString)
+				|| !TryParsePortableCollisionEnabled(CollisionString, Collision))
+			{
+				OutError = TEXT("collision_enabled must be NoCollision, QueryOnly, PhysicsOnly, or QueryAndPhysics");
+				return false;
+			}
+			OutPatch.CollisionEnabled = Collision;
+		}
+
+		return true;
+	}
+
+	static void ApplySplineMeshPatch(USplineMeshComponent* Component, const FBATSplineMeshPatch& Patch)
+	{
+		if (!Component)
+		{
+			return;
+		}
+
+		if (Patch.bSetCurve)
+		{
+			Component->SetStartAndEnd(
+				Patch.StartPosition,
+				Patch.StartTangent,
+				Patch.EndPosition,
+				Patch.EndTangent,
+				false);
+		}
+		if (Patch.StartScale.IsSet())
+		{
+			Component->SetStartScale(Patch.StartScale.GetValue(), false);
+		}
+		if (Patch.EndScale.IsSet())
+		{
+			Component->SetEndScale(Patch.EndScale.GetValue(), false);
+		}
+		if (Patch.StartRollRadians.IsSet())
+		{
+			Component->SetStartRoll(Patch.StartRollRadians.GetValue(), false);
+		}
+		if (Patch.EndRollRadians.IsSet())
+		{
+			Component->SetEndRoll(Patch.EndRollRadians.GetValue(), false);
+		}
+		if (Patch.StartOffset.IsSet())
+		{
+			Component->SetStartOffset(Patch.StartOffset.GetValue(), false);
+		}
+		if (Patch.EndOffset.IsSet())
+		{
+			Component->SetEndOffset(Patch.EndOffset.GetValue(), false);
+		}
+		if (Patch.ForwardAxis.IsSet())
+		{
+			Component->SetForwardAxis(Patch.ForwardAxis.GetValue(), false);
+		}
+		if (Patch.SplineUpDirection.IsSet())
+		{
+			Component->SetSplineUpDir(Patch.SplineUpDirection.GetValue(), false);
+		}
+		if (Patch.bSmoothInterpRollScale.IsSet())
+		{
+			Component->bSmoothInterpRollScale = Patch.bSmoothInterpRollScale.GetValue();
+		}
+		if (Patch.bAllowSplineEditingPerInstance.IsSet())
+		{
+			Component->bAllowSplineEditingPerInstance = Patch.bAllowSplineEditingPerInstance.GetValue();
+		}
+		if (Patch.CollisionEnabled.IsSet())
+		{
+			Component->SetCollisionEnabled(Patch.CollisionEnabled.GetValue());
+		}
+		if (Patch.bGenerateOverlapEvents.IsSet())
+		{
+			Component->SetGenerateOverlapEvents(Patch.bGenerateOverlapEvents.GetValue());
+		}
+		if (Patch.bCastShadow.IsSet())
+		{
+			Component->SetCastShadow(Patch.bCastShadow.GetValue());
+		}
+
+		Component->UpdateMesh();
+	}
+
 	static bool TryParseSplinePoints(const TSharedPtr<FJsonObject>& EntryObj, TArray<FVector>& OutPoints)
 	{
 		OutPoints.Reset();
@@ -1742,6 +2249,29 @@ namespace
 			AddEditablePropertyName(OutFields, TEXT("points"));
 			AddEditablePropertyName(OutFields, TEXT("point_type"));
 			AddEditablePropertyName(OutFields, TEXT("closed_loop"));
+		}
+		if (ComponentTemplate->IsA<USplineMeshComponent>())
+		{
+			AddEditablePropertyName(OutFields, TEXT("start_position"));
+			AddEditablePropertyName(OutFields, TEXT("start_tangent"));
+			AddEditablePropertyName(OutFields, TEXT("end_position"));
+			AddEditablePropertyName(OutFields, TEXT("end_tangent"));
+			AddEditablePropertyName(OutFields, TEXT("from_spline"));
+			AddEditablePropertyName(OutFields, TEXT("start_scale"));
+			AddEditablePropertyName(OutFields, TEXT("end_scale"));
+			AddEditablePropertyName(OutFields, TEXT("start_roll"));
+			AddEditablePropertyName(OutFields, TEXT("start_roll_degrees"));
+			AddEditablePropertyName(OutFields, TEXT("end_roll"));
+			AddEditablePropertyName(OutFields, TEXT("end_roll_degrees"));
+			AddEditablePropertyName(OutFields, TEXT("start_offset"));
+			AddEditablePropertyName(OutFields, TEXT("end_offset"));
+			AddEditablePropertyName(OutFields, TEXT("forward_axis"));
+			AddEditablePropertyName(OutFields, TEXT("spline_up_dir"));
+			AddEditablePropertyName(OutFields, TEXT("smooth_interp_roll_scale"));
+			AddEditablePropertyName(OutFields, TEXT("allow_spline_editing_per_instance"));
+			AddEditablePropertyName(OutFields, TEXT("collision_enabled"));
+			AddEditablePropertyName(OutFields, TEXT("generate_overlap_events"));
+			AddEditablePropertyName(OutFields, TEXT("cast_shadow"));
 		}
 	}
 
@@ -2489,6 +3019,7 @@ bool FBlueprintAutomationToolkitModule::ExecuteBlueprintPatch(const TSharedPtr<F
 			USceneComponent* SceneComp = Cast<USceneComponent>(Node->ComponentTemplate);
 			UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(Node->ComponentTemplate);
 			UInstancedStaticMeshComponent* ISMComp = Cast<UInstancedStaticMeshComponent>(Node->ComponentTemplate);
+			USplineMeshComponent* SplineMeshComp = Cast<USplineMeshComponent>(Node->ComponentTemplate);
 			if (!SceneComp)
 			{
 				AddBlueprintOpError(OutErrors, OpIndex, TEXT("component_type_not_supported"));
@@ -2496,6 +3027,7 @@ bool FBlueprintAutomationToolkitModule::ExecuteBlueprintPatch(const TSharedPtr<F
 			}
 
 			const bool bIsISM = ISMComp != nullptr;
+			const bool bIsSplineMesh = SplineMeshComp != nullptr;
 			const bool bHasMeshProperties = MeshComp != nullptr;
 			const bool bHasAttachmentProperties = OpObj->HasField(TEXT("attach_parent")) || OpObj->HasField(TEXT("attach_socket_name"));
 			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : OpObj->Values)
@@ -2514,7 +3046,8 @@ bool FBlueprintAutomationToolkitModule::ExecuteBlueprintPatch(const TSharedPtr<F
 					|| Key.Equals(TEXT("relative_scale3d"), ESearchCase::IgnoreCase)
 					|| Key.Equals(TEXT("attach_parent"), ESearchCase::IgnoreCase)
 					|| Key.Equals(TEXT("attach_socket_name"), ESearchCase::IgnoreCase)
-					|| (bIsISM && Key.Equals(TEXT("num_custom_data_floats"), ESearchCase::IgnoreCase));
+					|| (bIsISM && Key.Equals(TEXT("num_custom_data_floats"), ESearchCase::IgnoreCase))
+					|| (bIsSplineMesh && IsSplineMeshPatchField(Key));
 				if (!bAllowed)
 				{
 					AddBlueprintOpError(OutErrors, OpIndex, FString::Printf(TEXT("property_not_allowed:%s"), *Key));
@@ -2558,6 +3091,17 @@ bool FBlueprintAutomationToolkitModule::ExecuteBlueprintPatch(const TSharedPtr<F
 				if (!AttachParentComp)
 				{
 					AddBlueprintOpError(OutErrors, OpIndex, TEXT("attach_parent_required"));
+					continue;
+				}
+			}
+
+			FBATSplineMeshPatch SplineMeshPatch;
+			if (bIsSplineMesh)
+			{
+				FString SplineMeshError;
+				if (!TryBuildSplineMeshPatch(Blueprint, SplineMeshComp, OpObj, false, SplineMeshPatch, SplineMeshError))
+				{
+					AddBlueprintOpError(OutErrors, OpIndex, SplineMeshError);
 					continue;
 				}
 			}
@@ -2683,6 +3227,11 @@ bool FBlueprintAutomationToolkitModule::ExecuteBlueprintPatch(const TSharedPtr<F
 							ISMComp->NumCustomDataFloats = (int32)NumCustomDataFloats;
 						}
 					}
+				}
+
+				if (bIsSplineMesh)
+				{
+					ApplySplineMeshPatch(SplineMeshComp, SplineMeshPatch);
 				}
 
 				SceneComp->PostEditChange();
@@ -3252,10 +3801,75 @@ BlueprintCreateRoute = Router->BindRoute(
 
 					if (Kind == EBATComponentApplyKind::SplineMesh)
 					{
-						TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
-						Err->SetStringField(TEXT("name"), CompName);
-						Err->SetStringField(TEXT("error"), TEXT("SplineMeshComponent apply is not supported"));
-						ComponentErrors.Add(MakeShared<FJsonValueObject>(Err));
+						USplineMeshComponent* ExistingTemplate = Cast<USplineMeshComponent>(
+							FindSceneTemplateByName(Blueprint, CompName, USplineMeshComponent::StaticClass()));
+						FBATSplineMeshPatch SplineMeshPatch;
+						FString SplineMeshError;
+						if (!TryBuildSplineMeshPatch(Blueprint, ExistingTemplate, EntryObj, true, SplineMeshPatch, SplineMeshError))
+						{
+							TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
+							Err->SetStringField(TEXT("name"), CompName);
+							Err->SetStringField(TEXT("error"), SplineMeshError);
+							ComponentErrors.Add(MakeShared<FJsonValueObject>(Err));
+							continue;
+						}
+
+						USplineMeshComponent* SplineMeshTemplate = ExistingTemplate
+							? ExistingTemplate
+							: Cast<USplineMeshComponent>(FindOrCreateSceneTemplate(Blueprint, CompName, USplineMeshComponent::StaticClass()));
+						if (!SplineMeshTemplate)
+						{
+							TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
+							Err->SetStringField(TEXT("name"), CompName);
+							Err->SetStringField(TEXT("error"), TEXT("failed to create/find spline mesh component template"));
+							ComponentErrors.Add(MakeShared<FJsonValueObject>(Err));
+							continue;
+						}
+
+						SplineMeshTemplate->Modify();
+						SplineMeshTemplate->PreEditChange(nullptr);
+						int32 AppliedProperties = 0;
+						int32 RejectedProperties = 0;
+						bool bAssetsOk = true;
+						ApplyAllowedMeshAssets(
+							SplineMeshTemplate,
+							EntryObj,
+							AppliedProperties,
+							RejectedProperties,
+							bAssetsOk);
+						if (!bAssetsOk)
+						{
+							SplineMeshTemplate->PostEditChange();
+							TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
+							Err->SetStringField(TEXT("name"), CompName);
+							Err->SetStringField(TEXT("error"), TEXT("failed to load spline mesh asset or material"));
+							ComponentErrors.Add(MakeShared<FJsonValueObject>(Err));
+							continue;
+						}
+
+						const TSharedPtr<FJsonObject>* PropertiesObjPtr = nullptr;
+						if (EntryObj->TryGetObjectField(TEXT("properties"), PropertiesObjPtr)
+							&& PropertiesObjPtr && PropertiesObjPtr->IsValid())
+						{
+							ApplyAllowedSceneTransformProperties(
+								SplineMeshTemplate,
+								*PropertiesObjPtr,
+								AppliedProperties,
+								RejectedProperties);
+						}
+						if (RejectedProperties > 0)
+						{
+							SplineMeshTemplate->PostEditChange();
+							TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
+							Err->SetStringField(TEXT("name"), CompName);
+							Err->SetStringField(TEXT("error"), TEXT("one or more spline mesh properties were rejected"));
+							ComponentErrors.Add(MakeShared<FJsonValueObject>(Err));
+							continue;
+						}
+
+						ApplySplineMeshPatch(SplineMeshTemplate, SplineMeshPatch);
+						SplineMeshTemplate->PostEditChange();
+						ComponentsApplied.Add(MakeShared<FJsonValueString>(CompName));
 						continue;
 					}
 
