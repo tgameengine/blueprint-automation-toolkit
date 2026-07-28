@@ -407,7 +407,10 @@ This example intentionally leaves no asset behind.
 
 ![The Unreal Animation Editor showing the textured animated octopus, its complete 34-bone Skeleton Tree, the bone overlay on the skeletal mesh, and the 41-frame animation timeline.](Images/CodexExecutedExamples/08-animated-octopus.png)
 
-[Watch the 10-second Unreal Editor animation capture (H.264 MP4,
+[Watch the verified 10-second Unreal Editor result on YouTube
+(Unlisted).](https://youtu.be/y8TBqGdOijY)
+
+[Download the repository copy (H.264 MP4,
 1936×1096).](Videos/CodexExecutedExamples/08-animated-octopus.mp4)
 
 The live Animation Editor shows the indigo and cyan textured octopus at frame 9
@@ -480,6 +483,8 @@ Included project artifacts:
   source package, base-color and normal textures, and the source manifest.
 - `Docs/Videos/CodexExecutedExamples/08-animated-octopus.mp4` records the live
   animation result in Unreal Editor.
+- The same verified capture is published as an Unlisted video at
+  `https://youtu.be/y8TBqGdOijY`.
 
 ## Observed Boundaries and Corrections
 

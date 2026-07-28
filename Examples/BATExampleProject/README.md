@@ -19,8 +19,9 @@ The project includes assets created and verified through real Codex prompts:
 
 The exact prompts, route traces, and condensed outputs are in
 [`../../Docs/CodexExecutedExamples.md`](../../Docs/CodexExecutedExamples.md).
-The corresponding Unreal Editor animation recording is under
-`../../Docs/Videos/CodexExecutedExamples`.
+The corresponding Unreal Editor animation recording is available on
+[YouTube](https://youtu.be/y8TBqGdOijY), with the repository copy retained
+under `../../Docs/Videos/CodexExecutedExamples`.
 The octopus glTF and texture inputs are retained under
 `SourceArt/AnimatedOctopus` so the import boundary remains reproducible and
 auditable.
