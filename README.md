@@ -46,7 +46,8 @@ present in the engine installation and enabled for the project.
 
 ## License
 
-This plugin is proprietary software. You may use it freely in your own projects (including commercial). Redistribution or repackaging as a standalone/competing product is prohibited. See [LICENSE](LICENSE) for full terms.
+This plugin is open-source software licensed under the
+[MIT License](LICENSE).
 
 The preferred workflow is:
 

@@ -32,9 +32,10 @@ Default behavior is intentionally conservative:
 
 ## Distribution model
 
-- Plugin source is available on GitHub at no cost under a proprietary license with a free use grant.
+- Plugin source is available on GitHub under the MIT License.
 - The Fab listing provides a packaged, pre-built binary for convenience at $14.99.
-- Both versions are feature-identical. Distribution through Fab is governed by the license terms selected for the Fab listing.
+- Both versions are feature-identical. Copies obtained through Fab are also
+  subject to the license terms selected for the Fab listing.
 - No feature gating, no time-limited trials, no telemetry.
 
 ## Dependencies and runtime scope
