@@ -17,6 +17,9 @@ The minimal example host project is available from the
 [v1.0.0 release](https://github.com/tgameengine/blueprint-automation-toolkit/releases/tag/v1.0.0).
 It enables BAT as a dependency but does not redistribute the plugin.
 
+For copy-ready, multi-step agent workflows, see
+[Advanced Prompt Examples](Docs/AdvancedPromptExamples.md).
+
 ## Requirements and Dependencies
 
 Blueprint Automation Toolkit is an editor-only C++ plugin. It is loaded as an
