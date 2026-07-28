@@ -13,9 +13,17 @@ The project includes assets created and verified through real Codex prompts:
   updated in place without changing the source Blueprint.
 - `BP_CodexSplineBridge`: a spline-driven HISM Blueprint generated through
   `components_apply`.
+- `SK_Octopus`: a textured 34-bone skeletal mesh with eight four-bone
+  tentacles, two imported texture maps, and the BAT-authored
+  `AN_Octopus_Swim_BAT_30FPS` animation.
 
 The exact prompts, route traces, and condensed outputs are in
 [`../../Docs/CodexExecutedExamples.md`](../../Docs/CodexExecutedExamples.md).
+The corresponding Unreal Editor animation recording is under
+`../../Docs/Videos/CodexExecutedExamples`.
+The octopus glTF and texture inputs are retained under
+`SourceArt/AnimatedOctopus` so the import boundary remains reproducible and
+auditable.
 
 1. Install Blueprint Automation Toolkit for your Unreal Engine version.
 2. Copy this project outside the plugin directory if you want to modify it.

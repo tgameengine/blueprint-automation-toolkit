@@ -1,0 +1,13 @@
+{
+  "skeletalMesh": "SK_Octopus",
+  "skeleton": "SK_Octopus_Skeleton",
+  "bones": 34,
+  "tentacles": 8,
+  "jointsPerTentacle": 4,
+  "vertices": 2697,
+  "triangles": 4912,
+  "textures": [
+    "Octopus_BaseColor.png",
+    "Octopus_Normal.png"
+  ]
+}

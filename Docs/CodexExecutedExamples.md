@@ -387,6 +387,100 @@ guaranteed stop completed.
 
 This example intentionally leaves no asset behind.
 
+## 8. Build and Animate a Textured Rigged Octopus
+
+### Codex prompt
+
+> In the open Unreal Engine 5.5 editor, use Unreal's standard content import
+> step for the octopus source package in `SourceArt/AnimatedOctopus`, placing
+> the result under `/Game/BAT_CodexExamples/Octopus`. Confirm that the result is
+> a textured `SkeletalMesh` bound to `SK_Octopus_Skeleton`, with eight
+> four-bone tentacle chains plus root and body bones. Then use BAT's typed
+> `POST /asset/create` animation workflow to create
+> `AN_Octopus_Swim_BAT_30FPS`: 30 fps, 41 frames, 33 tracks covering the root
+> and every tentacle bone, a seamless phase-shifted swimming wave, Unreal `+X`
+> forward, and immediate save. Open the animation in Unreal Editor, display
+> the full skeleton over the textured mesh, and return BAT class,
+> relationship, texture-profile, animation, focus, and save evidence.
+
+### Unreal Editor result
+
+![The Unreal Animation Editor showing the textured animated octopus, its complete 34-bone Skeleton Tree, the bone overlay on the skeletal mesh, and the 41-frame animation timeline.](Images/CodexExecutedExamples/08-animated-octopus.png)
+
+[Watch the 10-second Unreal Editor animation capture (H.264 MP4,
+1936×1096).](Videos/CodexExecutedExamples/08-animated-octopus.mp4)
+
+The live Animation Editor shows the indigo and cyan textured octopus at frame 9
+of the generated swim sequence. The 34-bone Skeleton Tree is expanded at left,
+all tentacle bones are drawn over the skeletal mesh, the viewport reports 4,912
+triangles and 30 fps, and the timeline exposes the 41 sampled frames.
+
+### Source preparation boundary
+
+BAT does not currently expose a model-import endpoint. Codex therefore prepared
+the deterministic glTF skeletal mesh plus base-color and normal-map source
+files, then imported them with Unreal's unattended content pipeline. The
+included source manifest reports 34 bones: root, body, and eight four-bone
+tentacle chains. Animation authoring, object resolution, relationship reads,
+texture-profile inspection, asset focus, and the final nine-asset save were
+performed through typed BAT routes.
+
+### BAT route trace
+
+`GET /engine/discover` → `POST /asset/create` for `AnimSequence` →
+`POST /object/resolve` for mesh, skeleton, material, textures, and animation →
+`GET /object/get_property` for mesh and animation relationships →
+`GET /object/describe` for texture profiles →
+`POST /editor/focus` → `POST /asset/save`
+
+### BAT verification output (condensed)
+
+```json
+{
+  "engine": "5.5.4-0+UE5",
+  "safeMode": true,
+  "createAnimation": {
+    "path": "/Game/BAT_CodexExamples/Octopus/AN_Octopus_Swim_BAT_30FPS",
+    "skeleton": "/Game/BAT_CodexExamples/Octopus/SK_Octopus_Skeleton.SK_Octopus_Skeleton",
+    "preview_mesh": "/Game/BAT_CodexExamples/Octopus/SK_Octopus.SK_Octopus",
+    "frame_rate": 30,
+    "number_of_frames": 41,
+    "tracks": 33,
+    "forward_axis": "X",
+    "saved": true
+  },
+  "resolvedClasses": {
+    "SK_Octopus": "SkeletalMesh",
+    "SK_Octopus_Skeleton": "Skeleton",
+    "M_Octopus_Skin": "MaterialInstanceConstant",
+    "T_Octopus_BaseColor": "Texture2D",
+    "T_Octopus_Normal": "Texture2D",
+    "AN_Octopus_Swim_BAT_30FPS": "AnimSequence"
+  },
+  "relationships": {
+    "meshSkeleton": "SK_Octopus_Skeleton",
+    "animationSkeleton": "SK_Octopus_Skeleton",
+    "sequenceLength": 1.3666667
+  },
+  "textureProfiles": {
+    "T_Octopus_BaseColor": {"sRGB": true},
+    "T_Octopus_Normal": {"sRGB": false, "flipGreenChannel": true}
+  },
+  "focusMode": "asset",
+  "save": {"savedCount": 9, "errors": []}
+}
+```
+
+Included project artifacts:
+
+- `Examples/BATExampleProject/Content/BAT_CodexExamples/Octopus/` contains the
+  skeletal mesh, skeleton, physics asset, three materials, two textures, and
+  the BAT-authored animation.
+- `Examples/BATExampleProject/SourceArt/AnimatedOctopus/` contains the glTF
+  source package, base-color and normal textures, and the source manifest.
+- `Docs/Videos/CodexExecutedExamples/08-animated-octopus.mp4` records the live
+  animation result in Unreal Editor.
+
 ## Observed Boundaries and Corrections
 
 - `components_apply` supports `SplineComponent`, `InstancedStaticMeshComponent`,
@@ -416,6 +510,12 @@ prompt run:
   "packageValidation": {
     "packagesConsidered": 4,
     "packagesLoadedAndResaved": 4,
+    "errors": 0
+  },
+  "octopusPackageValidation": {
+    "engine": "5.5.4-0+UE5",
+    "packagesConsidered": 9,
+    "packagesLoadedAndResaved": 9,
     "errors": 0
   },
   "mapCheck": {
