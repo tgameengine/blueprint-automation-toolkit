@@ -31,7 +31,8 @@ preserving its editor-only, localhost-only security model.
 - Focused Blueprint automation tests passed on UE 5.5.
 - Focused OpenAPI contract tests passed on UE 5.5.
 
-The downloadable archives are source-only Fab packages. They include the
-plugin descriptor, source, configuration, content, documentation, resources,
-and license, and exclude generated `Binaries`, `Intermediate`, `Build`, and
-`Saved` directories.
+The Fab archives are engine-specific precompiled Win64 packages. Each archive
+includes an `EngineVersion` value matching its supported Unreal Engine release,
+sets `Installed` to `true`, and contains the corresponding editor binaries,
+source, configuration, content, documentation, resources, and license.
+Generated `Intermediate`, `Build`, and `Saved` directories are excluded.

@@ -7,8 +7,9 @@
 - [x] `CreatedByURL`, `DocsURL`, `SupportURL` populated
 - [x] Required engine plugins disclosed: PCG, GeometryProcessing, GeometryScripting
 - [x] Plugin Browser icon included as `Resources/Icon128.png` (128x128 PNG)
-- [x] Final source-only package contains `.uplugin`, `Source`, `Config`, `Content`, `Docs`, and `Resources`
-- [x] Final submission package excludes generated `Binaries` and `Intermediate` folders
+- [x] Every engine-specific package contains `.uplugin`, precompiled `Binaries`, `Source`, `Config`, `Content`, `Docs`, and `Resources`
+- [x] Every packaged descriptor sets `EngineVersion` to the matching `5.x.0` value and `Installed` to `true`
+- [x] Final submission packages exclude generated `Intermediate`, `Build`, and `Saved` folders
 - [x] Every module declares `PlatformAllowList: Win64`
 - [x] Every `.h` and `.cpp` file starts with the AkaSoft 2026 copyright notice
 - [x] Plugin builds clean against UE 5.5, 5.6, 5.7, and 5.8 (Win64 Development Editor)
