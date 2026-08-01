@@ -44,8 +44,8 @@ These are Unreal Engine plugins and are enabled automatically through
 third-party DLL, separate service, package manager, or internet connection.
 The HTTP server runs inside Unreal Editor and accepts loopback connections only.
 
-The plugin also uses Unreal Engine's built-in editor, Blueprint, geometry,
-HTTP/JSON, Slate, asset, and material modules. Source installations require a
+The plugin also uses Unreal Engine's built-in editor, Blueprint, UMG/UMGEditor,
+geometry, HTTP/JSON, Slate, asset, and material modules. Source installations require a
 C++ toolchain supported by the target Unreal Engine version. Fab builds include
 compiled Win64 editor binaries for Unreal Engine 5.5, 5.6, 5.7, and 5.8.
 
@@ -94,6 +94,10 @@ Preferred endpoints:
 - `POST /blueprint/graph/apply`
 - `GET /blueprint/graph/read`
 - `POST /blueprint/compile_save`
+- `GET /umg/schema`
+- `POST /umg/create`
+- `POST /umg/designer/read`
+- `POST /umg/designer/apply`
 - `POST /material/texture_samples/set`
 - `POST /actor/spawn`
 - `POST /actor/destroy`
@@ -956,6 +960,106 @@ Response:
 ```json
 { "ok": true, "pie": false }
 ```
+
+### Native UMG Designer automation (no Python)
+
+BAT can create and lay out Widget Blueprints entirely through native Unreal C++:
+
+- `GET /umg/schema` discovers the allowlisted widget and slot contract.
+- `POST /umg/create` creates a `UWidgetBlueprint` under `/Game`.
+- `POST /umg/designer/read` returns the current Designer hierarchy.
+- `POST /umg/designer/apply` replaces the Designer root with a validated declarative tree.
+
+The apply route supports Canvas anchors and offsets, Box fill rules, padding and
+alignment, Grid placement, overlays, scrolling, safe zones, common controls,
+editable UMG style/property structs, compile diagnostics, and save-after-success.
+It rejects duplicate names, unknown widget types, non-editable fields, invalid
+child containment, excessive depth, and more than 500 widgets. If compilation
+or saving fails, the previous Designer root is restored.
+
+Create the Widget Blueprint:
+
+```json
+{
+  "path": "/Game/UI",
+  "name": "WBP_ProfessionalDashboard",
+  "parent": "/Script/UMG.UserWidget",
+  "save": true
+}
+```
+
+Apply a responsive Designer hierarchy:
+
+```json
+{
+  "blueprint": "/Game/UI/WBP_ProfessionalDashboard",
+  "root": {
+    "type": "CanvasPanel",
+    "name": "RootCanvas",
+    "children": [
+      {
+        "type": "Border",
+        "name": "PageSurface",
+        "properties": {
+          "padding": { "left": 32, "top": 24, "right": 32, "bottom": 24 },
+          "brush_color": { "r": 0.025, "g": 0.035, "b": 0.055, "a": 1 }
+        },
+        "slot": {
+          "anchors": { "min": [0, 0], "max": [1, 1] },
+          "offsets": [24, 24, -24, -24]
+        },
+        "children": [
+          {
+            "type": "VerticalBox",
+            "name": "ContentColumn",
+            "children": [
+              {
+                "type": "TextBlock",
+                "name": "Title",
+                "properties": {
+                  "text": "OPERATIONS DASHBOARD",
+                  "font": { "size": 30 },
+                  "auto_wrap_text": true,
+                  "is_variable": true
+                },
+                "slot": {
+                  "padding": [0, 0, 0, 16],
+                  "horizontal_alignment": "fill",
+                  "size_rule": "auto"
+                }
+              },
+              {
+                "type": "Overlay",
+                "name": "DashboardBody",
+                "slot": { "size_rule": "fill", "fill_value": 1 },
+                "children": [
+                  {
+                    "type": "ProgressBar",
+                    "name": "OverallProgress",
+                    "properties": { "percent": 0.72 },
+                    "slot": {
+                      "horizontal_alignment": "fill",
+                      "vertical_alignment": "bottom",
+                      "padding": [0, 16, 0, 0]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "compile": true,
+  "save": true
+}
+```
+
+Property names use snake-case aliases of properties Unreal exposes as editable
+on each allowlisted UMG class. Call `/umg/schema` before authoring and
+`/umg/designer/read` after applying to verify the normalized hierarchy. These
+routes never require or enable BAT's Python execution permission.
 
 ### Blueprint endpoints (Editor asset automation)
 

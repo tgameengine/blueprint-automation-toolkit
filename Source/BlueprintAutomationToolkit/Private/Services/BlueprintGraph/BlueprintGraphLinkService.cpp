@@ -95,14 +95,60 @@ void FBlueprintGraphLinkService::ApplyLinks(UEdGraph* Graph, const TArray<FBluep
 		{
 			continue;
 		}
+		if (FromPin->LinkedTo.Contains(ToPin) && ToPin->LinkedTo.Contains(FromPin))
+		{
+			continue;
+		}
 
 		const bool bLinked = Schema ? Schema->TryCreateConnection(FromPin, ToPin) : false;
 		if (!bLinked)
 		{
-			InOutResult.Warnings.Add(FString::Printf(TEXT("link_failed:%s->%s"), *LinkSpec.From, *LinkSpec.To));
+			InOutResult.Errors.AddUnique(FString::Printf(TEXT("link_failed:%s->%s"), *LinkSpec.From, *LinkSpec.To));
 			continue;
 		}
 
 		++InOutResult.CreatedLinks;
+	}
+}
+
+void FBlueprintGraphLinkService::ValidateRequestedLinks(UEdGraph* Graph, const TArray<FBlueprintGraphApplyLinkSpec>& LinkSpecs, const TMap<FString, UEdGraphNode*>& NodeById, const FString& ValidationStage, FBlueprintGraphApplyResult& InOutResult)
+{
+	if (!Graph)
+	{
+		return;
+	}
+
+	for (const FBlueprintGraphApplyLinkSpec& LinkSpec : LinkSpecs)
+	{
+		FString FromNodeId;
+		FString FromPinName;
+		FString ToNodeId;
+		FString ToPinName;
+		if (!TrySplitPinAddress(LinkSpec.From, FromNodeId, FromPinName) || !TrySplitPinAddress(LinkSpec.To, ToNodeId, ToPinName))
+		{
+			InOutResult.Errors.AddUnique(FString::Printf(TEXT("link_validation_invalid_address:%s:%s->%s"), *ValidationStage, *LinkSpec.From, *LinkSpec.To));
+			continue;
+		}
+
+		UEdGraphNode* FromNode = FBlueprintGraphNodeService::ResolveNodeReferenceInGraph(Graph, NodeById, FromNodeId);
+		UEdGraphNode* ToNode = FBlueprintGraphNodeService::ResolveNodeReferenceInGraph(Graph, NodeById, ToNodeId);
+		if (!FromNode || !ToNode)
+		{
+			InOutResult.Errors.AddUnique(FString::Printf(TEXT("link_validation_node_not_found:%s:%s->%s"), *ValidationStage, *LinkSpec.From, *LinkSpec.To));
+			continue;
+		}
+
+		UEdGraphPin* FromPin = FBlueprintGraphNodeService::FindPinSmart(FromNode, FromPinName);
+		UEdGraphPin* ToPin = FBlueprintGraphNodeService::FindPinSmart(ToNode, ToPinName);
+		if (!FromPin || !ToPin)
+		{
+			InOutResult.Errors.AddUnique(FString::Printf(TEXT("link_validation_pin_not_found:%s:%s->%s"), *ValidationStage, *LinkSpec.From, *LinkSpec.To));
+			continue;
+		}
+
+		if (!FromPin->LinkedTo.Contains(ToPin) || !ToPin->LinkedTo.Contains(FromPin))
+		{
+			InOutResult.Errors.AddUnique(FString::Printf(TEXT("link_not_persisted:%s:%s->%s"), *ValidationStage, *LinkSpec.From, *LinkSpec.To));
+		}
 	}
 }

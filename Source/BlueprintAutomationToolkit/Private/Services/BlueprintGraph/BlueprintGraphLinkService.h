@@ -13,4 +13,5 @@ class FBlueprintGraphLinkService
 {
 public:
 	static void ApplyLinks(UEdGraph* Graph, const TArray<FBlueprintGraphApplyLinkSpec>& LinkSpecs, const TMap<FString, UEdGraphNode*>& NodeById, bool bDryRun, FBlueprintGraphApplyResult& InOutResult);
+	static void ValidateRequestedLinks(UEdGraph* Graph, const TArray<FBlueprintGraphApplyLinkSpec>& LinkSpecs, const TMap<FString, UEdGraphNode*>& NodeById, const FString& ValidationStage, FBlueprintGraphApplyResult& InOutResult);
 };

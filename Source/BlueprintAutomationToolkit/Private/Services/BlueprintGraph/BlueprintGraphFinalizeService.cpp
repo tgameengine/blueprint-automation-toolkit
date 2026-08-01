@@ -8,9 +8,10 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "Services/BlueprintCompileDiagnosticsService.h"
+#include "Services/BlueprintGraph/BlueprintGraphLinkService.h"
 #include "Services/BlueprintGraphService.h"
 
-void FBlueprintGraphFinalizeService::Finalize(UBlueprint* Blueprint, const FBlueprintGraphApplyOptions& Options, FBlueprintGraphApplyResult& InOutResult)
+void FBlueprintGraphFinalizeService::Finalize(UBlueprint* Blueprint, UEdGraph* Graph, const TArray<FBlueprintGraphApplyLinkSpec>& LinkSpecs, const TMap<FString, UEdGraphNode*>& NodeById, const FBlueprintGraphApplyOptions& Options, FBlueprintGraphApplyResult& InOutResult)
 {
 	if (!Blueprint)
 	{
@@ -35,11 +36,14 @@ void FBlueprintGraphFinalizeService::Finalize(UBlueprint* Blueprint, const FBlue
 	{
 		InOutResult.CompileStatus = TEXT("not_requested");
 	}
+
+	FBlueprintGraphLinkService::ValidateRequestedLinks(Graph, LinkSpecs, NodeById, TEXT("post_compile"), InOutResult);
+
 	if (Options.bSave)
 	{
-		if (InOutResult.CompileErrorCount > 0)
+		if (InOutResult.Errors.Num() > 0 || InOutResult.CompileErrorCount > 0)
 		{
-			InOutResult.SaveStatus = TEXT("skipped_compile_failed");
+			InOutResult.SaveStatus = TEXT("skipped_validation_failed");
 		}
 		else
 		{

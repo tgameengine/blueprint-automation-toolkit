@@ -17,12 +17,14 @@
 #include "Misc/Paths.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
 #include "Services/BlueprintGraph/BlueprintGraphLayoutService.h"
+#include "Services/BlueprintGraph/BlueprintGraphLinkService.h"
 #include "Services/BlueprintGraph/BlueprintGraphNodeService.h"
 #include "Services/BlueprintGraphService.h"
 #include "Services/BlueprintGraph/BlueprintGraphValidationService.h"
 #include "Http/HttpRequestUtils.h"
 #include "Services/AssetService.h"
 #include "Services/AssetPipelineService.h"
+#include "Services/UMGDesignerService.h"
 #include "Transport/RequestParsing.h"
 #include "Services/Reflection/ReflectionFunctionService.h"
 #include "Services/Reflection/ReflectionObjectResolver.h"
@@ -34,6 +36,12 @@
 
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/EngineTypes.h"
@@ -51,12 +59,17 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "ObjectTools.h"
 #include "UObject/UObjectGlobals.h"
+#include "WidgetBlueprint.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiSpecExistsTest, "BlueprintAutomationToolkit.OpenApi.SpecExists", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasJobsAndLogsTest, "BlueprintAutomationToolkit.OpenApi.HasJobsAndLogsPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasEngineDiscoverPathTest, "BlueprintAutomationToolkit.OpenApi.HasEngineDiscoverPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintPlanPathsTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintPlanPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintSchemaPathTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintSchemaPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasNativeUMGDesignerPathsTest, "BlueprintAutomationToolkit.OpenApi.HasNativeUMGDesignerPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATUMGDesignerPermissionMapTest, "BlueprintAutomationToolkit.UMG.PermissionMap", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATUMGDesignerSchemaDoesNotRequirePythonTest, "BlueprintAutomationToolkit.UMG.SchemaDoesNotRequirePython", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATUMGDesignerAppliesNativeTreeTest, "BlueprintAutomationToolkit.UMG.AppliesNativeTree", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATExecPythonRequiresPythonPermissionTest, "BlueprintAutomationToolkit.Security.ExecPythonRequiresPythonPermission", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversPieAliasesTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversPieAliases", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATPermissionMapCoversBlueprintCompileSaveTest, "BlueprintAutomationToolkit.Security.PermissionMapCoversBlueprintCompileSave", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -99,6 +112,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutAutoArrangesCreatedNode
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutCentersFanInNodeTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutCentersFanInNode", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphLayoutPreservesFeederLanesTest, "BlueprintAutomationToolkit.Blueprint.GraphLayoutPreservesFeederLanes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphApplyResultIncludesNodeValidationTest, "BlueprintAutomationToolkit.Blueprint.GraphApplyResultIncludesNodeValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATBlueprintGraphRequestedLinkValidationTest, "BlueprintAutomationToolkit.Blueprint.RequestedLinkValidation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATSplineMeshComponentPatchTest, "BlueprintAutomationToolkit.Blueprint.SplineMeshComponentPatch", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATCanceledJobRemainsCanceledTest, "BlueprintAutomationToolkit.Jobs.CanceledJobRemainsCanceled", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATReflectionResolveObjectByPathTest, "BlueprintAutomationToolkit.Reflection.ResolveObjectByPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -332,6 +346,181 @@ bool FBATOpenApiHasBlueprintSchemaPathTest::RunTest(const FString& Parameters)
 	}
 
 	TestTrue(TEXT("OpenAPI contains /blueprint/schema"), Spec.Contains(TEXT("/blueprint/schema:"), ESearchCase::CaseSensitive));
+	return true;
+}
+
+bool FBATOpenApiHasNativeUMGDesignerPathsTest::RunTest(const FString& Parameters)
+{
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!Plugin.IsValid())
+	{
+		AddError(TEXT("Plugin not found"));
+		return false;
+	}
+
+	FString Spec;
+	if (!FFileHelper::LoadFileToString(Spec, *FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"))))
+	{
+		AddError(TEXT("Failed to read openapi.yaml"));
+		return false;
+	}
+
+	TestTrue(TEXT("OpenAPI contains /umg/schema"), Spec.Contains(TEXT("/umg/schema:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /umg/create"), Spec.Contains(TEXT("/umg/create:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /umg/designer/read"), Spec.Contains(TEXT("/umg/designer/read:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /umg/designer/apply"), Spec.Contains(TEXT("/umg/designer/apply:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI documents recursive UMGWidgetSpec"), Spec.Contains(TEXT("UMGWidgetSpec:"), ESearchCase::CaseSensitive));
+	return true;
+}
+
+bool FBATUMGDesignerPermissionMapTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const uint32 BlueprintMask = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Blueprint);
+	const uint32 FilesystemMask = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
+
+	TestEqual(TEXT("UMG schema requires Blueprint permission"), Module.Test_GetRouteRequiredPermissions(TEXT("/umg/schema")), BlueprintMask);
+	TestEqual(TEXT("UMG read requires Blueprint permission"), Module.Test_GetRouteRequiredPermissions(TEXT("/umg/designer/read")), BlueprintMask);
+	TestEqual(TEXT("UMG create requires Blueprint and Filesystem permissions"), Module.Test_GetRouteRequiredPermissions(TEXT("/umg/create")), BlueprintMask | FilesystemMask);
+	TestEqual(TEXT("UMG apply requires Blueprint and Filesystem permissions"), Module.Test_GetRouteRequiredPermissions(TEXT("/umg/designer/apply")), BlueprintMask | FilesystemMask);
+	return true;
+}
+
+bool FBATUMGDesignerSchemaDoesNotRequirePythonTest::RunTest(const FString& Parameters)
+{
+	const FAutomationResult Result = FUMGDesignerService().DescribeSchema();
+	const TSharedPtr<FJsonObject> Data = GetStructuredRoot(Result);
+	if (!TestTrue(TEXT("Native UMG schema succeeds"), Result.bSuccess) || !TestTrue(TEXT("Native UMG schema returns an object"), Data.IsValid()))
+	{
+		return false;
+	}
+
+	bool bRequiresPython = true;
+	TestTrue(TEXT("Schema contains requires_python"), Data->TryGetBoolField(TEXT("requires_python"), bRequiresPython));
+	TestFalse(TEXT("Native UMG Designer does not require Python"), bRequiresPython);
+	const TArray<TSharedPtr<FJsonValue>>* Types = nullptr;
+	TestTrue(TEXT("Schema lists native widget types"), Data->TryGetArrayField(TEXT("widget_types"), Types) && Types && Types->Num() >= 20);
+	return true;
+}
+
+bool FBATUMGDesignerAppliesNativeTreeTest::RunTest(const FString& Parameters)
+{
+	UWidgetBlueprint* Blueprint = NewObject<UWidgetBlueprint>(GetTransientPackage(), NAME_None, RF_Transient);
+	Blueprint->WidgetTree = NewObject<UWidgetTree>(Blueprint, TEXT("WidgetTree"), RF_Transactional);
+
+	TSharedRef<FJsonObject> TextProperties = MakeShared<FJsonObject>();
+	TextProperties->SetStringField(TEXT("text"), TEXT("BAT Native UMG"));
+	TextProperties->SetBoolField(TEXT("enabled"), false);
+	TextProperties->SetArrayField(TEXT("color_and_opacity"), {
+		MakeShared<FJsonValueNumber>(0.1), MakeShared<FJsonValueNumber>(0.8),
+		MakeShared<FJsonValueNumber>(1.0), MakeShared<FJsonValueNumber>(1.0),
+	});
+	TSharedRef<FJsonObject> TextSlot = MakeShared<FJsonObject>();
+	TextSlot->SetArrayField(TEXT("padding"), {
+		MakeShared<FJsonValueNumber>(4), MakeShared<FJsonValueNumber>(8),
+		MakeShared<FJsonValueNumber>(12), MakeShared<FJsonValueNumber>(16),
+	});
+	TextSlot->SetStringField(TEXT("size_rule"), TEXT("fill"));
+	TextSlot->SetNumberField(TEXT("fill_value"), 2.0);
+
+	TSharedRef<FJsonObject> TextSpec = MakeShared<FJsonObject>();
+	TextSpec->SetStringField(TEXT("type"), TEXT("TextBlock"));
+	TextSpec->SetStringField(TEXT("name"), TEXT("Title"));
+	TextSpec->SetObjectField(TEXT("properties"), TextProperties);
+	TextSpec->SetObjectField(TEXT("slot"), TextSlot);
+
+	TSharedRef<FJsonObject> ColumnSpec = MakeShared<FJsonObject>();
+	ColumnSpec->SetStringField(TEXT("type"), TEXT("VerticalBox"));
+	ColumnSpec->SetStringField(TEXT("name"), TEXT("ContentColumn"));
+	ColumnSpec->SetArrayField(TEXT("children"), {MakeShared<FJsonValueObject>(TextSpec)});
+	TSharedRef<FJsonObject> ColumnSlot = MakeShared<FJsonObject>();
+	TSharedRef<FJsonObject> Anchors = MakeShared<FJsonObject>();
+	Anchors->SetArrayField(TEXT("min"), {MakeShared<FJsonValueNumber>(0), MakeShared<FJsonValueNumber>(0)});
+	Anchors->SetArrayField(TEXT("max"), {MakeShared<FJsonValueNumber>(1), MakeShared<FJsonValueNumber>(1)});
+	ColumnSlot->SetObjectField(TEXT("anchors"), Anchors);
+	ColumnSlot->SetArrayField(TEXT("offsets"), {
+		MakeShared<FJsonValueNumber>(24), MakeShared<FJsonValueNumber>(24),
+		MakeShared<FJsonValueNumber>(-24), MakeShared<FJsonValueNumber>(-24),
+	});
+	ColumnSpec->SetObjectField(TEXT("slot"), ColumnSlot);
+
+	TSharedRef<FJsonObject> RootSpec = MakeShared<FJsonObject>();
+	RootSpec->SetStringField(TEXT("type"), TEXT("CanvasPanel"));
+	RootSpec->SetStringField(TEXT("name"), TEXT("RootCanvas"));
+	RootSpec->SetArrayField(TEXT("children"), {MakeShared<FJsonValueObject>(ColumnSpec)});
+
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetObjectField(TEXT("root"), RootSpec);
+	Request->SetBoolField(TEXT("compile"), false);
+	Request->SetBoolField(TEXT("save"), false);
+
+	const FAutomationResult Result = FUMGDesignerService().ApplyDesignerToBlueprint(Blueprint, Request);
+	if (!TestTrue(TEXT("Native UMG tree applies successfully"), Result.bSuccess))
+	{
+		AddError(Result.ErrorCode + TEXT(": ") + Result.ErrorMessage);
+		return false;
+	}
+
+	UCanvasPanel* Canvas = Cast<UCanvasPanel>(Blueprint->WidgetTree->RootWidget);
+	if (!TestNotNull(TEXT("Root is a CanvasPanel"), Canvas))
+	{
+		return false;
+	}
+	UVerticalBox* Column = Cast<UVerticalBox>(Canvas->GetChildAt(0));
+	UTextBlock* Title = Column ? Cast<UTextBlock>(Column->GetChildAt(0)) : nullptr;
+	TestNotNull(TEXT("Nested VerticalBox exists"), Column);
+	TestNotNull(TEXT("Nested TextBlock exists"), Title);
+	if (Title)
+	{
+		TestEqual(TEXT("Text property was applied natively"), Title->GetText().ToString(), FString(TEXT("BAT Native UMG")));
+		TestFalse(TEXT("enabled alias was applied"), Title->GetIsEnabled());
+		if (const UVerticalBoxSlot* TitleSlot = Cast<UVerticalBoxSlot>(Title->Slot))
+		{
+			TestEqual(TEXT("Vertical slot fill value was applied"), TitleSlot->GetSize().Value, 2.0f);
+			TestEqual(TEXT("Vertical slot padding left was applied"), TitleSlot->GetPadding().Left, 4.0f);
+		}
+		else
+		{
+			AddError(TEXT("TextBlock does not have a VerticalBoxSlot"));
+		}
+	}
+	TestTrue(TEXT("Canvas child has a CanvasPanelSlot"), Column && Cast<UCanvasPanelSlot>(Column->Slot) != nullptr);
+
+	const TSharedPtr<FJsonObject> ResponseData = GetStructuredRoot(Result);
+	bool bPythonUsed = true;
+	TestTrue(TEXT("Apply response reports python_used"), ResponseData.IsValid() && ResponseData->TryGetBoolField(TEXT("python_used"), bPythonUsed));
+	TestFalse(TEXT("Apply response confirms Python was not used"), bPythonUsed);
+	const TSharedPtr<FJsonObject>* SerializedRoot = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* SerializedRootChildren = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* SerializedColumnChildren = nullptr;
+	const TSharedPtr<FJsonObject>* SerializedTitleSlot = nullptr;
+	const bool bHasSerializedSlot = ResponseData.IsValid()
+		&& ResponseData->TryGetObjectField(TEXT("root"), SerializedRoot) && SerializedRoot && SerializedRoot->IsValid()
+		&& (*SerializedRoot)->TryGetArrayField(TEXT("children"), SerializedRootChildren) && SerializedRootChildren && SerializedRootChildren->Num() == 1
+		&& (*SerializedRootChildren)[0]->AsObject()->TryGetArrayField(TEXT("children"), SerializedColumnChildren) && SerializedColumnChildren && SerializedColumnChildren->Num() == 1
+		&& (*SerializedColumnChildren)[0]->AsObject()->TryGetObjectField(TEXT("slot"), SerializedTitleSlot) && SerializedTitleSlot && SerializedTitleSlot->IsValid();
+	TestTrue(TEXT("Apply response serializes nested slot configuration"), bHasSerializedSlot);
+	if (bHasSerializedSlot)
+	{
+		FString SerializedSizeRule;
+		TestTrue(TEXT("Apply response includes normalized padding"), (*SerializedTitleSlot)->HasTypedField<EJson::Array>(TEXT("padding")));
+		TestTrue(TEXT("Apply response includes normalized size_rule"), (*SerializedTitleSlot)->TryGetStringField(TEXT("size_rule"), SerializedSizeRule));
+		TestEqual(TEXT("Apply response preserves fill size_rule"), SerializedSizeRule, FString(TEXT("fill")));
+	}
+
+	const UWidgetTree* FirstAppliedTree = Blueprint->WidgetTree;
+	const FAutomationResult SecondResult = FUMGDesignerService().ApplyDesignerToBlueprint(Blueprint, Request);
+	if (!TestTrue(TEXT("The same native UMG layout can be applied repeatedly"), SecondResult.bSuccess))
+	{
+		AddError(SecondResult.ErrorCode + TEXT(": ") + SecondResult.ErrorMessage);
+		return false;
+	}
+	TestTrue(TEXT("Repeated apply swaps the complete WidgetTree atomically"), Blueprint->WidgetTree != FirstAppliedTree);
+	UCanvasPanel* ReappliedCanvas = Cast<UCanvasPanel>(Blueprint->WidgetTree->RootWidget);
+	UVerticalBox* ReappliedColumn = ReappliedCanvas ? Cast<UVerticalBox>(ReappliedCanvas->GetChildAt(0)) : nullptr;
+	UTextBlock* ReappliedTitle = ReappliedColumn ? Cast<UTextBlock>(ReappliedColumn->GetChildAt(0)) : nullptr;
+	TestTrue(TEXT("Repeated apply preserves the exact root name"), ReappliedCanvas && ReappliedCanvas->GetFName() == TEXT("RootCanvas"));
+	TestTrue(TEXT("Repeated apply preserves the exact nested widget name"), ReappliedTitle && ReappliedTitle->GetFName() == TEXT("Title"));
 	return true;
 }
 
@@ -1290,6 +1479,47 @@ bool FBATBlueprintGraphApplyResultIncludesNodeValidationTest::RunTest(const FStr
 	TestTrue(TEXT("Node validation issue includes code"), IssueObj->TryGetStringField(TEXT("code"), Code));
 	TestEqual(TEXT("Node validation issue preserves nodeId"), NodeId, FString(TEXT("bat_pose_node")));
 	return TestEqual(TEXT("Node validation issue preserves code"), Code, FString(TEXT("modify_bone_missing_bone")));
+}
+
+bool FBATBlueprintGraphRequestedLinkValidationTest::RunTest(const FString& Parameters)
+{
+	UEdGraph* Graph = NewObject<UEdGraph>(GetTransientPackage(), NAME_None, RF_Transient);
+	if (!TestNotNull(TEXT("Transient graph should be created for requested-link validation"), Graph))
+	{
+		return false;
+	}
+
+	UEdGraphNode* GetterNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(GetterNode, false, false);
+	FBlueprintGraphNodeService::SetNodeUasId(GetterNode, TEXT("widget_getter"));
+	UEdGraphPin* GetterOutput = GetterNode->CreatePin(EGPD_Output, TEXT("object"), FName(TEXT("CfgWidget")));
+
+	UEdGraphNode* CallNode = NewObject<UEdGraphNode>(Graph, NAME_None, RF_Transient);
+	Graph->AddNode(CallNode, false, false);
+	FBlueprintGraphNodeService::SetNodeUasId(CallNode, TEXT("widget_call"));
+	UEdGraphPin* TargetInput = CallNode->CreatePin(EGPD_Input, TEXT("object"), FName(TEXT("self")), FName(TEXT("Target")));
+
+	if (!TestNotNull(TEXT("Getter output pin should exist"), GetterOutput) || !TestNotNull(TEXT("Call target pin should exist"), TargetInput))
+	{
+		return false;
+	}
+
+	FBlueprintGraphApplyLinkSpec RequestedLink;
+	RequestedLink.From = TEXT("widget_getter.CfgWidget");
+	RequestedLink.To = TEXT("widget_call.Target");
+	TArray<FBlueprintGraphApplyLinkSpec> RequestedLinks{ RequestedLink };
+	TMap<FString, UEdGraphNode*> NodeById;
+	NodeById.Add(TEXT("widget_getter"), GetterNode);
+	NodeById.Add(TEXT("widget_call"), CallNode);
+
+	FBlueprintGraphApplyResult MissingResult;
+	FBlueprintGraphLinkService::ValidateRequestedLinks(Graph, RequestedLinks, NodeById, TEXT("post_compile"), MissingResult);
+	TestTrue(TEXT("A requested target link removed during reconstruction must be reported"), MissingResult.Errors.Contains(TEXT("link_not_persisted:post_compile:widget_getter.CfgWidget->widget_call.Target")));
+
+	GetterOutput->MakeLinkTo(TargetInput);
+	FBlueprintGraphApplyResult LinkedResult;
+	FBlueprintGraphLinkService::ValidateRequestedLinks(Graph, RequestedLinks, NodeById, TEXT("post_compile"), LinkedResult);
+	return TestEqual(TEXT("A persisted requested target link should pass validation"), LinkedResult.Errors.Num(), 0);
 }
 
 bool FBATSplineMeshComponentPatchTest::RunTest(const FString& Parameters)

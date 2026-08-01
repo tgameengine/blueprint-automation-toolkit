@@ -1355,6 +1355,101 @@ paths:
       responses:
         '200':
           description: Graph links snapshot
+  /umg/schema:
+    get:
+      summary: Discover the native C++ UMG Designer contract
+      description: Returns the allowlisted widget types, common editable properties, slot fields, tree limits, and confirms that Python is not required.
+      responses:
+        '200':
+          description: Native UMG Designer schema
+  /umg/create:
+    post:
+      summary: Create a Widget Blueprint without Python
+      description: Creates a UWidgetBlueprint with a UUserWidget parent, compiles it, and saves it by default. The asset path must be inside /Game. Returns 409 if the asset already exists and 409 pie_edit_blocked during PIE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, name]
+              properties:
+                path:
+                  type: string
+                  example: /Game/UI
+                name:
+                  type: string
+                  example: WBP_ProfessionalDashboard
+                parent:
+                  type: string
+                  default: /Script/UMG.UserWidget
+                save:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Widget Blueprint created
+        '400':
+          $ref: '#/components/responses/Error400'
+        '409':
+          description: Asset already exists or PIE blocks the edit
+  /umg/designer/read:
+    post:
+      summary: Read a Widget Blueprint Designer hierarchy
+      description: Returns the native widget tree, widget count, class names, common state, child order, and normalized Canvas slot layout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blueprint]
+              properties:
+                blueprint:
+                  type: string
+                  example: /Game/UI/WBP_ProfessionalDashboard
+      responses:
+        '200':
+          description: Designer tree snapshot
+        '404':
+          description: Widget Blueprint not found
+  /umg/designer/apply:
+    post:
+      summary: Atomically apply a professional UMG Designer layout without Python
+      description: |
+        Builds an allowlisted declarative widget tree in native C++, applies editable widget properties and typed panel-slot layout,
+        replaces the Designer root only after the complete tree is valid, compiles with structured diagnostics, and saves only on success.
+        If compilation or save fails, the previous root is restored. Supports responsive Canvas anchors, flow fill rules, padding,
+        alignment, Grid row/column placement, layered overlays, visual styles, typography, form controls, safe zones, and scrolling.
+        Unknown widget types, duplicate names, non-editable properties, invalid child containment, and trees exceeding 500 widgets or
+        depth 32 are rejected. Returns 409 pie_edit_blocked during PIE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blueprint, root]
+              properties:
+                blueprint:
+                  type: string
+                  example: /Game/UI/WBP_ProfessionalDashboard
+                root:
+                  $ref: '#/components/schemas/UMGWidgetSpec'
+                compile:
+                  type: boolean
+                  default: true
+                save:
+                  type: boolean
+                  default: true
+                  description: Saving forces compilation; the asset is never saved after a compile failure.
+      responses:
+        '200':
+          description: Applied Designer tree, normalized snapshot, compileDiagnostics, and save status
+        '400':
+          $ref: '#/components/responses/Error400'
+        '422':
+          description: Invalid tree or compilation failure; previous Designer root remains active
 components:
   securitySchemes:
     bearerAuth:
@@ -1362,6 +1457,93 @@ components:
       scheme: bearer
       bearerFormat: token
   schemas:
+    UMGWidgetSpec:
+      type: object
+      additionalProperties: false
+      required: [type, name]
+      properties:
+        type:
+          type: string
+          description: Short allowlisted type from /umg/schema, for example CanvasPanel, VerticalBox, TextBlock, Image, Button, or SizeBox.
+        name:
+          type: string
+          description: Unique Designer widget name.
+        properties:
+          type: object
+          additionalProperties: true
+          description: Snake_case aliases of editable UMG properties. Delegates, navigation/ownership objects, transient fields, and arbitrary code are rejected.
+        slot:
+          $ref: '#/components/schemas/UMGSlotSpec'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/UMGWidgetSpec'
+    UMGSlotSpec:
+      type: object
+      additionalProperties: true
+      description: Layout properties interpreted according to the parent panel's generated slot class.
+      properties:
+        anchors:
+          type: object
+          required: [min, max]
+          properties:
+            min:
+              $ref: '#/components/schemas/Vector2'
+            max:
+              $ref: '#/components/schemas/Vector2'
+        offsets:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+          description: Canvas left, top, right, bottom offsets. Right/bottom act as width/height when anchors are not stretched.
+        alignment:
+          $ref: '#/components/schemas/Vector2'
+        position:
+          $ref: '#/components/schemas/Vector2'
+        size:
+          $ref: '#/components/schemas/Vector2'
+        auto_size:
+          type: boolean
+        z_order:
+          type: integer
+        padding:
+          oneOf:
+            - type: number
+            - type: array
+              minItems: 2
+              maxItems: 4
+              items:
+                type: number
+        horizontal_alignment:
+          type: string
+          enum: [left, center, right, fill]
+        vertical_alignment:
+          type: string
+          enum: [top, center, bottom, fill]
+        size_rule:
+          type: string
+          enum: [auto, fill]
+        fill_value:
+          type: number
+          minimum: 0
+        row:
+          type: integer
+          minimum: 0
+        column:
+          type: integer
+          minimum: 0
+        row_span:
+          type: integer
+          minimum: 1
+        column_span:
+          type: integer
+          minimum: 1
+        layer:
+          type: integer
+        nudge:
+          $ref: '#/components/schemas/Vector2'
     Vector2:
       oneOf:
         - type: array

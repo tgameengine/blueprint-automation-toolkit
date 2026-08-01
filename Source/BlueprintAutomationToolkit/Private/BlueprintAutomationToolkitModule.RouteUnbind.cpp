@@ -259,6 +259,26 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(BlueprintCompileSaveRoute);
 		BlueprintCompileSaveRoute.Reset();
 	}
+	if (UMGSchemaRoute.IsValid())
+	{
+		Router->UnbindRoute(UMGSchemaRoute);
+		UMGSchemaRoute.Reset();
+	}
+	if (UMGCreateRoute.IsValid())
+	{
+		Router->UnbindRoute(UMGCreateRoute);
+		UMGCreateRoute.Reset();
+	}
+	if (UMGDesignerReadRoute.IsValid())
+	{
+		Router->UnbindRoute(UMGDesignerReadRoute);
+		UMGDesignerReadRoute.Reset();
+	}
+	if (UMGDesignerApplyRoute.IsValid())
+	{
+		Router->UnbindRoute(UMGDesignerApplyRoute);
+		UMGDesignerApplyRoute.Reset();
+	}
 	if (EditorSelectRoute.IsValid())
 	{
 		Router->UnbindRoute(EditorSelectRoute);

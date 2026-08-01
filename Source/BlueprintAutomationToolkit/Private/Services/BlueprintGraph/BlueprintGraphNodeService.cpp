@@ -1085,13 +1085,30 @@ namespace
 
 		if (NodeSpec.Type.Equals(TEXT("K2Node_VariableGet"), ESearchCase::CaseSensitive))
 		{
-			UK2Node_VariableGet* VariableGetNode = NewObject<UK2Node_VariableGet>(Graph);
-			VariableGetNode->VariableReference.SetSelfMember(FName(*NodeSpec.Variable));
-			Graph->AddNode(VariableGetNode, true, false);
-			VariableGetNode->CreateNewGuid();
-			VariableGetNode->PostPlacedNewNode();
-			VariableGetNode->AllocateDefaultPins();
-			VariableGetNode->ReconstructNode();
+			const UEdGraphSchema_K2* Schema = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
+			if (!Schema)
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("schema_not_available:%s"), *NodeSpec.Id));
+				return nullptr;
+			}
+
+			UStruct* VariableSource = Blueprint->SkeletonGeneratedClass ? static_cast<UStruct*>(Blueprint->SkeletonGeneratedClass) : static_cast<UStruct*>(Blueprint->ParentClass);
+			if (!VariableSource || !FindFProperty<FProperty>(VariableSource, FName(*NodeSpec.Variable)))
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_variable_get_not_found:%s:%s"), *NodeSpec.Id, *NodeSpec.Variable));
+				return nullptr;
+			}
+
+			UK2Node_VariableGet* VariableGetNode = Schema->SpawnVariableGetNode(FVector2D((float)NodeSpec.X, (float)NodeSpec.Y), Graph, FName(*NodeSpec.Variable), VariableSource);
+			if (!VariableGetNode || !VariableGetNode->GetPropertyForVariable())
+			{
+				InOutResult.Errors.Add(FString::Printf(TEXT("node_variable_get_spawn_failed:%s:%s"), *NodeSpec.Id, *NodeSpec.Variable));
+				if (VariableGetNode)
+				{
+					Graph->RemoveNode(VariableGetNode);
+				}
+				return nullptr;
+			}
 			return VariableGetNode;
 		}
 
@@ -1467,6 +1484,28 @@ void FBlueprintGraphNodeService::ApplyNodes(UBlueprint* Blueprint, UEdGraph* Gra
 						UStruct* VariableSource = Blueprint->SkeletonGeneratedClass ? static_cast<UStruct*>(Blueprint->SkeletonGeneratedClass) : static_cast<UStruct*>(Blueprint->ParentClass);
 						Schema->ConfigureVarNode(VariableSetNode, FName(*NodeSpec.Variable), VariableSource, Blueprint);
 						VariableSetNode->ReconstructNode();
+					}
+				}
+			}
+
+			if (NodeSpec.Type.Equals(TEXT("K2Node_VariableGet"), ESearchCase::CaseSensitive))
+			{
+				if (UK2Node_VariableGet* VariableGetNode = Cast<UK2Node_VariableGet>(Node))
+				{
+					const UEdGraphSchema_K2* Schema = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
+					UStruct* VariableSource = Blueprint->SkeletonGeneratedClass ? static_cast<UStruct*>(Blueprint->SkeletonGeneratedClass) : static_cast<UStruct*>(Blueprint->ParentClass);
+					if (!Schema || !VariableSource || !FindFProperty<FProperty>(VariableSource, FName(*NodeSpec.Variable)))
+					{
+						InOutResult.Errors.Add(FString::Printf(TEXT("node_variable_get_not_found:%s:%s"), *NodeSpec.Id, *NodeSpec.Variable));
+					}
+					else
+					{
+						Schema->ConfigureVarNode(VariableGetNode, FName(*NodeSpec.Variable), VariableSource, Blueprint);
+						VariableGetNode->ReconstructNode();
+						if (!VariableGetNode->GetPropertyForVariable())
+						{
+							InOutResult.Errors.Add(FString::Printf(TEXT("node_variable_get_unresolved:%s:%s"), *NodeSpec.Id, *NodeSpec.Variable));
+						}
 					}
 				}
 			}

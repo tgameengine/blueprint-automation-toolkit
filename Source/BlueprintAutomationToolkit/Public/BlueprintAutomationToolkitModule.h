@@ -145,6 +145,7 @@ private:
 	void BindBlueprintAssetsRoutes();
 	void BindBlueprintGraphRoutes();
 	void BindBlueprintComponentsRoutes();
+	void BindUMGDesignerRoutes();
 	void BindBlueprintAssetsRoutesInternal();
 	void BindBlueprintGraphRoutesInternal();
 	void RegisterAutomationCommands();
@@ -413,6 +414,10 @@ private:
 	FHttpRouteHandle ActorFindRoute;
 	FHttpRouteHandle BlueprintGraphReadRoute;
 	FHttpRouteHandle BlueprintCompileSaveRoute;
+	FHttpRouteHandle UMGSchemaRoute;
+	FHttpRouteHandle UMGCreateRoute;
+	FHttpRouteHandle UMGDesignerReadRoute;
+	FHttpRouteHandle UMGDesignerApplyRoute;
 	FHttpRouteHandle EditorSelectRoute;
 	FHttpRouteHandle EditorFocusRoute;
 	FHttpRouteHandle AssetDuplicateRoute;

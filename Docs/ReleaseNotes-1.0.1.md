@@ -14,6 +14,11 @@ preserving its editor-only, localhost-only security model.
   including creation, mutation, and component replacement.
 - Added explicit spline mesh start/end positions and tangents, plus local-space
   sampling from an existing `SplineComponent`.
+- Added native C++ UMG Designer automation for creating Widget Blueprints,
+  applying responsive widget hierarchies and slot layouts, compiling, saving,
+  and reading normalized verification snapshots without Python.
+- Added atomic, repeatable UMG layout replacement with exact widget-name
+  preservation, rollback on compile/save failure, and structured diagnostics.
 - Extended schema discovery, OpenAPI documentation, advanced prompt examples,
   and verified Codex workflow evidence.
 
@@ -25,10 +30,10 @@ preserving its editor-only, localhost-only security model.
 
 ## Validation
 
-- UE 5.5, 5.6, and 5.8 BuildPlugin packaging completed successfully.
-- UE 5.7 completed an isolated Development Editor build with the required
-  engine dependencies.
-- Focused Blueprint automation tests passed on UE 5.5.
+- UE 5.5 Development Editor compilation and UE 5.6, 5.7, and 5.8 BuildPlugin
+  packaging completed successfully with the native UMG surface.
+- Focused native UMG automation tests passed on UE 5.5, including repeat apply,
+  exact-name preservation, slot serialization, and Python-free execution.
 - Focused OpenAPI contract tests passed on UE 5.5.
 
 The Fab archives are engine-specific precompiled Win64 packages. Each archive

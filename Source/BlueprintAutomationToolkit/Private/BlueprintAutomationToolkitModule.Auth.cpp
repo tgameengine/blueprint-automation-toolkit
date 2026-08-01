@@ -627,6 +627,8 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("blueprintGraphRead"), true);
 	Capabilities->SetBoolField(TEXT("blueprintGraphApply"), true);
 	Capabilities->SetBoolField(TEXT("compileSaveBlueprint"), true);
+	Capabilities->SetBoolField(TEXT("nativeUmgDesigner"), true);
+	Capabilities->SetBoolField(TEXT("nativeUmgDesignerRequiresPython"), false);
 	Capabilities->SetBoolField(TEXT("saveAsset"), true);
 	Capabilities->SetBoolField(TEXT("assetImport"), true);
 	Capabilities->SetBoolField(TEXT("assetInspect"), true);
@@ -676,6 +678,10 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/read")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/umg/schema")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/umg/create")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/umg/designer/read")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/umg/designer/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/material/texture_samples/set")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/import/formats")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/asset/import")));
@@ -746,6 +752,10 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("readGraph"), TEXT("/blueprint/graph/read"));
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
 	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
+	PreferredRoutes->SetStringField(TEXT("describeUmgSchema"), TEXT("/umg/schema"));
+	PreferredRoutes->SetStringField(TEXT("createWidgetBlueprint"), TEXT("/umg/create"));
+	PreferredRoutes->SetStringField(TEXT("readUmgDesigner"), TEXT("/umg/designer/read"));
+	PreferredRoutes->SetStringField(TEXT("applyUmgDesigner"), TEXT("/umg/designer/apply"));
 	PreferredRoutes->SetStringField(TEXT("setMaterialTextureSamples"), TEXT("/material/texture_samples/set"));
 	PreferredRoutes->SetStringField(TEXT("importAsset"), TEXT("/asset/import"));
 	PreferredRoutes->SetStringField(TEXT("inspectAsset"), TEXT("/asset/inspect"));
@@ -856,6 +866,8 @@ bool FBlueprintAutomationToolkitModule::IsEditorAssetMutationBlockedDuringPie(co
 		|| Endpoint.Equals(TEXT("/blueprint/compile_save"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/remove"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/components/replace"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/umg/create"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/umg/designer/apply"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/blueprint/node/delete"), ESearchCase::CaseSensitive))
 	{
 		return true;
@@ -926,6 +938,16 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 		{
 			return PM2(EBATPermission::Blueprint, EBATPermission::Filesystem);
 		}
+		return PM(EBATPermission::Blueprint);
+	}
+	if (Endpoint.Equals(TEXT("/umg/create"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/umg/designer/apply"), ESearchCase::CaseSensitive))
+	{
+		return PM2(EBATPermission::Blueprint, EBATPermission::Filesystem);
+	}
+	if (Endpoint.Equals(TEXT("/umg/schema"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/umg/designer/read"), ESearchCase::CaseSensitive))
+	{
 		return PM(EBATPermission::Blueprint);
 	}
 	if (Endpoint.Equals(TEXT("/object/resolve"), ESearchCase::CaseSensitive)

@@ -54,6 +54,8 @@ public class BlueprintAutomationToolkit : ModuleRules
 			"Slate",
 			"SlateCore",
 			"ToolMenus",
+			"UMG",
+			"UMGEditor",
 			"UnrealEd",
 		});
 

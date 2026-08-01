@@ -86,6 +86,10 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 	FBlueprintGraphLinkService::ApplyLinks(Target.Graph, Request.Links, NodeById, Request.Options.bDryRun, ApplyResult);
 	if (bWillMutate)
 	{
+		FBlueprintGraphLinkService::ValidateRequestedLinks(Target.Graph, Request.Links, NodeById, TEXT("post_apply"), ApplyResult);
+	}
+	if (bWillMutate)
+	{
 		TSet<FString> NodeIdsToArrange = CreatedNodeIds;
 		if (Request.Options.bAutoArrangeExistingNodes)
 		{
@@ -105,7 +109,7 @@ FAutomationResult FBlueprintGraphService::ApplyGraphPatch(const FBlueprintGraphA
 	}
 	if (bWillMutate)
 	{
-		FBlueprintGraphFinalizeService::Finalize(Target.Blueprint, Request.Options, ApplyResult);
+		FBlueprintGraphFinalizeService::Finalize(Target.Blueprint, Target.Graph, Request.Links, NodeById, Request.Options, ApplyResult);
 	}
 
 	ApplyResult.bOk = ApplyResult.Errors.Num() == 0 && ApplyResult.CompileErrors.Num() == 0;

@@ -387,6 +387,26 @@ Acceptance evidence:
 - No hidden or unsupported property is changed.
 - The resulting asset resolves and validates.
 
+## 19. Build a Production UMG Dashboard Without Python
+
+> Work through Blueprint Automation Toolkit's native UMG Designer routes only; do not enable or execute Python. Call `/umg/schema`, then create `/Game/UI/WBP_OperationsDashboard` if it does not exist. Build a responsive full-screen Canvas root containing a safe-area page surface, a top header, a fill-sized scrollable content region, a two-column status grid, and a bottom action bar. Use consistent 24-unit outer spacing, 16-unit section spacing, accessible contrast, 30-point title text, 18-point section headings, wrapped body text, named variable widgets for every interactive control, and Canvas anchors that behave correctly from 1280x720 through ultrawide resolutions. Include health and deployment progress bars, a searchable editable text field, a filter checkbox, and primary/secondary action buttons. Compile and save only if every name is unique, the normalized Designer tree contains the requested hierarchy, all single-child panels have exactly one child, every Canvas child has explicit anchors and offsets, and compiler diagnostics contain zero errors. Read the Designer tree after applying and return widget count, hierarchy, slot configuration, compile diagnostics, save status, and confirmation that `python_used` is false.
+
+Expected BAT flow:
+
+- `GET /umg/schema`
+- `POST /umg/create` when the asset does not already exist
+- `POST /umg/designer/read` for the baseline
+- `POST /umg/designer/apply`
+- `POST /umg/designer/read` for post-apply verification
+
+Acceptance criteria:
+
+- The root is a responsive `CanvasPanel`; the main surface is protected by a `SafeZone`.
+- Layout uses panel slots, anchors, fill rules, alignment, and padding rather than hard-coded viewport assumptions.
+- Interactive widgets have stable unique names and `is_variable: true`.
+- The native service reports `python_used: false` and no Python permission is required.
+- A compile or save failure restores the previous Designer root.
+
 ## Prompt Design Pattern
 
 Complex BAT prompts are most reliable when they contain five explicit parts:

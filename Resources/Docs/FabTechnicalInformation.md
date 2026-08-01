@@ -4,6 +4,9 @@
 
 - Typed localhost HTTP API for Unreal Editor automation
 - Blueprint graph inspection, editing, compilation, and saving
+- Native C++ UMG Widget Blueprint creation and professional Designer hierarchy,
+  property, responsive anchor, padding, alignment, Box/Grid/Overlay slot,
+  compile, rollback, and save automation without Python
 - Spline, ISM/HISM, and Spline Mesh Blueprint component authoring, including
   endpoint/tangent deformation and local-space sampling from a source spline
 - Reflected UObject property inspection and mutation
@@ -52,6 +55,8 @@
 
 - Requires the built-in `PCG`, `GeometryProcessing`, and `GeometryScripting`
   plugins.
+- Uses Unreal Engine's built-in `UMG` and editor-only `UMGEditor` modules; no
+  additional UMG plugin or external UI tool is required.
 - Requires Unreal Engine 5.5, 5.6, 5.7, or 5.8 on Windows.
 - No third-party software, external SDK, external DLL, package manager,
   subscription, telemetry, or required cloud service.
