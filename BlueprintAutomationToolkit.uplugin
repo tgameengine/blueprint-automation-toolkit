@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 2,
-  "VersionName": "1.0.1",
+  "Version": 3,
+  "VersionName": "1.0.2",
   "FriendlyName": "Blueprint Automation Toolkit",
   "Description": "Editor-only localhost automation bridge for AI agents to import, inspect, repair, validate, and showcase assets and control Blueprints through a typed HTTP API.",
   "Category": "Developer",
