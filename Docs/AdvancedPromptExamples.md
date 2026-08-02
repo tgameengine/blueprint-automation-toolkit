@@ -248,9 +248,9 @@ Acceptance evidence:
 - The resulting asset reports the expected tracks and keys.
 - No partial asset remains after a failed validation.
 
-## 12. Run a Bounded PIE Smoke Test
+## 12. Run a Bounded, Recorded PIE Smoke Test
 
-> Run a bounded Play in Editor smoke test for the currently open map. Confirm PIE permission first. Start PIE, wait only for the documented ready state, resolve the test actor labeled `BAT_SMOKE_TARGET`, and read a small set of discovered runtime-safe properties. Do not attempt arbitrary UI input or claim deterministic gameplay behavior. Stop PIE in a guaranteed cleanup step even if inspection fails. Report PIE start and stop status, the resolved actor reference, property values read, warnings, errors, and any operation skipped because it was blocked during PIE.
+> Run a bounded Play in Editor smoke test for the currently open map. Confirm PIE and filesystem permissions first. Start PIE, wait only for the documented ready state, then start a 10-second native live capture at 30 FPS. Send a typed `SpaceBar` tap to player 0 through `/pie/input`. Verify that actor `BAT_SMOKE_TARGET` still exists and that its documented runtime property matches the expected post-input value through `/runtime/assert`. Poll capture status until the MP4 or PNG sequence is finalized. Stop PIE in a guaranteed cleanup step even if input, assertion, or capture fails. Report PIE start and stop status, delivered input, every assertion's actual value, capture manifest/video paths, warnings, and errors. Do not claim deterministic gameplay behavior beyond the returned evidence.
 
 Typical BAT flow:
 
@@ -265,7 +265,9 @@ Acceptance evidence:
 
 - PIE starts only when the required permission is active.
 - The actor is resolved by a stable label.
-- Only discovered runtime-safe reads are attempted.
+- Only typed PIE input and discovered runtime-safe assertions are attempted.
+- Capture progresses on real engine ticks and reports its own dropped-frame count.
+- Python, console execution, and external encoders are not required.
 - PIE is stopped regardless of intermediate success or failure.
 
 ## 13. Execute a Reflection-Driven Editor Configuration Pass

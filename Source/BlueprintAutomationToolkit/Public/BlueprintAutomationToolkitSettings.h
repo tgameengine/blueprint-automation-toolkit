@@ -67,7 +67,7 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category="Security|Asset Pipeline", meta=(ClampMin="1", ClampMax="65536", DisplayName="Maximum Import Batch Size (MB)"))
 	int32 AssetImportMaxBatchSizeMb;
 
-	/** Maximum number of still frames produced by one evidence capture request. */
-	UPROPERTY(Config, EditAnywhere, Category="Security|Asset Pipeline", meta=(ClampMin="1", ClampMax="1000", DisplayName="Maximum Capture Frames"))
+	/** Maximum number of frames produced by one asset or live gameplay capture session. */
+	UPROPERTY(Config, EditAnywhere, Category="Security|Asset Pipeline", meta=(ClampMin="1", ClampMax="36000", DisplayName="Maximum Capture Frames"))
 	int32 AssetPipelineMaxCaptureFrames;
 };

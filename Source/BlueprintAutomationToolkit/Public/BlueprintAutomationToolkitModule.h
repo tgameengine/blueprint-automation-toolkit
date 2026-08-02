@@ -31,6 +31,8 @@ class SDockTab;
 class FCommandDispatcher;
 class FTokenAuthMiddleware;
 class FAssetPipelineService;
+class FLiveCaptureService;
+class FRuntimeAutomationService;
 namespace BAT::Transport
 {
 	bool ValidateAndHandleRequest(class FBlueprintAutomationToolkitModule& Module, const struct FHttpServerRequest& Request, const FHttpResultCallback& OnComplete, const TCHAR* Endpoint);
@@ -41,6 +43,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogBlueprintAutomationToolkit, Log, All);
 class FBlueprintAutomationToolkitModule final : public IBlueprintAutomationToolkitModule
 {
 public:
+	FBlueprintAutomationToolkitModule();
 	~FBlueprintAutomationToolkitModule();
 
 	virtual void StartupModule() override;
@@ -146,6 +149,7 @@ private:
 	void BindBlueprintGraphRoutes();
 	void BindBlueprintComponentsRoutes();
 	void BindUMGDesignerRoutes();
+	void BindLiveAutomationRoutes();
 	void BindBlueprintAssetsRoutesInternal();
 	void BindBlueprintGraphRoutesInternal();
 	void RegisterAutomationCommands();
@@ -177,11 +181,11 @@ private:
 			return TOptional<T>(Fn());
 		}
 
-		TPromise<T> Promise;
-		TFuture<T> Future = Promise.GetFuture();
-		RunOnGameThread([LocalFn = MoveTemp(Fn), LocalPromise = MoveTemp(Promise)]() mutable
+		TSharedRef<TPromise<T>, ESPMode::ThreadSafe> Promise = MakeShared<TPromise<T>, ESPMode::ThreadSafe>();
+		TFuture<T> Future = Promise->GetFuture();
+		RunOnGameThread([LocalFn = MoveTemp(Fn), Promise]() mutable
 		{
-			LocalPromise.SetValue(LocalFn());
+			Promise->SetValue(LocalFn());
 		});
 
 		const bool bReady = Future.WaitFor(FTimespan::FromSeconds(TimeoutSeconds));
@@ -382,6 +386,12 @@ private:
 	FHttpRouteHandle ExecAliasRoute;
 	FHttpRouteHandle PieStartRoute;
 	FHttpRouteHandle PieStopRoute;
+	FHttpRouteHandle PieInputRoute;
+	FHttpRouteHandle RuntimeAssertRoute;
+	FHttpRouteHandle CaptureSchemaRoute;
+	FHttpRouteHandle CaptureSessionStartRoute;
+	FHttpRouteHandle CaptureSessionStatusRoute;
+	FHttpRouteHandle CaptureSessionStopRoute;
 	FHttpRouteHandle ActorIntrospectRoute;
 	FHttpRouteHandle ActorPropertiesRoute;
 	FHttpRouteHandle BlueprintCreateRoute;
@@ -445,6 +455,7 @@ private:
 		float YawRate = 0.0f;
 	};
 	TUniquePtr<FWanderState> Wander;
+	TUniquePtr<FLiveCaptureService> LiveCaptureService;
 
 	bool bPermissionEditor = true;
 	bool bPermissionBlueprint = false;

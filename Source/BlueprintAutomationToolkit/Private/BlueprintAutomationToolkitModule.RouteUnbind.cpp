@@ -99,6 +99,36 @@ void FBlueprintAutomationToolkitModule::UnbindRoutes()
 		Router->UnbindRoute(PieStopRoute);
 		PieStopRoute.Reset();
 	}
+	if (PieInputRoute.IsValid())
+	{
+		Router->UnbindRoute(PieInputRoute);
+		PieInputRoute.Reset();
+	}
+	if (RuntimeAssertRoute.IsValid())
+	{
+		Router->UnbindRoute(RuntimeAssertRoute);
+		RuntimeAssertRoute.Reset();
+	}
+	if (CaptureSchemaRoute.IsValid())
+	{
+		Router->UnbindRoute(CaptureSchemaRoute);
+		CaptureSchemaRoute.Reset();
+	}
+	if (CaptureSessionStartRoute.IsValid())
+	{
+		Router->UnbindRoute(CaptureSessionStartRoute);
+		CaptureSessionStartRoute.Reset();
+	}
+	if (CaptureSessionStatusRoute.IsValid())
+	{
+		Router->UnbindRoute(CaptureSessionStatusRoute);
+		CaptureSessionStatusRoute.Reset();
+	}
+	if (CaptureSessionStopRoute.IsValid())
+	{
+		Router->UnbindRoute(CaptureSessionStopRoute);
+		CaptureSessionStopRoute.Reset();
+	}
 	if (ActorIntrospectRoute.IsValid())
 	{
 		Router->UnbindRoute(ActorIntrospectRoute);

@@ -183,6 +183,38 @@ bool FReflectionValidationService::ShouldReadProperty(const FProperty* Property)
 	return ShouldListProperty(Property) && !Property->HasAnyPropertyFlags(CPF_NonTransactional);
 }
 
+bool FReflectionValidationService::ValidatePropertyRead(const FBlueprintAutomationToolkitModule& Module, UObject* Object, const BAT::Reflection::FResolvedProperty& ResolvedProperty, const FString& RequestId, FAutomationResult& OutFailure) const
+{
+	if (!Object || !ResolvedProperty.Property)
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("PropertyNotFound"), TEXT("Property could not be resolved."), 404);
+		return false;
+	}
+	const FName RootPropertyName = GetRootPropertyName(ResolvedProperty.PropertyPath);
+	if (IsPropertyDenied(Module, RootPropertyName))
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("safe_mode_denied"), FString::Printf(TEXT("Property '%s' is denied by reflection policy."), *ResolvedProperty.PropertyPath), 403);
+		return false;
+	}
+	if (!ShouldReadProperty(ResolvedProperty.Property))
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("safe_mode_denied"), FString::Printf(TEXT("Property '%s' is not safely readable."), *ResolvedProperty.PropertyPath), 403);
+		return false;
+	}
+	if (!Module.IsSafeModeEnabled()) return true;
+	if (IsClassDenied(Module, Object->GetClass()))
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("safe_mode_denied"), TEXT("Target class is denied by reflection policy."), 403);
+		return false;
+	}
+	if (!IsClassAllowed(Module, Object->GetClass()) && !Module.GetAllowedReflectionProperties().Contains(RootPropertyName))
+	{
+		OutFailure = BAT::Reflection::MakeStructuredError(RequestId, TEXT("safe_mode_denied"), TEXT("Target class is not allowlisted for reflection reads in Safe Mode."), 403);
+		return false;
+	}
+	return true;
+}
+
 bool FReflectionValidationService::IsClassDenied(const FBlueprintAutomationToolkitModule& Module, const UClass* Class) const
 {
 	return Class && MatchesClassEntry(Module.GetDeniedReflectionClasses(), Class);

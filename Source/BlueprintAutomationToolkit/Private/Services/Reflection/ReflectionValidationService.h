@@ -16,6 +16,7 @@ public:
 	bool ValidateValueTypeCompatibility(FProperty* Property, const TSharedPtr<class FJsonValue>& JsonValue, const class FReflectionObjectResolver& Resolver, FString& OutErrorCode, FString& OutErrorMessage) const;
 	bool ShouldListProperty(const FProperty* Property) const;
 	bool ShouldReadProperty(const FProperty* Property) const;
+	bool ValidatePropertyRead(const FBlueprintAutomationToolkitModule& Module, UObject* Object, const BAT::Reflection::FResolvedProperty& ResolvedProperty, const FString& RequestId, FAutomationResult& OutFailure) const;
 	bool ValidatePropertyWrite(const FBlueprintAutomationToolkitModule& Module, const BAT::Reflection::FResolvedObject& ResolvedObject, const BAT::Reflection::FResolvedProperty& ResolvedProperty, const FString& RequestId, FAutomationResult& OutFailure) const;
 	bool ShouldListFunction(const UFunction* Function) const;
 	bool ValidateFunctionCall(const FBlueprintAutomationToolkitModule& Module, const BAT::Reflection::FResolvedObject& ResolvedObject, UFunction* Function, const FString& RequestId, FAutomationResult& OutFailure) const;

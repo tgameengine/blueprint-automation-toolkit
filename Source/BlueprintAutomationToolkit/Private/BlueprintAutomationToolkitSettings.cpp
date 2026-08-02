@@ -9,7 +9,7 @@ UBlueprintAutomationToolkitSettings::UBlueprintAutomationToolkitSettings()
 	, bSafeMode(true)
 	, AssetImportMaxFileSizeMb(2048)
 	, AssetImportMaxBatchSizeMb(4096)
-	, AssetPipelineMaxCaptureFrames(300)
+	, AssetPipelineMaxCaptureFrames(3600)
 {
 	CategoryName = TEXT("Plugins");
 	SectionName = TEXT("BlueprintAutomationToolkit");

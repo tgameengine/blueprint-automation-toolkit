@@ -24,6 +24,8 @@
 #include "Http/HttpRequestUtils.h"
 #include "Services/AssetService.h"
 #include "Services/AssetPipelineService.h"
+#include "Services/LiveCaptureService.h"
+#include "Services/RuntimeAutomationService.h"
 #include "Services/UMGDesignerService.h"
 #include "Transport/RequestParsing.h"
 #include "Services/Reflection/ReflectionFunctionService.h"
@@ -67,6 +69,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasEngineDiscoverPathTest, "Blueprin
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintPlanPathsTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintPlanPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasBlueprintSchemaPathTest, "BlueprintAutomationToolkit.OpenApi.HasBlueprintSchemaPath", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasNativeUMGDesignerPathsTest, "BlueprintAutomationToolkit.OpenApi.HasNativeUMGDesignerPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATOpenApiHasLiveAutomationPathsTest, "BlueprintAutomationToolkit.OpenApi.HasLiveAutomationPaths", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATLiveAutomationPermissionMapTest, "BlueprintAutomationToolkit.LiveAutomation.PermissionMap", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATLiveCaptureSchemaAndDryRunTest, "BlueprintAutomationToolkit.LiveAutomation.CaptureSchemaAndDryRun", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATRuntimeAssertionsRejectEmptyTest, "BlueprintAutomationToolkit.LiveAutomation.RuntimeAssertionsRejectEmpty", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATUMGDesignerPermissionMapTest, "BlueprintAutomationToolkit.UMG.PermissionMap", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATUMGDesignerSchemaDoesNotRequirePythonTest, "BlueprintAutomationToolkit.UMG.SchemaDoesNotRequirePython", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBATUMGDesignerAppliesNativeTreeTest, "BlueprintAutomationToolkit.UMG.AppliesNativeTree", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -370,6 +376,122 @@ bool FBATOpenApiHasNativeUMGDesignerPathsTest::RunTest(const FString& Parameters
 	TestTrue(TEXT("OpenAPI contains /umg/designer/read"), Spec.Contains(TEXT("/umg/designer/read:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI contains /umg/designer/apply"), Spec.Contains(TEXT("/umg/designer/apply:"), ESearchCase::CaseSensitive));
 	TestTrue(TEXT("OpenAPI documents recursive UMGWidgetSpec"), Spec.Contains(TEXT("UMGWidgetSpec:"), ESearchCase::CaseSensitive));
+	return true;
+}
+
+bool FBATOpenApiHasLiveAutomationPathsTest::RunTest(const FString& Parameters)
+{
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BlueprintAutomationToolkit"));
+	if (!TestTrue(TEXT("Plugin exists"), Plugin.IsValid())) return false;
+	FString Spec;
+	if (!FFileHelper::LoadFileToString(Spec, *FPaths::Combine(Plugin->GetBaseDir(), TEXT("Docs"), TEXT("openapi.yaml"))))
+	{
+		AddError(TEXT("Failed to read openapi.yaml"));
+		return false;
+	}
+	TestTrue(TEXT("OpenAPI contains /pie/input"), Spec.Contains(TEXT("/pie/input:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /runtime/assert"), Spec.Contains(TEXT("/runtime/assert:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains /capture/schema"), Spec.Contains(TEXT("/capture/schema:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains capture start"), Spec.Contains(TEXT("/capture/session/start:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains capture status"), Spec.Contains(TEXT("/capture/session/status:"), ESearchCase::CaseSensitive));
+	TestTrue(TEXT("OpenAPI contains capture stop"), Spec.Contains(TEXT("/capture/session/stop:"), ESearchCase::CaseSensitive));
+	return true;
+}
+
+bool FBATLiveAutomationPermissionMapTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	const uint32 Editor = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Editor);
+	const uint32 Pie = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Pie);
+	const uint32 Filesystem = static_cast<uint32>(FBlueprintAutomationToolkitModule::EAutomationTestPermission::Filesystem);
+	TestEqual(TEXT("PIE input requires PIE"), Module.Test_GetRouteRequiredPermissions(TEXT("/pie/input")), Pie);
+	TestEqual(TEXT("Capture schema requires editor"), Module.Test_GetRouteRequiredPermissions(TEXT("/capture/schema")), Editor);
+	TestEqual(TEXT("Capture status requires editor"), Module.Test_GetRouteRequiredPermissions(TEXT("/capture/session/status")), Editor);
+	TestEqual(TEXT("Capture start requires editor and filesystem"), Module.Test_GetRouteRequiredPermissions(TEXT("/capture/session/start")), Editor | Filesystem);
+	TestEqual(TEXT("Capture stop requires editor and filesystem"), Module.Test_GetRouteRequiredPermissions(TEXT("/capture/session/stop")), Editor | Filesystem);
+	TestEqual(TEXT("Runtime assertions require editor"), Module.Test_GetRouteRequiredPermissions(TEXT("/runtime/assert")), Editor);
+
+	TSharedRef<FJsonObject> PieCapture = MakeShared<FJsonObject>();
+	PieCapture->SetStringField(TEXT("source"), TEXT("pie"));
+	TSharedRef<FJsonObject> EditorCapture = MakeShared<FJsonObject>();
+	EditorCapture->SetStringField(TEXT("source"), TEXT("editor"));
+	TestEqual(TEXT("PIE capture request adds PIE permission"), Module.Test_GetRequestRequiredPermissions(TEXT("/capture/session/start"), PieCapture), Editor | Filesystem | Pie);
+	TestEqual(TEXT("Editor capture does not add PIE permission"), Module.Test_GetRequestRequiredPermissions(TEXT("/capture/session/start"), EditorCapture), Editor | Filesystem);
+	return true;
+}
+
+bool FBATLiveCaptureSchemaAndDryRunTest::RunTest(const FString& Parameters)
+{
+	FLiveCaptureService Service;
+	const FAutomationResult SchemaResult = Service.DescribeSchema();
+	const TSharedPtr<FJsonObject> Schema = GetStructuredRoot(SchemaResult);
+	bool bRequiresPython = true;
+	bool bLaunchesEncoder = true;
+	TestTrue(TEXT("Capture schema succeeds"), SchemaResult.bSuccess && Schema.IsValid());
+	TestTrue(TEXT("Capture schema reports Python requirement"), Schema.IsValid() && Schema->TryGetBoolField(TEXT("requires_python"), bRequiresPython));
+	TestFalse(TEXT("Live capture does not require Python"), bRequiresPython);
+	TestTrue(TEXT("Capture schema reports external encoder behavior"), Schema.IsValid() && Schema->TryGetBoolField(TEXT("launches_external_encoder"), bLaunchesEncoder));
+	TestFalse(TEXT("Live capture launches no external encoder"), bLaunchesEncoder);
+
+	FBlueprintAutomationToolkitModule Module;
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetStringField(TEXT("source"), TEXT("pie"));
+	Request->SetStringField(TEXT("output_format"), TEXT("both"));
+	Request->SetNumberField(TEXT("duration_seconds"), 10.0);
+	Request->SetBoolField(TEXT("dry_run"), true);
+	Request->SetStringField(TEXT("output_folder"), TEXT("BATTests/LiveCaptureDryRun"));
+	const FAutomationResult DryRunResult = Service.Start(Module, Request);
+	const TSharedPtr<FJsonObject> DryRun = GetStructuredRoot(DryRunResult);
+	bool bWouldStart = false;
+	TestTrue(TEXT("Live capture dry-run succeeds without PIE, viewport, or platform recorder"), DryRunResult.bSuccess && DryRun.IsValid());
+	TestTrue(TEXT("Live capture dry-run reports intent"), DryRun.IsValid() && DryRun->TryGetBoolField(TEXT("would_start"), bWouldStart) && bWouldStart);
+	Service.Shutdown();
+	return true;
+}
+
+bool FBATRuntimeAssertionsRejectEmptyTest::RunTest(const FString& Parameters)
+{
+	FBlueprintAutomationToolkitModule Module;
+	TSharedRef<FJsonObject> Request = MakeShared<FJsonObject>();
+	Request->SetArrayField(TEXT("assertions"), {});
+	const FAutomationResult Result = FRuntimeAutomationService().EvaluateAssertions(Module, Request);
+	TestFalse(TEXT("Empty assertion list is rejected"), Result.bSuccess);
+	TestEqual(TEXT("Empty assertion list has stable error"), Result.ErrorCode, FString(TEXT("invalid_assertions")));
+
+	UWorld* EditorWorld = Module.GetEditorWorld();
+	if (!TestNotNull(TEXT("Editor world is available for positive runtime assertion coverage"), EditorWorld)) return false;
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	AActor* Actor = EditorWorld->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, SpawnParameters);
+	if (!TestNotNull(TEXT("Transient assertion target spawned"), Actor)) return false;
+	Actor->SetActorLabel(TEXT("BAT_RuntimeAssertionTarget"));
+	Actor->Tags.Add(TEXT("BAT_RuntimeAssertion"));
+	Actor->SetCanBeDamaged(true);
+
+	TSharedRef<FJsonObject> Exists = MakeShared<FJsonObject>();
+	Exists->SetStringField(TEXT("type"), TEXT("actor_exists"));
+	Exists->SetStringField(TEXT("tag"), TEXT("BAT_RuntimeAssertion"));
+	TSharedRef<FJsonObject> Count = MakeShared<FJsonObject>();
+	Count->SetStringField(TEXT("type"), TEXT("actor_count"));
+	Count->SetStringField(TEXT("class"), TEXT("Actor"));
+	Count->SetStringField(TEXT("operator"), TEXT("gte"));
+	Count->SetNumberField(TEXT("expected"), 1.0);
+	TSharedRef<FJsonObject> Property = MakeShared<FJsonObject>();
+	Property->SetStringField(TEXT("type"), TEXT("property"));
+	Property->SetStringField(TEXT("actor"), TEXT("BAT_RuntimeAssertionTarget"));
+	Property->SetStringField(TEXT("property"), TEXT("bCanBeDamaged"));
+	Property->SetBoolField(TEXT("expected"), true);
+
+	TSharedRef<FJsonObject> PositiveRequest = MakeShared<FJsonObject>();
+	PositiveRequest->SetStringField(TEXT("world"), TEXT("editor"));
+	PositiveRequest->SetArrayField(TEXT("assertions"), {
+		MakeShared<FJsonValueObject>(Exists),
+		MakeShared<FJsonValueObject>(Count),
+		MakeShared<FJsonValueObject>(Property),
+	});
+	const FAutomationResult PositiveResult = FRuntimeAutomationService().EvaluateAssertions(Module, PositiveRequest);
+	TestTrue(TEXT("Actor existence, count, and reflected-property assertions pass against a live world"), PositiveResult.bSuccess);
+	Actor->Destroy();
 	return true;
 }
 

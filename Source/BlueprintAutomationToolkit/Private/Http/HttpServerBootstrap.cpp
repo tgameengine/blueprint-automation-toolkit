@@ -5,6 +5,7 @@
 #include "CoreGlobals.h"
 #include "HttpServerModule.h"
 #include "IHttpRouter.h"
+#include "Services/LiveCaptureService.h"
 
 bool FBlueprintAutomationToolkitModule::StartServer(bool bInteractiveStart)
 {
@@ -48,6 +49,10 @@ bool FBlueprintAutomationToolkitModule::StartServer(bool bInteractiveStart)
 
 void FBlueprintAutomationToolkitModule::StopServer()
 {
+	if (LiveCaptureService)
+	{
+		LiveCaptureService->Shutdown();
+	}
 	if (!bServerRunning)
 	{
 		return;

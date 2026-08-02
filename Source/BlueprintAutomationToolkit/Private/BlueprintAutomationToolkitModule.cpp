@@ -24,6 +24,7 @@
 #include "Commands/Object/SetObjectPropertyCommand.h"
 #include "Http/HttpRequestUtils.h"
 #include "Services/ObjectAutomationService.h"
+#include "Services/LiveCaptureService.h"
 
 #include "Async/Async.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -2103,6 +2104,7 @@ namespace
 	}
 }
 
+FBlueprintAutomationToolkitModule::FBlueprintAutomationToolkitModule() = default;
 FBlueprintAutomationToolkitModule::~FBlueprintAutomationToolkitModule() = default;
 
 bool FBlueprintAutomationToolkitModule::TryExecBatCommandDirect(UWorld* World, const FString& FullCommand, FStringOutputDevice& Out, bool& bOutOk)
@@ -3471,6 +3473,11 @@ void FBlueprintAutomationToolkitModule::StartupModule()
 
 void FBlueprintAutomationToolkitModule::ShutdownModule()
 {
+	if (LiveCaptureService)
+	{
+		LiveCaptureService->Shutdown();
+		LiveCaptureService.Reset();
+	}
 	UnregisterBATConsoleCommands();
 	UnregisterControlPanelTab();
 	delete CommandDispatcher;

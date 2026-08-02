@@ -636,6 +636,13 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Capabilities->SetBoolField(TEXT("assetValidate"), true);
 	Capabilities->SetBoolField(TEXT("assetPipeline"), true);
 	Capabilities->SetBoolField(TEXT("assetShowcaseCapture"), true);
+	Capabilities->SetBoolField(TEXT("liveGameplayCapture"), true);
+	Capabilities->SetBoolField(TEXT("livePieCapture"), true);
+	Capabilities->SetBoolField(TEXT("platformMp4Capture"), true);
+	Capabilities->SetBoolField(TEXT("typedPieInput"), true);
+	Capabilities->SetBoolField(TEXT("runtimeAssertions"), true);
+	Capabilities->SetBoolField(TEXT("liveCaptureRequiresPython"), false);
+	Capabilities->SetBoolField(TEXT("liveCaptureLaunchesExternalProcess"), false);
 	Capabilities->SetBoolField(TEXT("materialTextureSamples"), true);
 	Capabilities->SetBoolField(TEXT("exec"), bEnableExecRoute);
 	Capabilities->SetBoolField(TEXT("python"), bPythonEnabled);
@@ -675,6 +682,12 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildCapabilitiesSumm
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/editor/focus")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pie/start")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pie/stop")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/pie/input")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/runtime/assert")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/capture/schema")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/capture/session/start")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/capture/session/status")));
+	Routes.Add(MakeShared<FJsonValueString>(TEXT("/capture/session/stop")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/read")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/graph/apply")));
 	Routes.Add(MakeShared<FJsonValueString>(TEXT("/blueprint/compile_save")));
@@ -749,6 +762,12 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::BuildEngineDiscoverPa
 	PreferredRoutes->SetStringField(TEXT("editorFocus"), TEXT("/editor/focus"));
 	PreferredRoutes->SetStringField(TEXT("pieStart"), TEXT("/pie/start"));
 	PreferredRoutes->SetStringField(TEXT("pieStop"), TEXT("/pie/stop"));
+	PreferredRoutes->SetStringField(TEXT("pieInput"), TEXT("/pie/input"));
+	PreferredRoutes->SetStringField(TEXT("assertRuntime"), TEXT("/runtime/assert"));
+	PreferredRoutes->SetStringField(TEXT("describeCapture"), TEXT("/capture/schema"));
+	PreferredRoutes->SetStringField(TEXT("startLiveCapture"), TEXT("/capture/session/start"));
+	PreferredRoutes->SetStringField(TEXT("getLiveCaptureStatus"), TEXT("/capture/session/status"));
+	PreferredRoutes->SetStringField(TEXT("stopLiveCapture"), TEXT("/capture/session/stop"));
 	PreferredRoutes->SetStringField(TEXT("readGraph"), TEXT("/blueprint/graph/read"));
 	PreferredRoutes->SetStringField(TEXT("applyGraph"), TEXT("/blueprint/graph/apply"));
 	PreferredRoutes->SetStringField(TEXT("compileSaveBlueprint"), TEXT("/blueprint/compile_save"));
@@ -923,6 +942,24 @@ uint32 FBlueprintAutomationToolkitModule::GetRequestRequiredPermissions(const FS
 			RequiredPermissions |= static_cast<uint32>(EBATPermission::Filesystem);
 		}
 	}
+	if (Endpoint.Equals(TEXT("/capture/session/start"), ESearchCase::CaseSensitive))
+	{
+		FString Source = TEXT("auto");
+		if (BodyObj.IsValid()) BodyObj->TryGetStringField(TEXT("source"), Source);
+		if (!Source.Equals(TEXT("editor"), ESearchCase::IgnoreCase))
+		{
+			RequiredPermissions |= static_cast<uint32>(EBATPermission::Pie);
+		}
+	}
+	if (Endpoint.Equals(TEXT("/runtime/assert"), ESearchCase::CaseSensitive))
+	{
+		FString World = TEXT("pie");
+		if (BodyObj.IsValid()) BodyObj->TryGetStringField(TEXT("world"), World);
+		if (!World.Equals(TEXT("editor"), ESearchCase::IgnoreCase))
+		{
+			RequiredPermissions |= static_cast<uint32>(EBATPermission::Pie);
+		}
+	}
 
 	return RequiredPermissions;
 }
@@ -991,6 +1028,17 @@ uint32 FBlueprintAutomationToolkitModule::GetRouteRequiredPermissions(const FStr
 	}
 	if (Endpoint.Equals(TEXT("/actions/list"), ESearchCase::CaseSensitive)
 		|| Endpoint.Equals(TEXT("/actions/run"), ESearchCase::CaseSensitive))
+	{
+		return PM(EBATPermission::Editor);
+	}
+	if (Endpoint.Equals(TEXT("/capture/session/start"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/capture/session/stop"), ESearchCase::CaseSensitive))
+	{
+		return PM2(EBATPermission::Editor, EBATPermission::Filesystem);
+	}
+	if (Endpoint.Equals(TEXT("/capture/schema"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/capture/session/status"), ESearchCase::CaseSensitive)
+		|| Endpoint.Equals(TEXT("/runtime/assert"), ESearchCase::CaseSensitive))
 	{
 		return PM(EBATPermission::Editor);
 	}
@@ -2320,7 +2368,6 @@ TSharedPtr<FJsonObject> FBlueprintAutomationToolkitModule::ExecuteJobByKind(cons
 		}
 		return Response;
 	}
-
 	if (Kind.Equals(TEXT("asset.pipeline"), ESearchCase::CaseSensitive))
 	{
 		const FAssetPipelineService Service;

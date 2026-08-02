@@ -27,6 +27,8 @@ included artifacts, see
 [Codex Executed Examples](Docs/CodexExecutedExamples.md).
 For end-to-end model, animation, texture, repair, validation, and evidence
 automation, see the [AI Asset Pipeline guide](Docs/AssetPipeline.md).
+For real-tick PIE input, gameplay assertions, PNG sequences, and native MP4
+recording, see [Live Gameplay Automation](Docs/LiveGameplayAutomation.md).
 
 ## Requirements and Dependencies
 
@@ -75,6 +77,7 @@ The preferred workflow is:
 8. Persist assets or Blueprints with `POST /asset/save` or `POST /blueprint/compile_save`
 9. Import, repair, validate, and prove source assets with `POST /asset/pipeline/execute`
 10. Drive editor selection or focus with `POST /editor/select` and `POST /editor/focus`
+11. Exercise gameplay with `POST /pie/input`, verify it with `POST /runtime/assert`, and record it through `POST /capture/session/start`
 
 Compile-related routes return structured diagnostics with normalized `warnings` and `errors` entries built from Unreal's compiler log and policy layer.
 
@@ -113,6 +116,12 @@ Preferred endpoints:
 - `POST /editor/focus`
 - `POST /pie/start`
 - `POST /pie/stop`
+- `POST /pie/input`
+- `POST /runtime/assert`
+- `GET /capture/schema`
+- `POST /capture/session/start`
+- `GET /capture/session/status`
+- `POST /capture/session/stop`
 
 Level automation helpers:
 
@@ -411,6 +420,8 @@ Typical success response:
 - Inspect and update asset references that participate in animation and skeletal workflows where generic editor semantics are exposed.
 - Import source models and related assets through Unreal's registered importers, fingerprint them, repair common configuration problems, and validate them with structured issues.
 - Place Static or Skeletal Mesh assets in the current editor level and capture a PNG still or deterministic animation frame sequence as verification evidence.
+- Capture a live editor or PIE viewport over real engine ticks as a PNG sequence, native platform MP4, or both, without Python or an external encoder process.
+- Deliver allowlisted typed key press/release/tap events to a selected PIE player and verify actor counts, actor existence, or reflected runtime properties with structured actual values.
 - Compile Blueprints explicitly, validate references, and save assets explicitly.
 - Select and focus editor targets, with optional advanced surfaces gated behind explicit policy.
 
@@ -421,6 +432,7 @@ Typical success response:
 - Arbitrary editor UI automation (Slate widgets, menus, details panels).
 - Deterministic gameplay guarantees (depends on map, pawn/controller, focus, input mappings, and frame timing).
 - Multiplayer/network testing harness behavior.
+- Arbitrary mouse positioning, arbitrary Slate/UI control, or a promise that a project's input mappings will interpret a key in a specific way.
 - Generating a 3D model from a text prompt by itself; BAT imports a file produced by a DCC or generation system.
 - Launching Blender, FFmpeg, shell commands, or arbitrary external executables from the asset pipeline.
 
@@ -960,6 +972,46 @@ Response:
 ```json
 { "ok": true, "pie": false }
 ```
+
+### Live gameplay verification and recording (no Python)
+
+After starting PIE, BAT can send a typed Unreal key event, evaluate runtime
+assertions, and record the actual viewport while the engine continues ticking:
+
+```json
+POST /capture/session/start
+{
+  "source": "pie",
+  "output_format": "both",
+  "duration_seconds": 12,
+  "fps": 30,
+  "warmup_seconds": 1
+}
+```
+
+```json
+POST /pie/input
+{ "key": "LeftMouseButton", "event": "tap", "pie_index": 0, "player_index": 0 }
+```
+
+```json
+POST /runtime/assert
+{
+  "world": "pie",
+  "assertions": [
+    { "type": "actor_exists", "tag": "Destructible" },
+    { "type": "actor_count", "name_contains": "Debris", "operator": "gt", "expected": 0 }
+  ]
+}
+```
+
+The session writes beneath `Project/Saved/BlueprintAutomationToolkit/LiveCaptures`.
+`GET /capture/session/status` reports progress and final paths. MP4 uses Unreal's
+platform video recorder when it is available; `GET /capture/schema` reports the
+active platform limits. PNG sequence capture remains available independently.
+No BAT Python permission is required and BAT launches no encoder or external
+process. See [Live Gameplay Automation](Docs/LiveGameplayAutomation.md) for the
+complete lifecycle and property assertion format.
 
 ### Native UMG Designer automation (no Python)
 

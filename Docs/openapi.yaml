@@ -881,6 +881,74 @@ paths:
       responses:
         '202':
           description: Job created
+  /pie/input:
+    post:
+      summary: Send a typed key event to a PIE player without console execution or Python
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PieInputRequest'
+      responses:
+        '200':
+          description: Input event delivered
+        '400':
+          $ref: '#/components/responses/Error400'
+  /runtime/assert:
+    post:
+      summary: Verify actor counts, actor existence, and reflected runtime properties
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeAssertRequest'
+      responses:
+        '200':
+          description: Every assertion passed
+        '422':
+          description: One or more assertions failed; response data contains actual values
+  /capture/schema:
+    get:
+      summary: Discover native live gameplay capture limits and MP4 availability
+      responses:
+        '200':
+          description: Capture capabilities and platform limits
+  /capture/session/start:
+    post:
+      summary: Start asynchronous editor or PIE viewport capture using real engine ticks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveCaptureStartRequest'
+      responses:
+        '202':
+          description: Capture session started
+        '409':
+          description: Capture already active or requested PIE world unavailable
+  /capture/session/status:
+    get:
+      summary: Read live capture progress and output paths
+      responses:
+        '200':
+          description: Current or most recently completed capture session
+  /capture/session/stop:
+    post:
+      summary: Finalize or discard the active live capture session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveCaptureStopRequest'
+      responses:
+        '200':
+          description: Capture stopped
+        '202':
+          description: MP4 finalization started; poll the status endpoint
   /ai/editor/layout/apply:
     post:
       summary: Submit editor layout apply job
@@ -1457,6 +1525,138 @@ components:
       scheme: bearer
       bearerFormat: token
   schemas:
+    PieInputRequest:
+      type: object
+      additionalProperties: false
+      required: [key]
+      properties:
+        key:
+          type: string
+          description: Unreal input key name, for example SpaceBar, LeftMouseButton, W, or Gamepad_FaceButton_Bottom.
+        event:
+          type: string
+          enum: [press, release, tap]
+          default: tap
+        pie_index:
+          type: integer
+          minimum: 0
+          default: 0
+        player_index:
+          type: integer
+          minimum: 0
+          default: 0
+    RuntimeAssertion:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [actor_count, actor_exists, property]
+        class:
+          type: string
+          description: Class short name or full Unreal class object path.
+        actor:
+          type: string
+          description: Actor name, label, or object path used by property assertions.
+        object_path:
+          type: string
+        tag:
+          type: string
+        label_contains:
+          type: string
+        name_contains:
+          type: string
+        property:
+          type: string
+        operator:
+          type: string
+          enum: [eq, ne, gt, gte, lt, lte, contains]
+          default: eq
+        expected:
+          nullable: true
+        tolerance:
+          type: number
+          minimum: 0
+          default: 0.0001
+    RuntimeAssertRequest:
+      type: object
+      additionalProperties: false
+      required: [assertions]
+      properties:
+        world:
+          type: string
+          enum: [pie, editor, auto]
+          default: pie
+        pie_index:
+          type: integer
+          minimum: 0
+          default: 0
+        assertions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RuntimeAssertion'
+    LiveCaptureStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+          enum: [auto, pie, editor]
+          default: auto
+        pie_index:
+          type: integer
+          minimum: 0
+          default: 0
+        output_format:
+          type: string
+          enum: [png_sequence, mp4, both]
+          default: png_sequence
+        fps:
+          type: integer
+          minimum: 1
+          maximum: 120
+          default: 30
+        duration_seconds:
+          type: number
+          exclusiveMinimum: 0
+        frame_count:
+          type: integer
+          minimum: 1
+        warmup_seconds:
+          type: number
+          minimum: 0
+          maximum: 60
+        width:
+          type: integer
+          minimum: 64
+          maximum: 7680
+        height:
+          type: integer
+          minimum: 64
+          maximum: 4320
+        output_folder:
+          type: string
+          description: Relative folder beneath the project Saved directory.
+        file_prefix:
+          type: string
+          pattern: '^[A-Za-z0-9_-]+$'
+        stop_pie_when_complete:
+          type: boolean
+          default: false
+        dry_run:
+          type: boolean
+          default: false
+    LiveCaptureStopRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: string
+        discard:
+          type: boolean
+          default: false
     UMGWidgetSpec:
       type: object
       additionalProperties: false
