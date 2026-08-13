@@ -78,7 +78,7 @@ namespace
 		Bytes.Append(reinterpret_cast<const uint8*>(Convert.Get()), Convert.Length());
 		const FString Enc = FBase64::Encode(Bytes);
 		return FString::Printf(
-			TEXT("py import base64;exec(compile(base64.b64decode('%s').decode('utf-8'),'<uas>', 'exec'))"),
+			TEXT("py import base64;exec(compile(base64.b64decode('%s').decode('utf-8'),'<uas>', 'exec'),{'__builtins__':__builtins__,'__name__':'__bat_exec__'})"),
 			*Enc);
 	}
 

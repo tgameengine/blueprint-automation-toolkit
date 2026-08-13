@@ -15,6 +15,7 @@
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
 #include "K2Node_AddComponent.h"
+#include "K2Node_CallArrayFunction.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_ComponentBoundEvent.h"
 #include "K2Node_ExecutionSequence.h"
@@ -26,6 +27,7 @@
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet/KismetArrayLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/PackageName.h"
 #include "Routes/Blueprint/BlueprintGraphApplyRequest.h"
@@ -988,9 +990,8 @@ namespace
 			UK2Node_SpawnActorFromClass* SpawnNode = NewObject<UK2Node_SpawnActorFromClass>(Graph);
 			Graph->AddNode(SpawnNode, true, false);
 			SpawnNode->CreateNewGuid();
-			SpawnNode->PostPlacedNewNode();
 			SpawnNode->AllocateDefaultPins();
-			SpawnNode->ReconstructNode();
+			SpawnNode->PostPlacedNewNode();
 
 			if (UEdGraphPin* ClassPin = FBlueprintGraphNodeService::FindPinSmart(SpawnNode, TEXT("Class")))
 			{
@@ -1000,6 +1001,7 @@ namespace
 					{
 						ClassPin->DefaultObject = SpawnClass;
 						ClassPin->DefaultValue.Reset();
+						SpawnNode->PinDefaultValueChanged(ClassPin);
 					}
 					else
 					{
@@ -1034,7 +1036,10 @@ namespace
 				return nullptr;
 			}
 
-			UK2Node_CallFunction* CallFunctionNode = NewObject<UK2Node_CallFunction>(Graph);
+			UK2Node_CallFunction* CallFunctionNode =
+				TargetFunction->GetOuterUClass() == UKismetArrayLibrary::StaticClass()
+				? NewObject<UK2Node_CallArrayFunction>(Graph)
+				: NewObject<UK2Node_CallFunction>(Graph);
 			CallFunctionNode->SetFromFunction(TargetFunction);
 			Graph->AddNode(CallFunctionNode, true, false);
 			CallFunctionNode->CreateNewGuid();
