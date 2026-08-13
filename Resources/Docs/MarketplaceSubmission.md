@@ -2,7 +2,7 @@
 
 ## Pre-Submission
 
-- [x] Version bumped to 1.0.2 in .uplugin
+- [x] Version bumped to 1.0.3 in .uplugin
 - [x] `IsBetaVersion` and `IsExperimentalVersion` set to `false`
 - [x] `CreatedByURL`, `DocsURL`, `SupportURL` populated
 - [x] Required engine plugins disclosed: PCG, GeometryProcessing, GeometryScripting
