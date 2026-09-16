@@ -27,6 +27,9 @@ included artifacts, see
 [Codex Executed Examples](Docs/CodexExecutedExamples.md).
 For end-to-end model, animation, texture, repair, validation, and evidence
 automation, see the [AI Asset Pipeline guide](Docs/AssetPipeline.md).
+For staged image-reference, contact-aware motion solving, complex AnimSequence
+authoring, and loop validation, see
+[Prompting Complex Character Animation Workflows](Docs/ComplexAnimationPrompting.md).
 For real-tick PIE input, gameplay assertions, PNG sequences, and native MP4
 recording, see [Live Gameplay Automation](Docs/LiveGameplayAutomation.md).
 

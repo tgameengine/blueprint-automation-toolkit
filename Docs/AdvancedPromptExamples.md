@@ -232,6 +232,11 @@ Acceptance evidence:
 
 > Create `/Game/BAT_Demos/Animations/A_BAT_TurnProbe` as an `AnimSequence` using the discovered skeleton and animation authoring schema. Treat incoming animation data as `Y` forward and request BAT's forward-axis conversion into Unreal's `+X` forward frame. Add a short root-motion probe with clearly named tracks and deterministic keys, save the asset, then inspect the resulting references and report the source axis, converted axis, track count, key count, sequence length, skeleton path, warnings, and errors. If the skeleton or track schema cannot be resolved, stop without creating a partial asset.
 
+For multi-phase character actions with visual reference generation, explicit
+contact intervals, machine-readable motion data, approval gates, and full-loop
+review, use the copy-ready workflow in
+[Prompting Complex Character Animation Workflows](ComplexAnimationPrompting.md).
+
 Typical BAT flow:
 
 - `GET /engine/discover`
